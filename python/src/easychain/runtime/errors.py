@@ -130,6 +130,14 @@ def explain(exc: BaseException, step: Any = None) -> dict[str, Any]:
             hint=hint,
         )
         return out
+    if isinstance(exc, httpx.ProxyError):
+        host = _host(exc.request.url) if exc.request else "the site"
+        out.update(
+            kind="blocked",
+            message=f"The network proxy blocked the request to {host} ({exc}).",
+            hint="This network doesn't allow that site. Try another URL, or ask your admin to allow it.",
+        )
+        return out
     if isinstance(exc, httpx.TimeoutException):
         out.update(
             kind="timeout",

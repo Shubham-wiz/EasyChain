@@ -232,3 +232,10 @@ def test_http_status_hints(status, hint):
     assert info["kind"] == "http_status"
     assert "api.example.com" in info["message"]
     assert hint in info["hint"]
+
+
+def test_proxy_block_is_explained():
+    exc = httpx.ProxyError("403 Forbidden", request=httpx.Request("GET", "https://blocked.example/x"))
+    info = explain(exc)
+    assert info["kind"] == "blocked"
+    assert "blocked.example" in info["message"]

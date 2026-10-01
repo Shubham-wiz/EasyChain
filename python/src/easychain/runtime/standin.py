@@ -83,7 +83,8 @@ _STOPWORDS = {
 
 
 def _words(text: str) -> set[str]:
-    return set(re.findall(r"[a-z]{4,}", text.lower())) - _STOPWORDS
+    # Crude stemming (first five letters) so "crashing" matches "crash".
+    return {w[:5] for w in re.findall(r"[a-z]{4,}", text.lower()) if w not in _STOPWORDS}
 
 
 def _pick_exit(system: str, human: str) -> str:

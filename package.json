@@ -1,0 +1,22 @@
+{
+  "name": "easychain-monorepo",
+  "private": true,
+  "description": "Easy Chain: draw your AI app, press Run, watch it think, ship it with one click.",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @easychain/web dev",
+    "build": "pnpm --filter @easychain/web build",
+    "test": "pnpm --filter @easychain/web test",
+    "typecheck": "pnpm --filter @easychain/web typecheck",
+    "e2e": "pnpm --filter @easychain/web e2e"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

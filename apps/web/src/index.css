@@ -1,0 +1,176 @@
+@import "tailwindcss";
+@import "@xyflow/react/dist/style.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Design tokens. Components use these names, never raw colours. */
+:root {
+  --bg: #f7f7fb;
+  --surface: #ffffff;
+  --surface-2: #f1f2f7;
+  --border: #e3e4ec;
+  --text: #171923;
+  --muted: #5f6475;
+  --faint: #8a8fa0;
+  --accent: #4f46e5;
+  --accent-soft: #eef0ff;
+  --accent-text: #ffffff;
+  --ok: #059669;
+  --ok-soft: #e7f8f1;
+  --warn: #b45309;
+  --warn-soft: #fff6e5;
+  --danger: #dc2626;
+  --danger-soft: #fdeeee;
+  --canvas: #f3f4f9;
+  --dot: #d4d6e2;
+  --ring: #6366f1;
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #0f1117;
+  --surface: #171a23;
+  --surface-2: #1f2330;
+  --border: #2b3040;
+  --text: #e9ebf3;
+  --muted: #a3a8ba;
+  --faint: #737891;
+  --accent: #818cf8;
+  --accent-soft: #232745;
+  --accent-text: #0f1117;
+  --ok: #34d399;
+  --ok-soft: #13291f;
+  --warn: #fbbf24;
+  --warn-soft: #2d230e;
+  --danger: #f87171;
+  --danger-soft: #331617;
+  --canvas: #12141c;
+  --dot: #2a2e3d;
+  --ring: #818cf8;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-text: var(--accent-text);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-canvas: var(--canvas);
+  --color-ring: var(--ring);
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* ── React Flow ─────────────────────────────────────────────────────────── */
+
+.react-flow {
+  --xy-background-color: var(--canvas);
+  --xy-edge-stroke: var(--faint);
+  --xy-edge-stroke-selected: var(--accent);
+  --xy-handle-background-color: var(--surface);
+  --xy-handle-border-color: var(--faint);
+  --xy-minimap-background-color: var(--surface);
+  --xy-controls-button-background-color: var(--surface);
+  --xy-controls-button-color: var(--text);
+  --xy-controls-button-border-color: var(--border);
+  --xy-controls-button-background-color-hover: var(--surface-2);
+  --xy-attribution-background-color: transparent;
+}
+
+.react-flow__handle {
+  width: 12px;
+  height: 12px;
+  border-width: 2px;
+}
+
+.react-flow__handle:hover,
+.react-flow__handle.connectingto {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.react-flow__node.selected > .step-card,
+.react-flow__node:focus-visible > .step-card {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+/* The active step glows while a run is going. */
+@keyframes ec-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 60%, transparent), 0 0 18px 2px color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 3px var(--accent), 0 0 28px 6px color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+}
+
+.step-running {
+  animation: ec-glow 1.2s ease-in-out infinite;
+}
+
+/* Data pulses along a connection while the next step runs. */
+@keyframes ec-dash {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+.edge-flowing {
+  stroke: var(--accent) !important;
+  stroke-dasharray: 6 6;
+  animation: ec-dash 0.6s linear infinite;
+}
+
+.edge-done {
+  stroke: color-mix(in srgb, var(--ok) 70%, var(--faint)) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .step-running,
+  .edge-flowing {
+    animation: none;
+  }
+}
+
+.template-highlight .var {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 3px;
+}
+
+.scroll-thin {
+  scrollbar-width: thin;
+}
