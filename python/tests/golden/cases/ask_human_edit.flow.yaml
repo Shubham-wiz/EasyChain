@@ -1,0 +1,30 @@
+version: 1
+name: Approve reply
+steps:
+  - id: start
+    type: input
+    settings:
+      fields:
+        - {name: draft, example: Hello}
+  - id: review
+    type: ask_human
+    settings:
+      kind: edit
+      question: "Send this reply? {draft}"
+      show: [draft]
+      field: draft
+  - id: send
+    type: code
+    settings:
+      code: |
+        def run(data):
+            return {"sent": "SENT: " + data["draft"]}
+  - id: finish
+    type: output
+    settings:
+      fields: [sent, human_answer, human_answer_comment, draft]
+connections:
+  - {from: start, to: review}
+  - {from: review, to: send, exit: Approved}
+  - {from: review, to: finish, exit: Rejected}
+  - {from: send, to: finish}

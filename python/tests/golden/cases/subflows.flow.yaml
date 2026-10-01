@@ -1,0 +1,38 @@
+version: 1
+name: Use tidy
+steps:
+  - id: start
+    type: input
+    settings:
+      fields:
+        - {name: words, type: list}
+        - {name: text}
+  - id: separate
+    type: subflow
+    settings:
+      flow: tidy_text
+      inputs: {text: "  {text}  "}
+      outputs: {clean: tidied}
+  - id: shared
+    type: subflow
+    settings:
+      flow: tidy_text
+      share_data: true
+  - id: each
+    type: for_each
+    settings: {items: words, item_name: text, save_as: all_tidy}
+  - id: per_word
+    type: subflow
+    settings:
+      flow: tidy_text
+      outputs: {one: tidied}
+  - id: finish
+    type: output
+    settings:
+      fields: [clean, tidied, all_tidy]
+connections:
+  - {from: start, to: separate}
+  - {from: separate, to: shared}
+  - {from: shared, to: each}
+  - {from: each, to: per_word, exit: Each item}
+  - {from: each, to: finish, exit: When done}

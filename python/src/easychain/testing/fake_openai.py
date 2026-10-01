@@ -104,6 +104,8 @@ PAGES.update(
 )
 
 requests_log: list[dict[str, Any]] = []
+# Side effects received at /effects: every attempt, and the ones that took effect.
+effects: dict[str, list[dict[str, Any]]] = {"calls": [], "applied": []}
 
 
 def _to_messages(raw: list[dict[str, Any]]) -> list[Any]:
@@ -146,6 +148,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(200, PAGES[match.group(1)].encode(), "text/html; charset=utf-8")
         elif self.path.startswith("/__requests"):
             self._send(200, json.dumps(requests_log).encode())
+        elif self.path.startswith("/effects"):
+            self._send(200, json.dumps(effects).encode())
         elif self.path.startswith("/health"):
             self._send(200, b'{"ok": true}')
         else:
@@ -154,6 +158,9 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         length = int(self.headers.get("Content-Length") or 0)
         body = json.loads(self.rfile.read(length) or b"{}")
+        if self.path.startswith("/effects"):
+            self._effect(body)
+            return
         if not self.path.rstrip("/").endswith("/chat/completions"):
             self._send(404, b'{"error": {"message": "not found"}}')
             return
@@ -226,6 +233,31 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.flush()
         self.close_connection = True
 
+    def _effect(self, body: Any) -> None:
+        """A side effect (like sending an email) that honours Idempotency-Key, as Stripe does.
+
+        ``?fail=N`` fails the first N attempts for a key with a 500, to exercise retries.
+        """
+        if self.path.startswith("/effects/reset"):
+            effects["calls"].clear()
+            effects["applied"].clear()
+            self._send(200, b'{"ok": true}')
+            return
+        key = self.headers.get("Idempotency-Key")
+        effects["calls"].append({"key": key, "body": body})
+        match = re.search(r"[?&]fail=(\d+)", self.path)
+        attempts = sum(1 for c in effects["calls"] if c["key"] == key)
+        if match and attempts <= int(match.group(1)):
+            self._send(500, b'{"error": "try again"}')
+            return
+        for applied in effects["applied"]:
+            if key and applied["key"] == key:
+                self._send(200, json.dumps({**applied["receipt"], "replayed": True}).encode())
+                return
+        receipt = {"id": f"effect-{len(effects['applied']) + 1}", "received": body}
+        effects["applied"].append({"key": key, "body": body, "receipt": receipt})
+        self._send(200, json.dumps(receipt).encode())
+
 
 class FakeOpenAI:
     """Run the fake server in a background thread: ``with FakeOpenAI() as fake: fake.url``."""
@@ -244,6 +276,8 @@ class FakeOpenAI:
 
     def __enter__(self) -> FakeOpenAI:
         requests_log.clear()
+        effects["calls"].clear()
+        effects["applied"].clear()
         self.thread.start()
         return self
 

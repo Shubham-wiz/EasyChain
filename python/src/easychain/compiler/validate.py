@@ -6,9 +6,12 @@ offers a one-click fix where one exists.
 
 from __future__ import annotations
 
+import re
+
 from ..spec.models import FlowSpec
 from .analysis import FlowAnalysis
 from .issues import Fix, Issue, error, warning
+from .reducers import check_combine
 
 
 def validate(spec: FlowSpec, analysis: FlowAnalysis | None = None) -> list[Issue]:
@@ -62,6 +65,21 @@ def _check_structure(an: FlowAnalysis) -> list[Issue]:
                 fix=Fix("add_step", "Add an Output step", {"type": "output"}),
             )
         )
+    for step in an.spec.steps:
+        if "__" in step.id:
+            issues.append(
+                error(
+                    "step_id_double_underscore",
+                    f"The step id `{step.id}` has two underscores in a row; Easy Chain keeps those "
+                    "for its own steps.",
+                    step=step.id,
+                    fix=Fix(
+                        "rename_step",
+                        f"Rename it to `{_single_underscores(step.id)}`",
+                        {"to": _single_underscores(step.id)},
+                    ),
+                )
+            )
     node_steps = [s for s in an.reachable if an.handlers[s].has_node]
     if an.input_step is not None and an.outgoing[an.input_step.id] and not node_steps:
         issues.append(
@@ -72,6 +90,10 @@ def _check_structure(an: FlowAnalysis) -> list[Issue]:
             )
         )
     return issues
+
+
+def _single_underscores(name: str) -> str:
+    return re.sub(r"_{2,}", "_", name)
 
 
 def _check_connections(an: FlowAnalysis) -> list[Issue]:
@@ -127,11 +149,11 @@ def _check_connections(an: FlowAnalysis) -> list[Issue]:
                     hint="Put a step such as an AI Model in between.",
                 )
             )
-        if conn.exit is not None and source.type != "decision":
+        if conn.exit is not None and not an.handlers[conn.source].exits(source):
             issues.append(
                 warning(
                     "exit_on_plain_step",
-                    "Only Decisions have exits; this connection's exit label is ignored.",
+                    "This step has no exits; this connection's exit label is ignored.",
                     step=conn.source,
                 )
             )
@@ -182,6 +204,28 @@ def _check_fields(an: FlowAnalysis) -> list[Issue]:
                         setting="fields",
                     )
                 )
+    for decl in an.spec.data:
+        if decl.update == "custom":
+            problem = (
+                check_combine(decl.combine)
+                if decl.combine.strip()
+                else ("Write the function that combines the old and new value.")
+            )
+            if problem:
+                issues.append(
+                    error(
+                        "bad_update_rule",
+                        f"The update rule for `{decl.name}`: {problem}",
+                        hint="It looks like: def combine(old, new): return new",
+                    )
+                )
+        elif decl.combine.strip():
+            issues.append(
+                warning(
+                    "update_code_unused",
+                    f"`{decl.name}` has update code, but its rule is “{decl.update}”, so the code isn't used.",
+                )
+            )
     for info in an.fields.values():
         if info.update == "merge" and info.type not in ("object", "any"):
             issues.append(
@@ -210,7 +254,13 @@ def _check_loops(an: FlowAnalysis) -> list[Issue]:
         if loop in reported:
             continue
         reported.add(loop)
-        if not any(an.steps[s].type == "decision" for s in loop):
+        in_order = sorted(loop, key=lambda s: (an.depth.get(s, 10**9), an.index[s]))
+        leaving = [
+            s
+            for s in in_order
+            if an.handlers[s].exits(an.steps[s]) and an.steps[s].type != "for_each"
+        ]
+        if not leaving:
             issues.append(
                 error(
                     "loop_without_exit",
@@ -219,13 +269,34 @@ def _check_loops(an: FlowAnalysis) -> list[Issue]:
                     hint="Add a Decision inside the loop with an exit that leaves it.",
                 )
             )
+            continue
+        decisions = [s for s in leaving if an.steps[s].type == "decision"]
+        if any(an.steps[s].settings.max_rounds for s in decisions):
+            continue
+        if any(an.steps[s].type == "ask_human" for s in leaving):
+            continue  # a person decides when to leave
+        max_steps = an.spec.settings.max_steps
+        if decisions:
+            guard = decisions[0]
+            issues.append(
+                warning(
+                    "loop_no_guard",
+                    f"This loop has no round limit; a run stops with an error after {max_steps} steps.",
+                    step=guard,
+                    setting="max_rounds",
+                    hint="Give this Decision a round limit, so the loop ends cleanly.",
+                    fix=Fix(
+                        "set_setting", "Add a round limit of 10", {"key": "max_rounds", "value": 10}
+                    ),
+                )
+            )
         else:
             issues.append(
                 warning(
                     "loop_no_guard",
-                    "This loop has no round limit; a run stops with an error after 25 steps.",
-                    step=sid,
-                    hint="Make sure a Decision in the loop eventually leaves it.",
+                    f"This loop has no round limit; a run stops with an error after {max_steps} steps.",
+                    step=leaving[0],
+                    hint="Make sure the loop eventually leaves, or use a Decision with a round limit.",
                 )
             )
     return issues

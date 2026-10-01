@@ -129,10 +129,11 @@ def reply(data: FlowData) -> dict[str, Any]:
 # ── Flow ─────────────────────────────────────────────────────────────────────
 
 
-def build_graph(checkpointer=None):
+def build_graph(checkpointer=None, *, store=None, cache=None):
     """Wire the steps into a LangGraph graph.
 
-    Pass a checkpointer (for example InMemorySaver()) to keep a Save Point after every step.
+    Pass a checkpointer (for example InMemorySaver()) to keep a Save Point after every step,
+    a store to remember side effects across retries, and a cache for cached steps.
     """
     builder = StateGraph(FlowData, input_schema=FlowInput, output_schema=FlowOutput)
 
@@ -153,22 +154,22 @@ def build_graph(checkpointer=None):
     builder.add_edge("rules", "reply")
     builder.add_edge("refuse", END)
     builder.add_edge("reply", END)
-    return builder.compile(checkpointer=checkpointer)
+    return builder.compile(checkpointer=checkpointer, store=store, cache=cache)
 
 
 graph = build_graph()
 
 
 if __name__ == "__main__":
-    # Chat in the terminal. Save Points keep the conversation between turns.
-    chat = build_graph(checkpointer=InMemorySaver())
+    app = build_graph(checkpointer=InMemorySaver())
     config = {"configurable": {"thread_id": "terminal"}}
     extra = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {"level": "beginner"}
+    # Chat in the terminal. Save Points keep the conversation between turns.
     while True:
         try:
             text = input("you> ").strip()
         except (EOFError, KeyboardInterrupt):
             break
         if text:
-            result = chat.invoke({**INPUT_DEFAULTS, **extra, "messages": [{"role": "user", "content": text}]}, config)
+            result = app.invoke({**INPUT_DEFAULTS, **extra, "messages": [{"role": "user", "content": text}]}, config)
             print("ai>", result["messages"][-1].text)

@@ -84,7 +84,21 @@ class HttpRequestHandler(StepHandler):
             advanced=True,
         ),
         FormField(key="timeout", label="Time limit (seconds)", kind="number", min=1, advanced=True),
+        FormField(
+            key="side_effect",
+            label="Send it at most once",
+            kind="switch",
+            advanced=True,
+            help="For requests that change something (send, pay, delete): a retry or a restart after "
+            "a crash reuses the first answer instead of sending again, and the request carries an "
+            "Idempotency-Key header. On by default for POST, PUT, PATCH and DELETE.",
+            technical="idempotency key + LangGraph store",
+        ),
     ]
+
+    def side_effect(self, step: Any) -> bool:
+        s = step.settings
+        return s.side_effect if s.side_effect is not None else s.method != "GET"
 
     def _texts(self, step: Any) -> list[tuple[str, str]]:
         s = step.settings
@@ -161,22 +175,31 @@ class HttpRequestHandler(StepHandler):
         if is_json and not content_type:
             headers["Content-Type"] = "application/json"
         headers.update(s.headers)
+        once = self.side_effect(step)
+        # Inside send() when the request must go at most once.
+        pad = "    " if once else ""
         header_items = [f"{py_str(k)}: {templated(v)}" for k, v in headers.items()]
+        if once and not any(k.lower() == "idempotency-key" for k in headers):
+            header_items.append('"Idempotency-Key": key')
         header_src = "{" + ", ".join(header_items) + "}"
         if len(header_src) > 70:
             header_src = (
-                "{\n" + "".join(f"            {item},\n" for item in header_items) + "        }"
+                "{\n"
+                + "".join(f"{pad}            {item},\n" for item in header_items)
+                + f"{pad}        }}"
             )
 
         args = [
-            f"        {py_str(s.method)},",
-            f"        {templated(s.url, 'fill_url')},",
-            f"        headers={header_src},",
+            f"{pad}        {py_str(s.method)},",
+            f"{pad}        {templated(s.url, 'fill_url')},",
+            f"{pad}        headers={header_src},",
         ]
         if body.strip():
-            args.append(f"        content={templated(body, 'fill_json' if is_json else 'fill')},")
-        args.append(f"        timeout={py_literal(s.timeout)},")
-        args.append("        follow_redirects=True,")
+            args.append(
+                f"{pad}        content={templated(body, 'fill_json' if is_json else 'fill')},"
+            )
+        args.append(f"{pad}        timeout={py_literal(s.timeout)},")
+        args.append(f"{pad}        follow_redirects=True,")
 
         if s.response == "json":
             value = "response.json()"
@@ -189,15 +212,35 @@ class HttpRequestHandler(StepHandler):
             what = "the page text"
         if s.max_chars and s.response != "json":
             value += f"[:{s.max_chars}]"
-        doc = docstring(
-            f"{self.title(step)}\n\n{s.method} {s.url} and save {what} as `{s.save_as}`."
-        )
+        summary = f"{s.method} {s.url} and save {what} as `{s.save_as}`."
+        if once:
+            summary += (
+                " It changes something elsewhere, so it is sent at most once: a retry or a resume"
+                " after a crash reuses the first answer."
+            )
+        doc = docstring(f"{self.title(step)}\n\n{summary}")
+        if not once:
+            code = (
+                f"def {fn}(data: {ctx.data_class}) -> dict[str, Any]:\n"
+                f"{doc}\n"
+                "    response = httpx.request(\n" + "\n".join(args) + "\n    )\n"
+                "    response.raise_for_status()\n"
+                f"    return {{{py_str(s.save_as)}: {value}}}"
+            )
+            return StepCode([code], node=fn)
+        key_fn = ctx.helper("idempotency_key")
+        run_once = ctx.helper("run_once")
         code = (
-            f"def {fn}(data: FlowData) -> dict[str, Any]:\n"
+            f"def {fn}(data: {ctx.data_class}) -> dict[str, Any]:\n"
             f"{doc}\n"
-            "    response = httpx.request(\n" + "\n".join(args) + "\n    )\n"
-            "    response.raise_for_status()\n"
-            f"    return {{{py_str(s.save_as)}: {value}}}"
+            f"    key = {key_fn}()\n"
+            "\n"
+            "    def send() -> Any:\n"
+            "        response = httpx.request(\n" + "\n".join(args) + "\n        )\n"
+            "        response.raise_for_status()\n"
+            f"        return {value}\n"
+            "\n"
+            f"    return {{{py_str(s.save_as)}: {run_once}(key, send)}}"
         )
         return StepCode([code], node=fn)
 
@@ -374,6 +417,15 @@ class CodeHandler(StepHandler):
             advanced=True,
             pro=True,
         ),
+        FormField(
+            key="side_effect",
+            label="Run it at most once",
+            kind="switch",
+            advanced=True,
+            help="Turn on when the code changes something elsewhere (sends an email, writes a file): "
+            "a retry or a restart after a crash reuses the first result instead of running it again.",
+            technical="idempotency key + LangGraph store",
+        ),
     ]
 
     def analyse(self, step: Any) -> CodeAnalysis:
@@ -474,10 +526,12 @@ class CodeHandler(StepHandler):
         fn = ctx.fn(step.id)
         info = self.analyse(step)
         code = step.settings.code
+        once = step.settings.side_effect and info.func is not None
+        user_fn = ctx.names.claim(f"{step.id}_code") if once else fn
         if info.func is not None:
             lines = code.split("\n")
             idx = info.func.lineno - 1
-            lines[idx] = re.sub(r"\bdef\s+run\s*\(", f"def {fn}(", lines[idx], count=1)
+            lines[idx] = re.sub(r"\bdef\s+run\s*\(", f"def {user_fn}(", lines[idx], count=1)
             # Move plain imports up to the module's import block.
             for start, end, specs in info.imports:
                 for module, name, alias in specs:
@@ -494,4 +548,14 @@ class CodeHandler(StepHandler):
         for req in step.settings.requirements:
             if req not in ctx.extra_requirements:
                 ctx.extra_requirements.append(req)
-        return StepCode([header + "\n" + code], node=fn)
+        if not once:
+            return StepCode([header + "\n" + code], node=fn)
+        wrapper = (
+            f"def {fn}(data: {ctx.data_class}) -> dict[str, Any]:\n"
+            + docstring(
+                f"{self.title(step)}\n\nRuns {user_fn} at most once: a retry or a resume after a crash "
+                "reuses its first result."
+            )
+            + f"\n    return {ctx.helper('run_once')}({ctx.helper('idempotency_key')}(), lambda: {user_fn}(data))"
+        )
+        return StepCode([header + "\n" + code, wrapper], node=fn)

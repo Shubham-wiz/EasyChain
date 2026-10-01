@@ -48,6 +48,14 @@ class StepCode:
     definitions: list[str] = field(default_factory=list)
     node: str | None = None
     router: str | None = None
+    # Lines for build_graph() that replace the usual edges (e.g. For Each's Send).
+    wiring: list[str] | None = None
+    # Extra add_node keyword arguments (e.g. destinations for a Jump).
+    node_kwargs: dict[str, str] = field(default_factory=dict)
+    # More add_node lines this step needs (e.g. For Each's "collect results" node).
+    extra_nodes: list[str] = field(default_factory=list)
+    # The node function is ``async def``.
+    is_async: bool = False
 
     def text(self) -> str:
         return "\n\n\n".join(d.strip("\n") for d in self.definitions)
@@ -100,6 +108,14 @@ class StepHandler:
     def exits(self, step: Any) -> list[str]:
         return []
 
+    def is_async(self, step: Any, an: FlowAnalysis) -> bool:
+        """Whether the step's node function is ``async def``."""
+        return False
+
+    def system_fields(self, step: Any, an: FlowAnalysis) -> list[Any]:
+        """Bookkeeping Flow Data fields this step needs (FieldInfo objects)."""
+        return []
+
     # ── checks and code ──────────────────────────────────────────────────────
 
     def check(self, step: Any, an: FlowAnalysis) -> list[Issue]:
@@ -110,3 +126,20 @@ class StepHandler:
 
     def title(self, step: Any) -> str:
         return f"{self.label} · {step.name or step.id}"
+
+
+def template_value(text: str, ctx: EmitContext) -> str:
+    """Python source for a value typed as text with {field} placeholders.
+
+    A lone ``{field}`` keeps the field's value as it is (a list stays a list).
+    """
+    import re
+
+    from ..compiler.pycode import py_str
+
+    whole = re.fullmatch(r"\{([a-z][a-z0-9_]*)\}", text.strip())
+    if whole:
+        return f"data.get({py_str(whole.group(1))})"
+    if re.search(r"\{(?:secret:)?[A-Za-z_][A-Za-z0-9_]*\}", text):
+        return f"{ctx.helper('fill')}({py_str(text)}, data)"
+    return py_str(text)

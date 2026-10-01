@@ -3,13 +3,20 @@
 Events (plain dicts, JSON-ready) drive the canvas animation, the run trace and
 the CLI output:
 
-- run_started   {run_id, thread_id, flow, stand_in}
-- step_started  {step, input}
+- run_started   {run_id, thread_id, flow, stand_in, action}
+- step_started  {step, input, item?}
 - token         {step, text}
-- step_finished {step, output, duration_ms, usage, cost, model}
-- route         {step, exit}           (a Decision picked an exit)
+- step_finished {step, output, duration_ms, usage, cost, model, item?}
+- route         {step, exit}           (a Decision, Jump, Ask a Human or For Each took an exit)
+- progress      {step, done, total}    (For Each)
+- step_paused   {step, interrupt_id, request}  (Ask a Human is waiting)
+- save_point    {checkpoint_id, next, step_number}
 - step_failed   {step, error}
-- run_finished  {status, output, duration_ms, usage, cost, error?, issues?}
+- paused        {reason, interrupts, next}
+- run_finished  {status, output, duration_ms, usage, cost, checkpoint_id, error?, issues?}
+
+``status`` is ok, error, paused (waiting for a person or at a breakpoint) or cancelled.
+Events from steps inside a Sub-flow carry ``path``: the Sub-flow steps leading to them.
 """
 
 from __future__ import annotations
@@ -17,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
+import json
 import os
 import threading
 import time
@@ -24,20 +32,26 @@ import uuid
 from collections import OrderedDict
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import AIMessageChunk, BaseMessage
+from langgraph.errors import GraphRecursionError
+from langgraph.graph import END
+from langgraph.types import Command
 
 from ..compiler import CompileError, compile_flow
-from ..compiler.codegen import CompiledFlow
+from ..compiler.analysis import EACH_ITEM, WHEN_DONE, FlowAnalysis, Resolver
+from ..compiler.codegen import DEFAULT_MAX_STEPS, CompiledFlow, exit_targets
 from ..providers import PROVIDERS, estimate_cost
 from ..spec.models import FlowSpec
+from ..steps.flow_control import index_field
 from .errors import explain
 from .gateway import RunSettings, reset_settings, use_settings
 from .inputs import InputError, prepare_inputs
 from .loader import load_graph
+from .resources import Resources, memory_resources
 
 MAX_STRING = 20_000
 _ROLES = {"human": "user", "ai": "assistant", "system": "system", "tool": "tool"}
@@ -90,14 +104,18 @@ class _Redactor:
 
 
 class UsageTracker(BaseCallbackHandler):
-    """Collects tokens and cost per step from model calls."""
+    """Collects tokens and cost per step run from model calls.
+
+    Calls are keyed by the LangGraph task namespace (``node:task_id``, nested with ``|``
+    inside sub-flows), so parallel runs of one step and steps inside sub-flows stay apart.
+    """
 
     raise_error = False
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._calls: dict[UUID, tuple[str | None, str | None, str | None]] = {}
-        self.by_step: dict[str, dict[str, Any]] = {}
+        self.by_task: dict[str, dict[str, Any]] = {}
 
     def on_chat_model_start(
         self,
@@ -109,17 +127,14 @@ class UsageTracker(BaseCallbackHandler):
         **kwargs: Any,
     ) -> None:
         md = metadata or {}
+        key = md.get("langgraph_checkpoint_ns") or md.get("langgraph_node")
         with self._lock:
-            self._calls[run_id] = (
-                md.get("langgraph_node"),
-                md.get("ls_provider"),
-                md.get("ls_model_name"),
-            )
+            self._calls[run_id] = (key, md.get("ls_provider"), md.get("ls_model_name"))
 
     def on_llm_end(self, response: Any, *, run_id: UUID, **kwargs: Any) -> None:
         with self._lock:
-            node, provider, model = self._calls.pop(run_id, (None, None, None))
-        if node is None:
+            key, provider, model = self._calls.pop(run_id, (None, None, None))
+        if key is None:
             return
         usage: dict[str, int] = {}
         try:
@@ -142,22 +157,34 @@ class UsageTracker(BaseCallbackHandler):
             else (estimate_cost(f"{provider}:{model}", inp, out) if provider and model else None)
         )
         with self._lock:
-            entry = self.by_step.setdefault(
-                node,
-                {"input_tokens": 0, "output_tokens": 0, "cost": 0.0, "model": None, "calls": 0},
-            )
-            entry["input_tokens"] += inp
-            entry["output_tokens"] += out
-            entry["calls"] += 1
+            entry = self.by_task.setdefault(key, _empty_usage())
+            _add_usage(entry, {"input_tokens": inp, "output_tokens": out, "cost": cost, "calls": 1})
             entry["model"] = model if not stand_in else "stand-in"
-            if cost is None or entry["cost"] is None:
-                entry["cost"] = None
-            else:
-                entry["cost"] += cost
 
-    def take(self, node: str) -> dict[str, Any] | None:
+    def take(self, key: str) -> dict[str, Any] | None:
         with self._lock:
-            return self.by_step.pop(node, None)
+            return self.by_task.pop(key, None)
+
+
+def _empty_usage() -> dict[str, Any]:
+    return {"input_tokens": 0, "output_tokens": 0, "cost": 0.0, "model": None, "calls": 0}
+
+
+def _add_usage(into: dict[str, Any], usage: dict[str, Any]) -> None:
+    into["input_tokens"] += usage.get("input_tokens", 0)
+    into["output_tokens"] += usage.get("output_tokens", 0)
+    into["calls"] = into.get("calls", 0) + usage.get("calls", 0)
+    if into["cost"] is None or usage.get("cost") is None:
+        into["cost"] = None
+    else:
+        into["cost"] += usage["cost"]
+    if usage.get("model") and not into.get("model"):
+        into["model"] = usage["model"]
+
+
+# How a run begins: a new run, an answer to Ask a Human, carrying on after a pause or an
+# error, or re-running from an earlier Save Point (time travel).
+RunAction = Literal["start", "resume", "continue", "fork"]
 
 
 @dataclass
@@ -166,7 +193,24 @@ class RunOptions:
     run_id: str | None = None
     stand_in: bool = False
     redact: list[str] = field(default_factory=list)
-    recursion_limit: int = 25
+    recursion_limit: int | None = None
+    action: RunAction = "start"
+    # For "resume": the answer, or {interrupt_id: answer} when several steps wait.
+    resume: Any = None
+    # For "fork": the Save Point to start from, and Flow Data to change there first.
+    checkpoint_id: str | None = None
+    update: dict[str, Any] | None = None
+    # Breakpoints: pause before or after these steps.
+    pause_before: list[str] = field(default_factory=list)
+    pause_after: list[str] = field(default_factory=list)
+    resources: Resources | None = None
+    # Looks up flows used as Sub-flows.
+    resolve: Resolver | None = None
+    flow_id: str | None = None
+    # Set to stop the run; it ends with status "cancelled" and can be continued later.
+    cancel: asyncio.Event | None = None
+    # Saved with every Save Point (the run id is always added).
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 def _now() -> float:
@@ -176,17 +220,94 @@ def _now() -> float:
 _compiled_cache: OrderedDict[str, CompiledFlow] = OrderedDict()
 
 
-def compile_cached(spec: FlowSpec) -> CompiledFlow:
-    """Compile once per distinct spec; repeated runs of the same flow skip the compiler."""
-    key = hashlib.sha256(spec.model_dump_json().encode()).hexdigest()
+def _flow_key(spec: FlowSpec, resolve: Resolver | None, seen: tuple[str, ...] = ()) -> str:
+    """A key that changes when the flow, or any flow it uses as a Sub-flow, changes."""
+    from ..steps.flow_control import subflow_ids
+
+    parts = [spec.model_dump_json()]
+    if resolve is not None:
+        for flow_id in subflow_ids(spec):
+            if flow_id in seen:
+                continue
+            child = resolve(flow_id)
+            parts.append(
+                f"{flow_id}={_flow_key(child, resolve, (*seen, flow_id)) if child else '-'}"
+            )
+    return hashlib.sha256("\n".join(parts).encode()).hexdigest()
+
+
+def compile_cached(
+    spec: FlowSpec, resolve: Resolver | None = None, flow_id: str | None = None
+) -> CompiledFlow:
+    """Compile once per distinct flow; repeated runs of the same flow skip the compiler."""
+    key = f"{flow_id}:{_flow_key(spec, resolve, (flow_id,) if flow_id else ())}"
     if key in _compiled_cache:
         _compiled_cache.move_to_end(key)
         return _compiled_cache[key]
-    compiled = compile_flow(spec)
+    compiled = compile_flow(spec, resolve=resolve, flow_id=flow_id)
     _compiled_cache[key] = compiled
     while len(_compiled_cache) > 64:
         _compiled_cache.popitem(last=False)
     return compiled
+
+
+@dataclass
+class _Flow:
+    """One flow inside a run: the root, or a Sub-flow reached through ``path``."""
+
+    analysis: FlowAnalysis
+    routers: dict[str, str]
+    node_steps: dict[str, str]
+    jumps: dict[str, dict[str, str]]
+
+
+def _jump_targets(an: FlowAnalysis) -> dict[str, dict[str, str]]:
+    """Jump step -> {next node: exit label}."""
+    out: dict[str, dict[str, str]] = {}
+    for sid, step in an.steps.items():
+        if step.type != "jump":
+            continue
+        targets: dict[str, str] = {}
+        for label, target in exit_targets(an, sid).items():
+            node = END if target == "END" else json.loads(target)
+            targets.setdefault(node, label)
+        plain = [c for c in an.outgoing[sid] if c.exit is None]
+        if plain and not step.settings.exits:
+            node = END if an.steps[plain[0].target].type == "output" else plain[0].target
+            targets.setdefault(node, step.settings.otherwise)
+        out[sid] = targets
+    return out
+
+
+class _Flows:
+    def __init__(self, compiled: CompiledFlow):
+        self.compiled = compiled
+        an = compiled.analysis
+        self.root = _Flow(an, compiled.routers, compiled.node_steps, _jump_targets(an))
+        self._cache: dict[tuple[str, ...], _Flow | None] = {(): self.root}
+
+    def at(self, path: tuple[str, ...]) -> _Flow | None:
+        if path in self._cache:
+            return self._cache[path]
+        parent = self.at(path[:-1])
+        found: _Flow | None = None
+        if parent is not None:
+            step = parent.analysis.steps.get(path[-1])
+            if step is not None and step.type == "subflow":
+                parts = self.compiled.children.get(step.settings.flow)
+                if parts is not None:
+                    found = _Flow(
+                        parts.analysis,
+                        parts.routers,
+                        parts.node_steps,
+                        _jump_targets(parts.analysis),
+                    )
+        self._cache[path] = found
+        return found
+
+
+def _path(ns: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(part.split(":", 1)[0] for part in ns)
 
 
 async def stream_run(
@@ -200,6 +321,7 @@ async def stream_run(
     thread_id = opts.thread_id or uuid.uuid4().hex
     redact = _Redactor(opts.redact)
     started = time.perf_counter()
+    action = opts.action
 
     def event(kind: str, **data: Any) -> dict[str, Any]:
         return redact({"type": kind, "run_id": run_id, "ts": _now(), **data})
@@ -209,13 +331,23 @@ async def stream_run(
             "run_finished",
             status=status,
             duration_ms=round((time.perf_counter() - started) * 1000, 1),
+            thread_id=thread_id,
             **data,
         )
 
+    def run_started() -> dict[str, Any]:
+        return event(
+            "run_started",
+            thread_id=thread_id,
+            flow=spec.name,
+            stand_in=opts.stand_in,
+            action=action,
+        )
+
     try:
-        compiled = compiled or compile_cached(spec)
+        compiled = compiled or compile_cached(spec, opts.resolve, opts.flow_id)
     except CompileError as exc:
-        yield event("run_started", thread_id=thread_id, flow=spec.name, stand_in=opts.stand_in)
+        yield run_started()
         yield finished(
             "error",
             error={
@@ -227,131 +359,384 @@ async def stream_run(
         )
         return
     an = compiled.analysis
-    try:
-        prepared = prepare_inputs(compiled, inputs)
-    except InputError as exc:
-        yield event("run_started", thread_id=thread_id, flow=spec.name, stand_in=opts.stand_in)
-        yield finished(
-            "error",
-            error={"kind": "bad_input", "message": str(exc), "problems": exc.problems, "fixes": []},
-        )
-        return
+    flows = _Flows(compiled)
+    prepared: dict[str, Any] = {}
+    if action == "start":
+        try:
+            prepared = prepare_inputs(compiled, inputs)
+        except InputError as exc:
+            yield run_started()
+            yield finished(
+                "error",
+                error={
+                    "kind": "bad_input",
+                    "message": str(exc),
+                    "problems": exc.problems,
+                    "fixes": [],
+                },
+            )
+            return
+        for name, value in compiled.round_counters.items():
+            prepared.setdefault(name, value)
 
-    module, graph = await asyncio.to_thread(load_graph, compiled.source, compiled.module_name)
+    res = opts.resources or memory_resources()
+    module, graph = await asyncio.to_thread(load_graph, compiled.source, compiled.module_name, res)
     tracker = UsageTracker()
     config: dict[str, Any] = {
         "configurable": {"thread_id": thread_id},
         "callbacks": [tracker],
-        "recursion_limit": opts.recursion_limit,
+        "recursion_limit": opts.recursion_limit
+        or compiled.run_config.get("recursion_limit", DEFAULT_MAX_STEPS),
         "run_name": spec.name,
+        "metadata": {**opts.metadata, "run_id": run_id},
     }
-    yield event("run_started", thread_id=thread_id, flow=spec.name, stand_in=opts.stand_in)
-    if an.input_step is not None:
+    if compiled.run_config.get("max_concurrency"):
+        config["max_concurrency"] = compiled.run_config["max_concurrency"]
+    thread_config = {"configurable": {"thread_id": thread_id}}
+
+    graph_input: Any
+    last_values: dict[str, Any] = dict(prepared)
+    if action == "start":
+        graph_input = prepared
+    else:
+        try:
+            graph_input, last_values = await _prepare_action(graph, opts, config, thread_config)
+        except _NotResumable as exc:
+            yield run_started()
+            yield finished("error", error={"kind": exc.kind, "message": str(exc), "fixes": []})
+            return
+
+    yield run_started()
+    if action == "start" and an.input_step is not None:
         sid = an.input_step.id
         yield event("step_started", step=sid, input={})
         yield event("step_finished", step=sid, output=to_jsonable(prepared), duration_ms=0)
 
-    running: dict[str, float] = {}
-    task_errors: dict[str, str] = {}
-    executed: set[str] = set()
+    # Per task (keyed by its namespace): when it started and which step it is.
+    running: dict[str, tuple[float, str, tuple[str, ...]]] = {}
+    task_errors: dict[str, tuple[str, tuple[str, ...], str]] = {}
     task_inputs: dict[str, dict[str, Any]] = {}
-    last_values: dict[str, Any] = dict(prepared)
+    executed: set[str] = set()
+    child_usage: dict[str, dict[str, Any]] = {}
     totals = {"input_tokens": 0, "output_tokens": 0}
     total_cost: float | None = 0.0
+    # For Each: (path, step) -> [started, done, total]
+    each: dict[tuple[tuple[str, ...], str], list[Any]] = {}
+    pending_jump: dict[tuple[str, ...], str] = {}
+    paused_steps: dict[str, dict[str, Any]] = {}
+    last_checkpoint: str | None = None
+
+    def where(path: tuple[str, ...], **data: Any) -> dict[str, Any]:
+        return {**data, "path": list(path)} if path else data
+
+    def jump_route(path: tuple[str, ...], next_node: str) -> dict[str, Any] | None:
+        jump = pending_jump.pop(path, None)
+        flow = flows.at(path)
+        if jump is None or flow is None:
+            return None
+        label = flow.jumps.get(jump, {}).get(next_node)
+        return event("route", **where(path, step=jump, exit=label)) if label else None
+
+    stream_modes = ["tasks", "messages", "values", "checkpoints"]
+    stream_kwargs: dict[str, Any] = {
+        "stream_mode": stream_modes,
+        "subgraphs": True,
+        "durability": "sync" if res.durable else "async",
+    }
+    if opts.pause_before:
+        stream_kwargs["interrupt_before"] = list(opts.pause_before)
+    if opts.pause_after:
+        stream_kwargs["interrupt_after"] = list(opts.pause_after)
+
+    queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
+
+    async def produce() -> None:
+        try:
+            async with contextlib.aclosing(
+                graph.astream(graph_input, config, **stream_kwargs)
+            ) as stream:
+                async for item in stream:
+                    await queue.put(("item", item))
+            await queue.put(("done", None))
+        except asyncio.CancelledError:
+            await queue.put(("cancelled", None))
+            raise
+        except BaseException as exc:  # handed to the consumer below
+            await queue.put(("error", exc))
 
     token = use_settings(RunSettings(stand_in=opts.stand_in))
+    producer = asyncio.create_task(produce())
+    stop_wait = asyncio.create_task(opts.cancel.wait()) if opts.cancel else None
+    cancelled = False
+    failure: BaseException | None = None
     try:
-        async for mode, payload in graph.astream(
-            prepared, config, stream_mode=["tasks", "messages", "values"]
-        ):
-            if mode == "tasks":
-                sid = payload.get("name")
-                if sid not in an.steps:
-                    continue
-                if "input" in payload:
-                    running[sid] = time.perf_counter()
-                    reads = an.reads.get(sid, set())
-                    state = payload.get("input") or {}
-                    task_inputs[sid] = state
+        while True:
+            getter = asyncio.create_task(queue.get())
+            waiting = {getter} | ({stop_wait} if stop_wait else set())
+            done, _ = await asyncio.wait(waiting, return_when=asyncio.FIRST_COMPLETED)
+            if getter not in done:
+                getter.cancel()
+                producer.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await producer
+                cancelled = True
+                break
+            kind, item = getter.result()
+            if kind == "done":
+                break
+            if kind == "error":
+                failure = item
+                break
+            if kind == "cancelled":
+                cancelled = True
+                break
+            ns, mode, payload = item
+            path = _path(ns)
+            if mode == "values":
+                if not ns:
+                    last_values = payload
+                continue
+            if mode == "checkpoints":
+                if not ns:
+                    cp_id = payload["config"]["configurable"].get("checkpoint_id")
+                    last_checkpoint = cp_id
                     yield event(
-                        "step_started",
-                        step=sid,
-                        input=to_jsonable({k: v for k, v in state.items() if k in reads}),
+                        "save_point",
+                        checkpoint_id=cp_id,
+                        next=list(payload.get("next") or []),
+                        step_number=(payload.get("metadata") or {}).get("step"),
                     )
-                    continue
-                if payload.get("error"):
-                    task_errors[sid] = str(payload["error"])
-                    continue
-                began = running.pop(sid, time.perf_counter())
-                executed.add(sid)
-                usage = tracker.take(sid)
-                data: dict[str, Any] = {
-                    "step": sid,
-                    "output": to_jsonable(payload.get("result") or {}),
-                    "duration_ms": round((time.perf_counter() - began) * 1000, 1),
-                }
-                if usage:
-                    data["usage"] = {
-                        "input_tokens": usage["input_tokens"],
-                        "output_tokens": usage["output_tokens"],
-                    }
-                    data["cost"] = usage["cost"]
-                    data["model"] = usage["model"]
-                    totals["input_tokens"] += usage["input_tokens"]
-                    totals["output_tokens"] += usage["output_tokens"]
-                    total_cost = (
-                        None
-                        if (total_cost is None or usage["cost"] is None)
-                        else total_cost + usage["cost"]
-                    )
-                yield event("step_finished", **data)
-                if sid in compiled.routers:
-                    # A Decision's router reads the state as it is right after the step.
-                    state = {**task_inputs.pop(sid, {}), **(payload.get("result") or {})}
-                    try:
-                        label = getattr(module, compiled.routers[sid])(state)
-                    except Exception:  # routing errors surface from LangGraph itself
-                        label = None
-                    if label is not None:
-                        yield event("route", step=sid, exit=label)
-            elif mode == "messages":
+                continue
+            if mode == "messages":
                 chunk, meta = payload
                 # Only model output streams as tokens; messages a step writes to state don't.
-                if not isinstance(chunk, AIMessageChunk):
+                if not isinstance(chunk, AIMessageChunk) or not chunk.text:
                     continue
-                sid = meta.get("langgraph_node")
-                text = chunk.text
-                if sid in an.steps and text:
-                    yield event("token", step=sid, text=text)
-            elif mode == "values":
-                last_values = payload
-    except Exception as exc:
-        failed = next(iter(task_errors), None) or (
-            next(iter(running)) if len(running) == 1 else None
-        )
-        if failed is None and running:
-            failed = next(iter(running))
-        info = explain(exc, an.steps.get(failed) if failed else None)
-        if failed:
-            yield event("step_failed", step=failed, error=info)
-        yield finished("error", error=info, step=failed, usage=totals, cost=total_cost)
-        return
+                node = meta.get("langgraph_node")
+                flow = flows.at(path)
+                if flow is not None and node in flow.analysis.steps:
+                    yield event("token", **where(path, step=node, text=chunk.text))
+                continue
+            if mode != "tasks":
+                continue
+
+            flow = flows.at(path)
+            name = payload.get("name")
+            if flow is None or name is None:
+                continue
+            fan = flow.analysis
+            step_id = flow.node_steps.get(name, name)
+            if step_id not in fan.steps:
+                continue
+            is_done_node = step_id != name
+            key = "|".join([*ns, f"{name}:{payload.get('id')}"])
+
+            if "input" in payload:
+                if (ev := jump_route(path, name)) is not None:
+                    yield ev
+                if is_done_node:
+                    continue
+                state = payload.get("input") or {}
+                running[key] = (time.perf_counter(), step_id, path)
+                task_inputs[key] = state
+                extra: dict[str, Any] = {}
+                parent_each = fan.foreach_body.get(step_id)
+                if parent_each is not None:
+                    extra["item"] = state.get(index_field(fan.steps[parent_each]))
+                step = fan.steps[step_id]
+                if step.type == "for_each":
+                    items = state.get(fan.handlers[step_id].items_field(step, fan) or "")
+                    total = len(items) if isinstance(items, list) else (0 if items is None else 1)
+                    each[(path, step_id)] = [time.perf_counter(), 0, total]
+                reads = fan.reads.get(step_id, set())
+                yield event(
+                    "step_started",
+                    **where(
+                        path,
+                        step=step_id,
+                        input=to_jsonable({k: v for k, v in state.items() if k in reads}),
+                        **extra,
+                    ),
+                )
+                continue
+
+            began, _, _ = running.pop(key, (time.perf_counter(), step_id, path))
+            if payload.get("error"):
+                task_errors[key] = (step_id, path, str(payload["error"]))
+                continue
+            interrupts = payload.get("interrupts") or []
+            if interrupts:
+                for intr in interrupts:
+                    paused_steps.setdefault(intr["id"], {"step": step_id, "path": list(path)})
+                if not path or fan.steps[step_id].type == "ask_human":
+                    first = interrupts[0]
+                    yield event(
+                        "step_paused",
+                        **where(
+                            path,
+                            step=step_id,
+                            interrupt_id=first["id"],
+                            request=to_jsonable(first["value"]),
+                        ),
+                    )
+                continue
+            executed.add(step_id)
+            result = payload.get("result") or {}
+            step = fan.steps[step_id]
+
+            if step.type == "for_each" and not is_done_node:
+                yield event("route", **where(path, step=step_id, exit=EACH_ITEM))
+                counter = each.get((path, step_id))
+                if counter is not None and counter[2]:
+                    yield event("progress", **where(path, step=step_id, done=0, total=counter[2]))
+                continue
+
+            own = tracker.take(key)
+            nested = child_usage.pop(key, None)
+            if own:
+                totals["input_tokens"] += own["input_tokens"]
+                totals["output_tokens"] += own["output_tokens"]
+                total_cost = (
+                    None
+                    if (total_cost is None or own["cost"] is None)
+                    else total_cost + own["cost"]
+                )
+                # Count it toward the Sub-flow steps this task runs inside.
+                parts = key.split("|")
+                for depth in range(1, len(parts)):
+                    _add_usage(child_usage.setdefault("|".join(parts[:depth]), _empty_usage()), own)
+            usage: dict[str, Any] | None = None
+            if own or nested:
+                usage = _empty_usage()
+                for part in (own, nested):
+                    if part:
+                        _add_usage(usage, part)
+
+            data: dict[str, Any] = {"step": step_id, "output": to_jsonable(result)}
+            if is_done_node:
+                counter = each.pop((path, step_id), None)
+                began = counter[0] if counter else began
+            data["duration_ms"] = round((time.perf_counter() - began) * 1000, 1)
+            parent_each = fan.foreach_body.get(step_id)
+            if parent_each is not None:
+                data["item"] = task_inputs.get(key, {}).get(index_field(fan.steps[parent_each]))
+            if usage:
+                data["usage"] = {
+                    "input_tokens": usage["input_tokens"],
+                    "output_tokens": usage["output_tokens"],
+                }
+                data["cost"] = usage["cost"]
+                data["model"] = usage["model"]
+            yield event("step_finished", **where(path, **data))
+            if is_done_node:
+                yield event("route", **where(path, step=step_id, exit=WHEN_DONE))
+            elif parent_each is not None:
+                counter = each.get((path, parent_each))
+                if counter is not None:
+                    counter[1] += 1
+                    yield event(
+                        "progress",
+                        **where(path, step=parent_each, done=counter[1], total=counter[2]),
+                    )
+            if step_id in flow.routers and not is_done_node:
+                # A router reads the state as it is right after the step.
+                state = {**task_inputs.pop(key, {}), **result}
+                try:
+                    label = getattr(module, flow.routers[step_id])(state)
+                except Exception:  # routing errors surface from LangGraph itself
+                    label = None
+                if isinstance(label, str):
+                    yield event("route", **where(path, step=step_id, exit=label))
+            else:
+                task_inputs.pop(key, None)
+            if step.type == "jump":
+                pending_jump[path] = step_id
     finally:
+        if stop_wait is not None:
+            stop_wait.cancel()
+        if not producer.done():
+            producer.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await producer
         with contextlib.suppress(ValueError):  # generator closed from another context
             reset_settings(token)
 
-    output_names = compiled.output_fields
-    output = (
-        {k: v for k, v in last_values.items() if k in output_names}
-        if output_names
-        else dict(last_values)
-    )
+    if failure is not None:
+        errors = list(task_errors.values())
+        # The deepest failure is the real one; the steps around it fail because of it.
+        errors.sort(key=lambda e: -len(e[1]))
+        failed_step, failed_path = (errors[0][0], errors[0][1]) if errors else (None, ())
+        if failed_step is None and running:
+            _, failed_step, failed_path = next(iter(running.values()))
+        flow = flows.at(failed_path) if failed_step else None
+        step_obj = flow.analysis.steps.get(failed_step) if flow and failed_step else None
+        if isinstance(failure, GraphRecursionError):
+            info = _recursion_error(compiled, config["recursion_limit"])
+        else:
+            info = explain(failure, step_obj)
+        top = failed_path[0] if failed_path else failed_step
+        if failed_step:
+            yield event("step_failed", **where(failed_path, step=failed_step, error=info))
+            if failed_path:
+                yield event("step_failed", step=top, error=info)
+        yield finished(
+            "error",
+            error=info,
+            step=top,
+            usage=totals,
+            cost=total_cost,
+            checkpoint_id=last_checkpoint,
+        )
+        return
+
+    if cancelled:
+        yield finished(
+            "cancelled",
+            output=to_jsonable(_outputs(compiled, last_values)),
+            usage=totals,
+            cost=total_cost,
+            checkpoint_id=last_checkpoint,
+        )
+        return
+
+    snapshot = await graph.aget_state(thread_config)
+    last_checkpoint = snapshot.config["configurable"].get("checkpoint_id") or last_checkpoint
+    if snapshot.values:
+        last_values = snapshot.values
+    output = _outputs(compiled, last_values)
+    if snapshot.next:
+        waiting = [
+            {
+                "id": intr.id,
+                **paused_steps.get(intr.id, _interrupt_step(intr.value)),
+                "request": to_jsonable(intr.value),
+            }
+            for intr in snapshot.interrupts
+        ]
+        reason = "ask_human" if waiting else "breakpoint"
+        yield event("paused", reason=reason, interrupts=waiting, next=list(snapshot.next))
+        yield finished(
+            "paused",
+            reason=reason,
+            interrupts=waiting,
+            next=list(snapshot.next),
+            output=to_jsonable(output),
+            usage=totals,
+            cost=total_cost,
+            checkpoint_id=last_checkpoint,
+        )
+        return
+
+    if (ev := jump_route((), END)) is not None:
+        yield ev
     reply = None
     if an.chat and last_values.get("messages"):
         last = last_values["messages"][-1]
         reply = last.text if isinstance(last, BaseMessage) else str(last)
     for out_step in an.output_steps:
-        if any(c.source in executed for c in an.incoming[out_step.id]):
+        if any(c.source in executed for c in an.incoming[out_step.id]) or (
+            action != "start" and an.incoming[out_step.id]
+        ):
             yield event("step_started", step=out_step.id, input={})
             yield event(
                 "step_finished", step=out_step.id, output=to_jsonable(output), duration_ms=0
@@ -362,13 +747,80 @@ async def stream_run(
         reply=reply,
         usage=totals,
         cost=total_cost,
-        thread_id=thread_id,
+        checkpoint_id=last_checkpoint,
     )
+
+
+class _NotResumable(Exception):
+    def __init__(self, kind: str, message: str):
+        super().__init__(message)
+        self.kind = kind
+
+
+async def _prepare_action(
+    graph: Any, opts: RunOptions, config: dict[str, Any], thread_config: dict[str, Any]
+) -> tuple[Any, dict[str, Any]]:
+    """The graph input and the Flow Data so far for resume, continue and fork."""
+    if opts.action == "fork":
+        if not opts.checkpoint_id:
+            raise _NotResumable("no_save_point", "Pick the Save Point to run from.")
+        at = {
+            "configurable": {
+                **thread_config["configurable"],
+                "checkpoint_ns": "",
+                "checkpoint_id": opts.checkpoint_id,
+            }
+        }
+        snapshot = await graph.aget_state(at)
+        if not snapshot.config or snapshot.created_at is None:
+            raise _NotResumable("no_save_point", "That Save Point doesn't exist (any more).")
+        if opts.update:
+            try:
+                at = await graph.aupdate_state(at, opts.update)
+            except Exception as exc:
+                raise _NotResumable(
+                    "bad_update", f"Couldn't change the Flow Data there: {exc}"
+                ) from exc
+        config["configurable"].update(
+            {k: v for k, v in at["configurable"].items() if k in ("checkpoint_id", "checkpoint_ns")}
+        )
+        return None, {**snapshot.values, **(opts.update or {})}
+
+    snapshot = await graph.aget_state(thread_config)
+    if not snapshot.created_at:
+        raise _NotResumable("no_run", "There's nothing to continue in this conversation yet.")
+    if opts.action == "resume":
+        if not snapshot.interrupts:
+            raise _NotResumable("not_waiting", "This run isn't waiting for an answer.")
+        return Command(resume=opts.resume), dict(snapshot.values)
+    if not snapshot.next:
+        raise _NotResumable("finished", "This run has already finished.")
+    return None, dict(snapshot.values)
+
+
+def _interrupt_step(value: Any) -> dict[str, Any]:
+    step = value.get("step") if isinstance(value, dict) else None
+    return {"step": step, "path": []}
+
+
+def _outputs(compiled: CompiledFlow, values: dict[str, Any]) -> dict[str, Any]:
+    names = compiled.output_fields
+    return {k: v for k, v in values.items() if k in names} if names else dict(values)
+
+
+def _recursion_error(compiled: CompiledFlow, limit: int) -> dict[str, Any]:
+    return {
+        "kind": "too_many_steps",
+        "message": f"The run stopped after {limit} rounds of steps; a loop may never end.",
+        "hint": "Give the loop's Decision a round limit, or raise “Most rounds of steps” in the "
+        "flow settings.",
+        "fixes": [],
+    }
 
 
 async def run_flow(
     spec: FlowSpec, inputs: dict[str, Any] | None = None, options: RunOptions | None = None
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Run to completion; returns (run_finished event, all events)."""
+    """Run to completion (or a pause); returns (run_finished event, all events)."""
     events = [e async for e in stream_run(spec, inputs, options)]
     return events[-1], events

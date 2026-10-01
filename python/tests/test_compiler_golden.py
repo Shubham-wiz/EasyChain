@@ -23,6 +23,18 @@ GOLDEN = Path(__file__).parent / "golden"
 CASES = sorted((GOLDEN / "cases").glob("*.flow.yaml")) + sorted(TEMPLATES.glob("*.flow.yaml"))
 
 
+def resolve(flow_id: str):
+    """Sub-flows in golden cases are other case files, by file name."""
+    path = GOLDEN / "cases" / f"{flow_id}.flow.yaml"
+    return load_spec(path) if path.exists() else None
+
+
+def _compile(path: Path):
+    return compile_flow(
+        load_spec(path), resolve=resolve, flow_id=path.name.removesuffix(".flow.yaml")
+    )
+
+
 def _name(path: Path) -> str:
     prefix = "template_" if path.parent == TEMPLATES else ""
     return prefix + path.name.removesuffix(".flow.yaml").replace("-", "_")
@@ -30,7 +42,7 @@ def _name(path: Path) -> str:
 
 @pytest.mark.parametrize("path", CASES, ids=_name)
 def test_golden(path: Path):
-    compiled = compile_flow(load_spec(path))
+    compiled = _compile(path)
     expected_path = GOLDEN / "expected" / f"{_name(path)}.py"
     if os.environ.get("UPDATE_GOLDEN") or not expected_path.exists():
         expected_path.parent.mkdir(parents=True, exist_ok=True)
@@ -42,7 +54,7 @@ def test_golden(path: Path):
 
 @pytest.mark.parametrize("path", CASES, ids=_name)
 def test_generated_code_compiles_and_is_lint_clean(path: Path, tmp_path: Path):
-    compiled = compile_flow(load_spec(path))
+    compiled = _compile(path)
     compile(compiled.source, compiled.module_name, "exec")
     ruff = shutil.which("ruff") or str(Path(sys.executable).parent / "ruff")
     target = tmp_path / f"{compiled.module_name}.py"

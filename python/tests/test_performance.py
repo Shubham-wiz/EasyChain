@@ -8,7 +8,8 @@ import time
 
 from easychain.compiler import compile_flow, validate
 from easychain.runtime import RunOptions, run_flow
-from easychain.runtime.loader import CHECKPOINTER, load_graph
+from easychain.runtime.loader import load_graph
+from easychain.runtime.resources import memory_resources
 
 from .conftest import input_step, make_spec, output_step
 
@@ -62,7 +63,7 @@ async def test_runtime_overhead_per_step_is_under_10ms():
         f"LangGraph {base * 1000:.1f} ms, Easy Chain {ours * 1000:.1f} ms, overhead {per_step_ms:.2f} ms/step"
     )
     assert per_step_ms < 10
-    assert CHECKPOINTER is not None
+    assert memory_resources().checkpointer is not None
 
 
 def test_300_step_flow_checks_and_compiles_quickly():

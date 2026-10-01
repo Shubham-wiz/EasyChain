@@ -7,10 +7,14 @@ there is one answer to "which fields exist and who sets them".
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from ..spec.models import Connection, FlowSpec
+
+EACH_ITEM = "Each item"
+WHEN_DONE = "When done"
 
 if TYPE_CHECKING:
     from ..steps.base import StepHandler
@@ -27,6 +31,12 @@ class FieldInfo:
     is_output: bool = False
     written_by: list[str] = field(default_factory=list)
     read_by: list[str] = field(default_factory=list)
+    # Bookkeeping fields Easy Chain adds itself (loop counters, For Each results).
+    private: bool = False
+    # A helper reducer for update rules Easy Chain manages (e.g. "collect_items").
+    reducer: str | None = None
+    # Loop counters are reset to their start value by every new run.
+    reset: Any = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -40,14 +50,29 @@ class FieldInfo:
             "is_output": self.is_output,
             "written_by": self.written_by,
             "read_by": self.read_by,
+            "private": self.private,
         }
 
 
+Resolver = Callable[[str], "FlowSpec | None"]
+
+
 class FlowAnalysis:
-    def __init__(self, spec: FlowSpec):
+    def __init__(
+        self,
+        spec: FlowSpec,
+        *,
+        resolve: Resolver | None = None,
+        flow_id: str | None = None,
+        parents: tuple[str, ...] = (),
+    ):
         from ..steps import handler_for
 
         self.spec = spec
+        self.resolve = resolve
+        self.flow_id = flow_id
+        self.parents = parents
+        self._children: dict[str, FlowAnalysis | None] = {}
         self.steps = spec.step_map()
         self.handlers: dict[str, StepHandler] = {
             sid: handler_for(s.type) for sid, s in self.steps.items()
@@ -76,6 +101,13 @@ class FlowAnalysis:
         )
         self.ancestors = {sid: self._ancestors(sid) for sid in self.steps}
         self.in_cycle = {sid for sid in self.steps if sid in self.ancestors[sid]}
+        # For Each: the step each one runs per item ("Each item" exit) -> the For Each step.
+        self.foreach_body: dict[str, str] = {}
+        for sid, step in self.steps.items():
+            if step.type == "for_each":
+                for conn in self.outgoing[sid]:
+                    if conn.exit == EACH_ITEM and conn.target not in self.foreach_body:
+                        self.foreach_body[conn.target] = sid
 
         self.fields: dict[str, FieldInfo] = {}
         self.field_conflicts: list[tuple[str, str, str]] = []
@@ -147,6 +179,27 @@ class FlowAnalysis:
             names.update(self.writes.get(anc, {}))
         return names
 
+    # ── sub-flows ────────────────────────────────────────────────────────────
+
+    def child(self, flow_id: str) -> FlowAnalysis | None:
+        """Analysis of a flow used as a Sub-flow, or None if it can't be found or would loop."""
+        if not flow_id or self.resolve is None:
+            return None
+        if flow_id in self._children:
+            return self._children[flow_id]
+        chain = (*self.parents, self.flow_id) if self.flow_id else self.parents
+        result: FlowAnalysis | None = None
+        if flow_id not in chain:
+            spec = self.resolve(flow_id)
+            if spec is not None:
+                result = FlowAnalysis(spec, resolve=self.resolve, flow_id=flow_id, parents=chain)
+        self._children[flow_id] = result
+        return result
+
+    def includes_itself(self, flow_id: str) -> bool:
+        chain = (*self.parents, self.flow_id) if self.flow_id else self.parents
+        return flow_id in chain
+
     # ── Flow Data ────────────────────────────────────────────────────────────
 
     def _infer_fields(self) -> None:
@@ -166,6 +219,10 @@ class FlowAnalysis:
                 if info is None:
                     info = self.fields[f.name] = FieldInfo(f.name, f.type, "replace", f.description)
                 info.is_input = True
+        for sid in self.order:
+            step = self.steps[sid]
+            for info in self.handlers[sid].system_fields(step, self):
+                self.fields.setdefault(info.name, info).written_by.append(sid)
         for sid in self.order:
             step = self.steps[sid]
             handler = self.handlers[sid]
@@ -213,10 +270,15 @@ class FlowAnalysis:
                 names.setdefault(name, None)
         return list(names)
 
+    def round_counters(self) -> dict[str, Any]:
+        """Loop counters and their start values (every new run resets them)."""
+        return {f.name: f.reset for f in self.fields.values() if f.reset is not None}
+
     def summary(self) -> dict[str, Any]:
         return {
             "chat": self.chat,
             "fields": [f.to_dict() for f in self.fields.values()],
+            "foreach_body": self.foreach_body,
             "reads": {k: sorted(v) for k, v in self.reads.items()},
             "writes": self.writes,
             "reachable": sorted(self.reachable),

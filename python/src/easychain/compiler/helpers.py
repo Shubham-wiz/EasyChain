@@ -17,6 +17,8 @@ class Helper:
     from_imports: tuple[tuple[str, str], ...] = field(default_factory=tuple)
     # Reducers appear in Flow Data annotations and must be defined before them.
     reducer: bool = False
+    # Other helpers this one calls.
+    requires: tuple[str, ...] = ()
 
 
 FILL = Helper(
@@ -56,6 +58,7 @@ def fill_url(template: str, data: dict[str, Any]) -> str:
 ''',
     from_imports=(("typing", "Any"), ("urllib.parse", "quote")),
     imports=("re",),
+    requires=("fill",),
 )
 
 FILL_JSON = Helper(
@@ -95,6 +98,7 @@ def fill_json(template: str, data: dict[str, Any]) -> str:
 ''',
     from_imports=(("typing", "Any"),),
     imports=("json", "re"),
+    requires=("fill",),
 )
 
 READABLE_TEXT = Helper(
@@ -171,4 +175,115 @@ def merge_dicts(old: dict[str, Any] | None, new: dict[str, Any] | None) -> dict[
     reducer=True,
 )
 
-HELPERS = {h.name: h for h in (MERGE_DICTS, FILL, FILL_URL, FILL_JSON, READABLE_TEXT, PICK_EXIT)}
+COLLECT_ITEMS = Helper(
+    "collect_items",
+    '''
+def collect_items(old: list[Any] | None, new: list[Any] | None) -> list[Any]:
+    """Update rule for For Each results: None starts a new list, anything else is added."""
+    if new is None:
+        return []
+    return (old or []) + new
+''',
+    from_imports=(("typing", "Any"),),
+    reducer=True,
+)
+
+IN_THREAD = Helper(
+    "in_thread",
+    '''
+def in_thread(step: Callable[[Any], Any]) -> Callable[[Any], Any]:
+    """Run a step in a worker thread, so LangGraph can enforce its time limit."""
+
+    async def run(data: Any) -> Any:
+        return await asyncio.to_thread(step, data)
+
+    run.__name__ = step.__name__
+    return run
+''',
+    imports=("asyncio",),
+    from_imports=(("typing", "Any"), ("collections.abc", "Callable")),
+)
+
+IDEMPOTENCY_KEY = Helper(
+    "idempotency_key",
+    '''
+def idempotency_key() -> str:
+    """A key that stays the same when this step is retried or resumed after a crash."""
+    configurable = get_config()["configurable"]
+    task = f"{configurable.get('thread_id', '')}|{configurable.get('checkpoint_ns', '')}"
+    return hashlib.sha256(task.encode()).hexdigest()[:32]
+''',
+    imports=("hashlib",),
+    from_imports=(("langgraph.config", "get_config"),),
+)
+
+RUN_ONCE = Helper(
+    "run_once",
+    '''
+def run_once(key: str, action: Callable[[], Any]) -> Any:
+    """Do a side effect at most once per key, remembering its result in the LangGraph store."""
+    store = get_store()
+    if store is None:
+        return action()
+    saved = store.get(("side_effects",), key)
+    if saved is not None:
+        return saved.value["result"]
+    result = action()
+    try:
+        store.put(("side_effects",), key, {"result": result})
+    except (TypeError, ValueError):
+        pass  # results that can't be stored as JSON aren't remembered
+    return result
+''',
+    from_imports=(
+        ("typing", "Any"),
+        ("collections.abc", "Callable"),
+        ("langgraph.config", "get_store"),
+    ),
+)
+
+ASK_IN_TERMINAL = Helper(
+    "ask_in_terminal",
+    '''
+def ask_in_terminal(request: dict[str, Any]) -> dict[str, Any]:
+    """Answer an Ask a Human step in the terminal (Easy Chain's Inbox does this in the app)."""
+    print(f"\\n{request['question']}")
+    for name, value in request.get("show", {}).items():
+        print(f"  {name}: {value}")
+    kind = request.get("kind", "approve")
+    if kind == "answer":
+        return {"action": "approve", "value": input("answer> ")}
+    if kind == "choose":
+        options = request.get("options", [])
+        for number, option in enumerate(options, start=1):
+            print(f"  {number}. {option}")
+        picked = input("choose a number> ").strip()
+        index = int(picked) - 1 if picked.isdigit() else 0
+        return {"action": "approve", "value": options[index if 0 <= index < len(options) else 0]}
+    approved = input("approve? [y/n]> ").strip().lower().startswith("y")
+    answer: dict[str, Any] = {"action": "approve" if approved else "reject", "comment": input("comment> ")}
+    if kind == "edit" and approved:
+        edited = input(f"new {request.get('field')} (leave empty to keep it)> ")
+        if edited:
+            answer["value"] = edited
+    return answer
+''',
+    from_imports=(("typing", "Any"),),
+)
+
+HELPERS = {
+    h.name: h
+    for h in (
+        MERGE_DICTS,
+        COLLECT_ITEMS,
+        FILL,
+        FILL_URL,
+        FILL_JSON,
+        READABLE_TEXT,
+        PICK_EXIT,
+        IN_THREAD,
+        IDEMPOTENCY_KEY,
+        RUN_ONCE,
+        ASK_IN_TERMINAL,
+    )
+}

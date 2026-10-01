@@ -267,7 +267,7 @@ class AIModelHandler(StepHandler):
             f"{self.title(step)}\n\nSends `{field}` to {s.model} and saves the reply as `{s.save_as}`."
         )
         code = (
-            f"def {fn}(data: FlowData) -> dict[str, Any]:\n"
+            f"def {fn}(data: {ctx.data_class}) -> dict[str, Any]:\n"
             f"{doc}\n"
             f"    model = {ctx.model_call(s.model, self.kwargs(step))}\n"
             f"    reply = model.invoke({arg})\n"
@@ -429,7 +429,7 @@ class InstructionsHandler(StepHandler):
         detail = f"Fills in {used} and saves" if used else "Saves"
         doc = docstring(f"{self.title(step)}\n\n{detail} the prompt messages as `{s.save_as}`.")
         code = (
-            f"def {fn}(data: FlowData) -> dict[str, Any]:\n"
+            f"def {fn}(data: {ctx.data_class}) -> dict[str, Any]:\n"
             f"{doc}\n"
             f"    prompt = {call}\n"
             f"    return {{{py_str(s.save_as)}: prompt.to_messages()}}"

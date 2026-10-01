@@ -1,0 +1,61 @@
+version: 1
+name: Run policies
+description: Retries, a time limit, a cache, a join that waits for both branches, side effects and a custom update rule.
+settings:
+  max_steps: 40
+  max_parallel: 4
+data:
+  - name: tags
+    type: list
+    update: custom
+    combine: |
+      def combine(old, new):
+          """Keep each tag once, in the order first seen."""
+          return list(dict.fromkeys((old or []) + (new or [])))
+steps:
+  - id: start
+    type: input
+    settings:
+      fields:
+        - {name: text, example: hello}
+  - id: left
+    type: code
+    run: {retries: 2, retry_wait: 0.5}
+    settings:
+      code: |
+        def run(data):
+            return {"tags": ["left", "shared"]}
+  - id: right
+    type: code
+    run: {timeout: 5, cache: true, cache_ttl: 60}
+    settings:
+      code: |
+        def run(data):
+            return {"tags": ["right", "shared"]}
+  - id: join
+    type: code
+    run: {wait_for_all: true}
+    settings:
+      side_effect: true
+      code: |
+        def run(data):
+            return {"summary": ", ".join(data["tags"])}
+  - id: notify
+    type: http_request
+    settings:
+      method: POST
+      url: "https://hooks.example.com/notify"
+      body: '{"text": "{summary}"}'
+      response: json
+      save_as: receipt
+  - id: finish
+    type: output
+    settings:
+      fields: [summary, tags]
+connections:
+  - {from: start, to: left}
+  - {from: start, to: right}
+  - {from: left, to: join}
+  - {from: right, to: join}
+  - {from: join, to: notify}
+  - {from: notify, to: finish}

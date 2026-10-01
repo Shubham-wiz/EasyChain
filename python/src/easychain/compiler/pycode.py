@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import keyword
 import sys
+import textwrap
 from typing import Any
 
 
@@ -60,6 +61,14 @@ def docstring(text: str, spaces: int = 4) -> str:
     """A docstring block at the given indentation."""
     text = text.strip().replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
     pad = " " * spaces
+    width = 96 - spaces
+    if any(len(line) > width for line in text.split("\n")):
+        text = "\n".join(
+            textwrap.fill(line, width, break_long_words=False, break_on_hyphens=False)
+            if len(line) > width
+            else line
+            for line in text.split("\n")
+        )
     if "\n" not in text:
         return f'{pad}"""{text}"""'
     lines = text.split("\n")

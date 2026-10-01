@@ -22,7 +22,7 @@ IDENT_PATTERN = r"^[a-z][a-z0-9_]{0,62}$"
 Ident = Annotated[str, Field(pattern=IDENT_PATTERN)]
 
 FieldType = Literal["text", "number", "yes_no", "list", "object", "file", "messages", "any"]
-UpdateRule = Literal["replace", "append", "merge", "add"]
+UpdateRule = Literal["replace", "append", "merge", "add", "custom"]
 
 
 class _Model(BaseModel):
@@ -40,18 +40,44 @@ class DataField(_Model):
     update: UpdateRule = Field(
         default="replace",
         description="How a new value combines with the old one: replace, append (lists and "
-        "messages), merge (objects) or add (numbers).",
+        "messages), merge (objects), add (numbers) or custom (a Python function).",
     )
     description: str = ""
+    combine: str = Field(
+        default="",
+        description="For update: custom, Python code defining combine(old, new) -> value.",
+    )
 
 
 # ── Steps ────────────────────────────────────────────────────────────────────
+
+
+class RunPolicy(_Model):
+    """How a step runs: retries, time limit, cache and joining parallel branches."""
+
+    retries: int = Field(default=0, ge=0, le=10, description="Extra attempts after a failure.")
+    retry_wait: float = Field(
+        default=1.0, gt=0, le=600, description="Seconds before the first retry; doubles each time."
+    )
+    timeout: float | None = Field(
+        default=None, gt=0, description="Seconds before the step is stopped."
+    )
+    cache: bool = Field(
+        default=False, description="Reuse the result when the step gets the same inputs again."
+    )
+    cache_ttl: int | None = Field(
+        default=None, gt=0, description="Seconds a cached result stays valid."
+    )
+    wait_for_all: bool = Field(
+        default=False, description="Wait until every parallel branch has finished before running."
+    )
 
 
 class _StepBase(_Model):
     id: Ident = Field(description="Unique id; also the LangGraph node name.")
     name: str = Field(default="", description="Label shown on the canvas.")
     description: str = ""
+    run: RunPolicy = Field(default_factory=RunPolicy)
 
 
 class InputField(_Model):
@@ -158,6 +184,11 @@ class HttpRequestSettings(_Model):
     max_chars: int | None = Field(default=20000, gt=0)
     timeout: float = Field(default=30, gt=0)
     save_as: Ident = "response"
+    side_effect: bool | None = Field(
+        default=None,
+        description="Changes something elsewhere (sends, pays, deletes): send it at most once, with "
+        "an Idempotency-Key. Empty means: yes for POST, PUT, PATCH and DELETE.",
+    )
 
 
 class HttpRequestStep(_StepBase):
@@ -181,6 +212,11 @@ class CodeSettings(_Model):
         description="Fields this code sets. Empty means: worked out from the returned dict.",
     )
     requirements: list[str] = Field(default_factory=list)
+    side_effect: bool = Field(
+        default=False,
+        description="The code changes something elsewhere: run it at most once, even after a "
+        "retry or a crash.",
+    )
 
 
 class CodeStep(_StepBase):
@@ -238,6 +274,13 @@ class DecisionSettings(_Model):
     )
     instructions: str = ""
     save_as: Ident = "choice"
+    # Loop guard
+    max_rounds: int | None = Field(
+        default=None, ge=1, le=1000, description="Leave a loop after this many rounds."
+    )
+    when_max: str | None = Field(
+        default=None, description="Exit to take when max_rounds is reached (default: otherwise)."
+    )
 
 
 class DecisionStep(_StepBase):
@@ -247,6 +290,96 @@ class DecisionStep(_StepBase):
     settings: DecisionSettings = Field(default_factory=DecisionSettings)
 
 
+class AskHumanSettings(_Model):
+    kind: Literal["approve", "edit", "answer", "choose"] = Field(
+        default="approve",
+        description="approve: Approve/Reject. edit: change a field, then Approve/Reject. "
+        "answer: type a reply. choose: pick one of the options.",
+    )
+    question: str = "Please review and approve."
+    show: list[Ident] = Field(default_factory=list, description="Fields shown to the reviewer.")
+    field: Ident | None = Field(
+        default=None, description="For edit: the field the reviewer can change."
+    )
+    options: list[str] = Field(
+        default_factory=list, description="For choose: the choices (also the exits)."
+    )
+    save_as: Ident = "human_answer"
+    notify: bool = Field(
+        default=True, description="Send the configured notifications when it pauses."
+    )
+
+
+class AskHumanStep(_StepBase):
+    """Pauses the run until a person answers in the Inbox (LangGraph interrupt)."""
+
+    type: Literal["ask_human"]
+    settings: AskHumanSettings = Field(default_factory=AskHumanSettings)
+
+
+class ForEachSettings(_Model):
+    items: Ident | None = Field(
+        default=None,
+        description="List field to go through. Empty means: what the previous step saved.",
+    )
+    item_name: Ident = Field(default="item", description="Field that holds the current item.")
+    save_as: Ident = Field(
+        default="results", description="List of what each item produced, in order."
+    )
+    concurrency: int | None = Field(
+        default=None, ge=1, le=100, description="Items worked on at once."
+    )
+
+
+class ForEachStep(_StepBase):
+    """Runs a step once for every item in a list, in parallel (LangGraph Send)."""
+
+    type: Literal["for_each"]
+    settings: ForEachSettings = Field(default_factory=ForEachSettings)
+
+
+class SubflowSettings(_Model):
+    flow: str = Field(default="", description="Id of the flow to run as this step.")
+    share_data: bool = Field(
+        default=False,
+        description="Share Flow Data with the sub-flow (same field names) instead of mapping it.",
+    )
+    inputs: dict[Ident, str] = Field(
+        default_factory=dict, description="Sub-flow input field -> value, e.g. {page}."
+    )
+    outputs: dict[Ident, Ident] = Field(
+        default_factory=dict, description="Field here -> sub-flow output field."
+    )
+
+
+class SubflowStep(_StepBase):
+    """Runs another flow as one step (LangGraph subgraph)."""
+
+    type: Literal["subflow"]
+    settings: SubflowSettings = Field(default_factory=SubflowSettings)
+
+
+class FieldUpdate(_Model):
+    field: Ident
+    value: str = Field(default="", description="Text with {field} placeholders.")
+    expression: str | None = Field(
+        default=None, description="Pro: a safe expression, e.g. count + 1."
+    )
+
+
+class JumpSettings(_Model):
+    updates: list[FieldUpdate] = Field(default_factory=list)
+    exits: list[DecisionExit] = Field(default_factory=list)
+    otherwise: str = Field(default="Next", min_length=1, max_length=60)
+
+
+class JumpStep(_StepBase):
+    """Sets Flow Data and picks the next step in one move (LangGraph Command)."""
+
+    type: Literal["jump"]
+    settings: JumpSettings = Field(default_factory=JumpSettings)
+
+
 Step = Annotated[
     InputStep
     | OutputStep
@@ -254,7 +387,11 @@ Step = Annotated[
     | InstructionsStep
     | HttpRequestStep
     | CodeStep
-    | DecisionStep,
+    | DecisionStep
+    | AskHumanStep
+    | ForEachStep
+    | SubflowStep
+    | JumpStep,
     Field(discriminator="type"),
 ]
 
@@ -292,12 +429,32 @@ class Canvas(_Model):
     viewport: dict[str, float] | None = None
 
 
+class FlowSettings(_Model):
+    """How runs of this flow behave."""
+
+    max_steps: int = Field(
+        default=25, ge=1, le=10000, description="Stop a run after this many rounds of steps."
+    )
+    max_parallel: int | None = Field(
+        default=None, ge=1, le=1000, description="Most steps that run at the same time."
+    )
+    double_texting: Literal["reject", "queue", "interrupt", "rollback"] = Field(
+        default="queue",
+        description="When a new message arrives while a conversation is still running: reject it, "
+        "queue it, interrupt the current run, or roll it back and start over.",
+    )
+    max_concurrent_runs: int | None = Field(
+        default=None, ge=1, le=1000, description="Most runs of this flow at the same time."
+    )
+
+
 class FlowSpec(_Model):
     """An Easy Chain flow (a LangGraph StateGraph)."""
 
     version: Literal[1] = SPEC_VERSION
     name: str = Field(min_length=1, max_length=120)
     description: str = ""
+    settings: FlowSettings = Field(default_factory=FlowSettings)
     data: list[DataField] = Field(default_factory=list, description="Flow Data fields.")
     steps: list[Step] = Field(default_factory=list)
     connections: list[Connection] = Field(default_factory=list)
@@ -331,4 +488,8 @@ STEP_MODELS: dict[str, type[BaseModel]] = {
     "http_request": HttpRequestStep,
     "code": CodeStep,
     "decision": DecisionStep,
+    "ask_human": AskHumanStep,
+    "for_each": ForEachStep,
+    "subflow": SubflowStep,
+    "jump": JumpStep,
 }

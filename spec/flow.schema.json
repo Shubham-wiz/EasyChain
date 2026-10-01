@@ -148,6 +148,9 @@
           "title": "Description",
           "type": "string"
         },
+        "run": {
+          "$ref": "#/$defs/RunPolicy"
+        },
         "type": {
           "const": "ai_model",
           "title": "Type",
@@ -162,6 +165,113 @@
         "type"
       ],
       "title": "AIModelStep",
+      "type": "object"
+    },
+    "AskHumanSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "default": "approve",
+          "description": "approve: Approve/Reject. edit: change a field, then Approve/Reject. answer: type a reply. choose: pick one of the options.",
+          "enum": [
+            "approve",
+            "edit",
+            "answer",
+            "choose"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "question": {
+          "default": "Please review and approve.",
+          "title": "Question",
+          "type": "string"
+        },
+        "show": {
+          "description": "Fields shown to the reviewer.",
+          "items": {
+            "pattern": "^[a-z][a-z0-9_]{0,62}$",
+            "type": "string"
+          },
+          "title": "Show",
+          "type": "array"
+        },
+        "field": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_]{0,62}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "For edit: the field the reviewer can change.",
+          "title": "Field"
+        },
+        "options": {
+          "description": "For choose: the choices (also the exits).",
+          "items": {
+            "type": "string"
+          },
+          "title": "Options",
+          "type": "array"
+        },
+        "save_as": {
+          "default": "human_answer",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Save As",
+          "type": "string"
+        },
+        "notify": {
+          "default": true,
+          "description": "Send the configured notifications when it pauses.",
+          "title": "Notify",
+          "type": "boolean"
+        }
+      },
+      "title": "AskHumanSettings",
+      "type": "object"
+    },
+    "AskHumanStep": {
+      "additionalProperties": false,
+      "description": "Pauses the run until a person answers in the Inbox (LangGraph interrupt).",
+      "properties": {
+        "id": {
+          "description": "Unique id; also the LangGraph node name.",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "description": "Label shown on the canvas.",
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "run": {
+          "$ref": "#/$defs/RunPolicy"
+        },
+        "type": {
+          "const": "ask_human",
+          "title": "Type",
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/AskHumanSettings"
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ],
+      "title": "AskHumanStep",
       "type": "object"
     },
     "Canvas": {
@@ -224,6 +334,12 @@
           },
           "title": "Requirements",
           "type": "array"
+        },
+        "side_effect": {
+          "default": false,
+          "description": "The code changes something elsewhere: run it at most once, even after a retry or a crash.",
+          "title": "Side Effect",
+          "type": "boolean"
         }
       },
       "title": "CodeSettings",
@@ -249,6 +365,9 @@
           "default": "",
           "title": "Description",
           "type": "string"
+        },
+        "run": {
+          "$ref": "#/$defs/RunPolicy"
         },
         "type": {
           "const": "code",
@@ -383,12 +502,13 @@
         },
         "update": {
           "default": "replace",
-          "description": "How a new value combines with the old one: replace, append (lists and messages), merge (objects) or add (numbers).",
+          "description": "How a new value combines with the old one: replace, append (lists and messages), merge (objects), add (numbers) or custom (a Python function).",
           "enum": [
             "replace",
             "append",
             "merge",
-            "add"
+            "add",
+            "custom"
           ],
           "title": "Update",
           "type": "string"
@@ -396,6 +516,12 @@
         "description": {
           "default": "",
           "title": "Description",
+          "type": "string"
+        },
+        "combine": {
+          "default": "",
+          "description": "For update: custom, Python code defining combine(old, new) -> value.",
+          "title": "Combine",
           "type": "string"
         }
       },
@@ -492,6 +618,34 @@
           "pattern": "^[a-z][a-z0-9_]{0,62}$",
           "title": "Save As",
           "type": "string"
+        },
+        "max_rounds": {
+          "anyOf": [
+            {
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Leave a loop after this many rounds.",
+          "title": "Max Rounds"
+        },
+        "when_max": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Exit to take when max_rounds is reached (default: otherwise).",
+          "title": "When Max"
         }
       },
       "title": "DecisionSettings",
@@ -517,6 +671,9 @@
           "default": "",
           "title": "Description",
           "type": "string"
+        },
+        "run": {
+          "$ref": "#/$defs/RunPolicy"
         },
         "type": {
           "const": "decision",
@@ -555,6 +712,188 @@
         "content"
       ],
       "title": "ExampleMessage",
+      "type": "object"
+    },
+    "FieldUpdate": {
+      "additionalProperties": false,
+      "properties": {
+        "field": {
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Field",
+          "type": "string"
+        },
+        "value": {
+          "default": "",
+          "description": "Text with {field} placeholders.",
+          "title": "Value",
+          "type": "string"
+        },
+        "expression": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Pro: a safe expression, e.g. count + 1.",
+          "title": "Expression"
+        }
+      },
+      "required": [
+        "field"
+      ],
+      "title": "FieldUpdate",
+      "type": "object"
+    },
+    "FlowSettings": {
+      "additionalProperties": false,
+      "description": "How runs of this flow behave.",
+      "properties": {
+        "max_steps": {
+          "default": 25,
+          "description": "Stop a run after this many rounds of steps.",
+          "maximum": 10000,
+          "minimum": 1,
+          "title": "Max Steps",
+          "type": "integer"
+        },
+        "max_parallel": {
+          "anyOf": [
+            {
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Most steps that run at the same time.",
+          "title": "Max Parallel"
+        },
+        "double_texting": {
+          "default": "queue",
+          "description": "When a new message arrives while a conversation is still running: reject it, queue it, interrupt the current run, or roll it back and start over.",
+          "enum": [
+            "reject",
+            "queue",
+            "interrupt",
+            "rollback"
+          ],
+          "title": "Double Texting",
+          "type": "string"
+        },
+        "max_concurrent_runs": {
+          "anyOf": [
+            {
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Most runs of this flow at the same time.",
+          "title": "Max Concurrent Runs"
+        }
+      },
+      "title": "FlowSettings",
+      "type": "object"
+    },
+    "ForEachSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_]{0,62}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "List field to go through. Empty means: what the previous step saved.",
+          "title": "Items"
+        },
+        "item_name": {
+          "default": "item",
+          "description": "Field that holds the current item.",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Item Name",
+          "type": "string"
+        },
+        "save_as": {
+          "default": "results",
+          "description": "List of what each item produced, in order.",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Save As",
+          "type": "string"
+        },
+        "concurrency": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Items worked on at once.",
+          "title": "Concurrency"
+        }
+      },
+      "title": "ForEachSettings",
+      "type": "object"
+    },
+    "ForEachStep": {
+      "additionalProperties": false,
+      "description": "Runs a step once for every item in a list, in parallel (LangGraph Send).",
+      "properties": {
+        "id": {
+          "description": "Unique id; also the LangGraph node name.",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "description": "Label shown on the canvas.",
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "run": {
+          "$ref": "#/$defs/RunPolicy"
+        },
+        "type": {
+          "const": "for_each",
+          "title": "Type",
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/ForEachSettings"
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ],
+      "title": "ForEachStep",
       "type": "object"
     },
     "HttpRequestSettings": {
@@ -624,6 +963,19 @@
           "pattern": "^[a-z][a-z0-9_]{0,62}$",
           "title": "Save As",
           "type": "string"
+        },
+        "side_effect": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Changes something elsewhere (sends, pays, deletes): send it at most once, with an Idempotency-Key. Empty means: yes for POST, PUT, PATCH and DELETE.",
+          "title": "Side Effect"
         }
       },
       "title": "HttpRequestSettings",
@@ -649,6 +1001,9 @@
           "default": "",
           "title": "Description",
           "type": "string"
+        },
+        "run": {
+          "$ref": "#/$defs/RunPolicy"
         },
         "type": {
           "const": "http_request",
@@ -757,6 +1112,9 @@
           "title": "Description",
           "type": "string"
         },
+        "run": {
+          "$ref": "#/$defs/RunPolicy"
+        },
         "type": {
           "const": "input",
           "title": "Type",
@@ -839,6 +1197,9 @@
           "title": "Description",
           "type": "string"
         },
+        "run": {
+          "$ref": "#/$defs/RunPolicy"
+        },
         "type": {
           "const": "instructions",
           "title": "Type",
@@ -853,6 +1214,74 @@
         "type"
       ],
       "title": "InstructionsStep",
+      "type": "object"
+    },
+    "JumpSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "updates": {
+          "items": {
+            "$ref": "#/$defs/FieldUpdate"
+          },
+          "title": "Updates",
+          "type": "array"
+        },
+        "exits": {
+          "items": {
+            "$ref": "#/$defs/DecisionExit"
+          },
+          "title": "Exits",
+          "type": "array"
+        },
+        "otherwise": {
+          "default": "Next",
+          "maxLength": 60,
+          "minLength": 1,
+          "title": "Otherwise",
+          "type": "string"
+        }
+      },
+      "title": "JumpSettings",
+      "type": "object"
+    },
+    "JumpStep": {
+      "additionalProperties": false,
+      "description": "Sets Flow Data and picks the next step in one move (LangGraph Command).",
+      "properties": {
+        "id": {
+          "description": "Unique id; also the LangGraph node name.",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "description": "Label shown on the canvas.",
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "run": {
+          "$ref": "#/$defs/RunPolicy"
+        },
+        "type": {
+          "const": "jump",
+          "title": "Type",
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/JumpSettings"
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ],
+      "title": "JumpStep",
       "type": "object"
     },
     "OutputSettings": {
@@ -892,6 +1321,9 @@
           "title": "Description",
           "type": "string"
         },
+        "run": {
+          "$ref": "#/$defs/RunPolicy"
+        },
         "type": {
           "const": "output",
           "title": "Type",
@@ -923,6 +1355,70 @@
         }
       },
       "title": "Position",
+      "type": "object"
+    },
+    "RunPolicy": {
+      "additionalProperties": false,
+      "description": "How a step runs: retries, time limit, cache and joining parallel branches.",
+      "properties": {
+        "retries": {
+          "default": 0,
+          "description": "Extra attempts after a failure.",
+          "maximum": 10,
+          "minimum": 0,
+          "title": "Retries",
+          "type": "integer"
+        },
+        "retry_wait": {
+          "default": 1.0,
+          "description": "Seconds before the first retry; doubles each time.",
+          "exclusiveMinimum": 0,
+          "maximum": 600,
+          "title": "Retry Wait",
+          "type": "number"
+        },
+        "timeout": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Seconds before the step is stopped.",
+          "title": "Timeout"
+        },
+        "cache": {
+          "default": false,
+          "description": "Reuse the result when the step gets the same inputs again.",
+          "title": "Cache",
+          "type": "boolean"
+        },
+        "cache_ttl": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Seconds a cached result stays valid.",
+          "title": "Cache Ttl"
+        },
+        "wait_for_all": {
+          "default": false,
+          "description": "Wait until every parallel branch has finished before running.",
+          "title": "Wait For All",
+          "type": "boolean"
+        }
+      },
+      "title": "RunPolicy",
       "type": "object"
     },
     "StickyNote": {
@@ -963,6 +1459,86 @@
       ],
       "title": "StickyNote",
       "type": "object"
+    },
+    "SubflowSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "flow": {
+          "default": "",
+          "description": "Id of the flow to run as this step.",
+          "title": "Flow",
+          "type": "string"
+        },
+        "share_data": {
+          "default": false,
+          "description": "Share Flow Data with the sub-flow (same field names) instead of mapping it.",
+          "title": "Share Data",
+          "type": "boolean"
+        },
+        "inputs": {
+          "description": "Sub-flow input field -> value, e.g. {page}.",
+          "patternProperties": {
+            "^[a-z][a-z0-9_]{0,62}$": {
+              "type": "string"
+            }
+          },
+          "title": "Inputs",
+          "type": "object"
+        },
+        "outputs": {
+          "description": "Field here -> sub-flow output field.",
+          "patternProperties": {
+            "^[a-z][a-z0-9_]{0,62}$": {
+              "pattern": "^[a-z][a-z0-9_]{0,62}$",
+              "type": "string"
+            }
+          },
+          "title": "Outputs",
+          "type": "object"
+        }
+      },
+      "title": "SubflowSettings",
+      "type": "object"
+    },
+    "SubflowStep": {
+      "additionalProperties": false,
+      "description": "Runs another flow as one step (LangGraph subgraph).",
+      "properties": {
+        "id": {
+          "description": "Unique id; also the LangGraph node name.",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "description": "Label shown on the canvas.",
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "run": {
+          "$ref": "#/$defs/RunPolicy"
+        },
+        "type": {
+          "const": "subflow",
+          "title": "Type",
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/SubflowSettings"
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ],
+      "title": "SubflowStep",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -984,6 +1560,9 @@
       "title": "Description",
       "type": "string"
     },
+    "settings": {
+      "$ref": "#/$defs/FlowSettings"
+    },
     "data": {
       "description": "Flow Data fields.",
       "items": {
@@ -997,12 +1576,16 @@
         "discriminator": {
           "mapping": {
             "ai_model": "#/$defs/AIModelStep",
+            "ask_human": "#/$defs/AskHumanStep",
             "code": "#/$defs/CodeStep",
             "decision": "#/$defs/DecisionStep",
+            "for_each": "#/$defs/ForEachStep",
             "http_request": "#/$defs/HttpRequestStep",
             "input": "#/$defs/InputStep",
             "instructions": "#/$defs/InstructionsStep",
-            "output": "#/$defs/OutputStep"
+            "jump": "#/$defs/JumpStep",
+            "output": "#/$defs/OutputStep",
+            "subflow": "#/$defs/SubflowStep"
           },
           "propertyName": "type"
         },
@@ -1027,6 +1610,18 @@
           },
           {
             "$ref": "#/$defs/DecisionStep"
+          },
+          {
+            "$ref": "#/$defs/AskHumanStep"
+          },
+          {
+            "$ref": "#/$defs/ForEachStep"
+          },
+          {
+            "$ref": "#/$defs/SubflowStep"
+          },
+          {
+            "$ref": "#/$defs/JumpStep"
           }
         ]
       },

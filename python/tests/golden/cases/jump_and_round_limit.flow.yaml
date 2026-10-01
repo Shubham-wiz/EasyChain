@@ -1,0 +1,38 @@
+version: 1
+name: Count up
+data:
+  - {name: count, type: number}
+steps:
+  - id: start
+    type: input
+    settings:
+      fields:
+        - {name: limit, type: number, example: 3}
+  - id: bump
+    type: jump
+    settings:
+      updates:
+        - {field: count, expression: "(count or 0) + 1"}
+        - {field: note, value: "round {count}"}
+      exits:
+        - label: Again
+          when: {expression: "count < limit"}
+      otherwise: Done
+  - id: check
+    type: decision
+    settings:
+      exits:
+        - label: Loop
+          when: {field: count, op: greater_than, value: -1}
+      otherwise: Stop
+      max_rounds: 2
+  - id: finish
+    type: output
+    settings:
+      fields: [count, note]
+connections:
+  - {from: start, to: bump}
+  - {from: bump, to: check, exit: Again}
+  - {from: bump, to: finish, exit: Done}
+  - {from: check, to: bump, exit: Loop}
+  - {from: check, to: finish, exit: Stop}

@@ -1,0 +1,45 @@
+version: 1
+name: Pick a tone
+steps:
+  - id: start
+    type: input
+    settings:
+      fields:
+        - {name: draft, example: Thanks for writing in.}
+  - id: tone
+    type: ask_human
+    settings:
+      kind: choose
+      question: Which tone should the reply have?
+      show: [draft]
+      options: [Friendly, Formal]
+      save_as: tone_choice
+  - id: friendly
+    type: code
+    settings:
+      code: |
+        def run(data):
+            return {"reply": "Hi! " + data["draft"]}
+  - id: formal
+    type: code
+    settings:
+      code: |
+        def run(data):
+            return {"reply": "Dear customer, " + data["draft"]}
+  - id: note
+    type: ask_human
+    settings:
+      kind: answer
+      question: Anything to add?
+      save_as: extra
+  - id: finish
+    type: output
+    settings:
+      fields: [reply, tone_choice, extra]
+connections:
+  - {from: start, to: tone}
+  - {from: tone, to: friendly, exit: Friendly}
+  - {from: tone, to: formal, exit: Formal}
+  - {from: friendly, to: note}
+  - {from: formal, to: note}
+  - {from: note, to: finish}

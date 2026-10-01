@@ -9,8 +9,9 @@ from __future__ import annotations
 from .actions import CodeHandler, HttpRequestHandler
 from .ai import AIModelHandler, InstructionsHandler
 from .base import FormField, StepCode, StepHandler
+from .flow_control import AskHumanHandler, ForEachHandler, SubflowHandler
 from .io_steps import InputHandler, OutputHandler
-from .logic import DecisionHandler
+from .logic import DecisionHandler, JumpHandler
 
 HANDLERS: dict[str, StepHandler] = {
     h.type: h
@@ -22,6 +23,10 @@ HANDLERS: dict[str, StepHandler] = {
         HttpRequestHandler(),
         CodeHandler(),
         DecisionHandler(),
+        ForEachHandler(),
+        JumpHandler(),
+        SubflowHandler(),
+        AskHumanHandler(),
     ]
 }
 
@@ -30,6 +35,7 @@ CATEGORIES = [
     {"id": "ai", "label": "AI"},
     {"id": "actions", "label": "Actions"},
     {"id": "logic", "label": "Logic"},
+    {"id": "people", "label": "People"},
 ]
 
 

@@ -1,0 +1,31 @@
+version: 1
+name: Shout topics
+steps:
+  - id: start
+    type: input
+    settings:
+      fields:
+        - name: topics
+          type: list
+          example: [a, b, c]
+  - id: each
+    type: for_each
+    settings:
+      items: topics
+      item_name: topic
+      save_as: shouted
+      concurrency: 2
+  - id: shout
+    type: code
+    settings:
+      code: |
+        def run(data):
+            return {"loud": data["topic"].upper()}
+  - id: finish
+    type: output
+    settings:
+      fields: [shouted]
+connections:
+  - {from: start, to: each}
+  - {from: each, to: shout, exit: Each item}
+  - {from: each, to: finish, exit: When done}

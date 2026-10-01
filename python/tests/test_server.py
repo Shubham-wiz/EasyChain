@@ -38,6 +38,10 @@ def test_health_and_catalog(client):
         "http_request",
         "code",
         "decision",
+        "for_each",
+        "jump",
+        "subflow",
+        "ask_human",
     ]
     ai = next(s for s in catalog["steps"] if s["type"] == "ai_model")
     assert ai["label"] == "AI Model" and ai["technical"].startswith("Chat model")

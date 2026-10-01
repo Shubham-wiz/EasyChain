@@ -14,16 +14,12 @@ import types
 from collections import OrderedDict
 from typing import Any
 
-from langgraph.checkpoint.memory import InMemorySaver
-
 from .gateway import gateway_init_chat_model
+from .resources import Resources, memory_resources
 
 _CACHE_SIZE = 64
-_cache: OrderedDict[str, tuple[types.ModuleType, Any]] = OrderedDict()
+_cache: OrderedDict[tuple[str, int], tuple[types.ModuleType, Any]] = OrderedDict()
 _lock = threading.Lock()
-
-# Phase 1 keeps Save Points in memory for the life of the server process.
-CHECKPOINTER = InMemorySaver()
 
 
 def load_module(source: str, name: str = "easychain_flow") -> types.ModuleType:
@@ -43,18 +39,22 @@ def load_module(source: str, name: str = "easychain_flow") -> types.ModuleType:
     return module
 
 
-def load_graph(source: str, name: str = "easychain_flow") -> tuple[types.ModuleType, Any]:
-    """Return (module, compiled graph with the shared checkpointer), cached by source."""
-    key = hashlib.sha256(source.encode()).hexdigest()
+def load_graph(
+    source: str, name: str = "easychain_flow", resources: Resources | None = None
+) -> tuple[types.ModuleType, Any]:
+    """Return (module, compiled graph wired to the resources), cached by source."""
+    res = resources or memory_resources()
+    key = (hashlib.sha256(source.encode()).hexdigest(), id(res))
     with _lock:
         if key in _cache:
             _cache.move_to_end(key)
             return _cache[key]
     module = load_module(source, name)
-    graph = module.build_graph(checkpointer=CHECKPOINTER)
+    graph = module.build_graph(checkpointer=res.checkpointer, store=res.store, cache=res.cache)
     with _lock:
         _cache[key] = (module, graph)
         while len(_cache) > _CACHE_SIZE:
             _, (old, _graph) = _cache.popitem(last=False)
-            sys.modules.pop(old.__name__, None)
+            if not any(m is old for m, _ in _cache.values()):
+                sys.modules.pop(old.__name__, None)
     return module, graph

@@ -58,10 +58,11 @@ def ask(data: FlowData) -> dict[str, Any]:
 # ── Flow ─────────────────────────────────────────────────────────────────────
 
 
-def build_graph(checkpointer=None):
+def build_graph(checkpointer=None, *, store=None, cache=None):
     """Wire the steps into a LangGraph graph.
 
-    Pass a checkpointer (for example InMemorySaver()) to keep a Save Point after every step.
+    Pass a checkpointer (for example InMemorySaver()) to keep a Save Point after every step,
+    a store to remember side effects across retries, and a cache for cached steps.
     """
     builder = StateGraph(FlowData, input_schema=FlowInput, output_schema=FlowOutput)
 
@@ -69,7 +70,7 @@ def build_graph(checkpointer=None):
 
     builder.add_edge(START, "ask")
     builder.add_edge("ask", END)
-    return builder.compile(checkpointer=checkpointer)
+    return builder.compile(checkpointer=checkpointer, store=store, cache=cache)
 
 
 graph = build_graph()

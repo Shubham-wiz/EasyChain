@@ -17,8 +17,17 @@ from pydantic import ValidationError
 
 from .models import SPEC_VERSION, FlowSpec
 
-_TOP_ORDER = ["version", "name", "description", "data", "steps", "connections", "canvas"]
-_STEP_ORDER = ["id", "type", "name", "description", "settings"]
+_TOP_ORDER = [
+    "version",
+    "name",
+    "description",
+    "settings",
+    "data",
+    "steps",
+    "connections",
+    "canvas",
+]
+_STEP_ORDER = ["id", "type", "name", "description", "settings", "run"]
 
 
 class SpecError(ValueError):

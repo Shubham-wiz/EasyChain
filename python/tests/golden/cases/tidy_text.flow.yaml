@@ -1,0 +1,23 @@
+version: 1
+name: Tidy text
+steps:
+  - id: start
+    type: input
+    settings:
+      fields:
+        - {name: text}
+        - {name: style, required: false, default: upper}
+  - id: tidy
+    type: code
+    settings:
+      code: |
+        def run(data):
+            t = data["text"].strip()
+            return {"tidied": t.upper() if data.get("style") == "upper" else t.lower()}
+  - id: finish
+    type: output
+    settings:
+      fields: [tidied]
+connections:
+  - {from: start, to: tidy}
+  - {from: tidy, to: finish}
