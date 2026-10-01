@@ -6,6 +6,7 @@ easychain run my-flow.flow.yaml --input url=https://example.com
 easychain export my-flow.flow.yaml -o out/
 easychain test summarise-url.tests.yaml --var base_url=http://localhost:8765
 easychain dev
+easychain worker --database-url postgresql://…
 """
 
 from __future__ import annotations
@@ -25,6 +26,24 @@ from .spec import SpecError, dumps_spec, load_spec
 
 def _err(message: str) -> None:
     print(message, file=sys.stderr)
+
+
+def file_resolver(path: str) -> Any:
+    """Sub-flows are found next to the flow file, as ``<id>.flow.yaml``."""
+    folder = Path(path).resolve().parent
+
+    def resolve(flow_id: str) -> Any:
+        candidate = folder / f"{flow_id}.flow.yaml"
+        try:
+            return load_spec(candidate) if candidate.exists() else None
+        except SpecError:
+            return None
+
+    return resolve
+
+
+def _flow_id(path: str) -> str:
+    return Path(path).name.removesuffix(".flow.yaml")
 
 
 def _load(path: str) -> Any:
@@ -91,7 +110,10 @@ def cmd_new(args: argparse.Namespace) -> int:
 
 def cmd_validate(args: argparse.Namespace) -> int:
     spec = _load(args.file)
-    issues = validate(spec)
+    from .compiler import FlowAnalysis
+
+    an = FlowAnalysis(spec, resolve=file_resolver(args.file), flow_id=_flow_id(args.file))
+    issues = validate(spec, analysis=an)
     for issue in issues:
         print(issue)
     errors = sum(1 for i in issues if i.level == "error")
@@ -103,7 +125,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
 def cmd_compile(args: argparse.Namespace) -> int:
     spec = _load(args.file)
     try:
-        compiled = compile_flow(spec)
+        compiled = compile_flow(spec, resolve=file_resolver(args.file), flow_id=_flow_id(args.file))
     except CompileError as exc:
         _err(str(exc))
         return 1
@@ -123,11 +145,11 @@ def cmd_export(args: argparse.Namespace) -> int:
     try:
         if args.zip:
             out = Path(args.output or f"{module_name(spec.name)}.zip")
-            out.write_bytes(export_zip(spec))
+            out.write_bytes(export_zip(spec, file_resolver(args.file), _flow_id(args.file)))
             print(f"Wrote {out}")
         else:
             out_dir = Path(args.output or module_name(spec.name))
-            for path in export_to_dir(spec, out_dir):
+            for path in export_to_dir(spec, out_dir, file_resolver(args.file), _flow_id(args.file)):
                 print(f"Wrote {path}")
     except CompileError as exc:
         _err(str(exc))
@@ -153,54 +175,110 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     spec = _load(args.file)
     inputs = _parse_inputs(args)
-    options = RunOptions(thread_id=args.thread, stand_in=args.stand_in)
+    options = RunOptions(
+        thread_id=args.thread,
+        stand_in=args.stand_in,
+        resolve=file_resolver(args.file),
+        flow_id=_flow_id(args.file),
+    )
+    printer = _RunPrinter(spec, args)
 
     async def go() -> int:
         final: dict[str, Any] = {}
-        streaming_step = None
-        async for ev in stream_run(spec, inputs, options):
-            kind = ev["type"]
-            if args.events:
-                print(json.dumps(ev, ensure_ascii=False, default=str))
-            elif kind == "step_started" and not args.quiet:
-                step = spec.step(ev["step"])
-                if step.type not in ("input", "output"):
-                    print(f"▶ {step.name or step.id}", file=sys.stderr)
-            elif kind == "token" and not args.quiet:
-                if streaming_step != ev["step"]:
-                    streaming_step = ev["step"]
-                sys.stderr.write(ev["text"])
-                sys.stderr.flush()
-            elif kind == "step_finished" and not args.quiet:
-                if streaming_step == ev["step"]:
-                    sys.stderr.write("\n")
-                    streaming_step = None
-                step = spec.step(ev["step"])
-                if step.type not in ("input", "output"):
-                    extra = ""
-                    if ev.get("usage"):
-                        u = ev["usage"]
-                        extra = f", {u['input_tokens']}+{u['output_tokens']} tokens"
-                    print(
-                        f"✓ {step.name or step.id} ({ev['duration_ms']:.0f} ms{extra})",
-                        file=sys.stderr,
-                    )
-            elif kind == "route" and not args.quiet:
+        events = stream_run(spec, inputs, options)
+        while True:
+            async for ev in events:
+                printer.show(ev)
+                final = ev
+            if final.get("status") != "paused" or final.get("reason") != "ask_human":
+                break
+            if args.events or not sys.stdin.isatty():
+                _err(
+                    "The run is waiting for an answer (Ask a Human). Run it in a terminal to answer."
+                )
+                return 3
+            answers = {i["id"]: _ask_in_terminal(i["request"]) for i in final["interrupts"]}
+            options.action, options.resume, options.thread_id = (
+                "resume",
+                answers,
+                final.get("thread_id"),
+            )
+            events = stream_run(spec, None, options)
+        return printer.finish(final)
+
+    return asyncio.run(go())
+
+
+def _ask_in_terminal(request: dict[str, Any]) -> Any:
+    from .compiler.helpers import HELPERS
+
+    namespace: dict[str, Any] = {"Any": Any}
+    exec(HELPERS["ask_in_terminal"].code, namespace)  # the same prompt exported flows use
+    return namespace["ask_in_terminal"](request)
+
+
+class _RunPrinter:
+    """Prints run progress to stderr and the result to stdout."""
+
+    def __init__(self, spec: Any, args: argparse.Namespace):
+        self.spec = spec
+        self.args = args
+        self.streaming: str | None = None
+
+    def _name(self, step_id: str) -> str:
+        try:
+            step = self.spec.step(step_id)
+        except KeyError:
+            return step_id
+        return step.name or step.id
+
+    def show(self, ev: dict[str, Any]) -> None:
+        kind = ev["type"]
+        if self.args.events:
+            print(json.dumps(ev, ensure_ascii=False, default=str))
+            return
+        if ev.get("path"):
+            return  # steps inside a Sub-flow: the Sub-flow step reports for them
+        quiet = self.args.quiet
+        if kind == "step_started" and not quiet:
+            if self.spec.step(ev["step"]).type not in ("input", "output"):
+                item = f" (item {ev['item'] + 1})" if isinstance(ev.get("item"), int) else ""
+                print(f"▶ {self._name(ev['step'])}{item}", file=sys.stderr)
+        elif kind == "token" and not quiet:
+            self.streaming = ev["step"]
+            sys.stderr.write(ev["text"])
+            sys.stderr.flush()
+        elif kind == "step_finished" and not quiet:
+            if self.streaming == ev["step"]:
+                sys.stderr.write("\n")
+                self.streaming = None
+            if self.spec.step(ev["step"]).type not in ("input", "output"):
+                extra = ""
+                if ev.get("usage"):
+                    u = ev["usage"]
+                    extra = f", {u['input_tokens']}+{u['output_tokens']} tokens"
                 print(
-                    f"↳ {spec.step(ev['step']).name or ev['step']}: took “{ev['exit']}”",
+                    f"✓ {self._name(ev['step'])} ({ev['duration_ms']:.0f} ms{extra})",
                     file=sys.stderr,
                 )
-            elif kind == "step_failed":
-                err = ev["error"]
-                _err(f"✗ {spec.step(ev['step']).name or ev['step']}: {err['message']}")
-                if err.get("hint"):
-                    _err(f"  {err['hint']}")
-            final = ev
+        elif kind == "route" and not quiet:
+            print(f"↳ {self._name(ev['step'])}: took “{ev['exit']}”", file=sys.stderr)
+        elif kind == "progress" and not quiet:
+            print(
+                f"  {self._name(ev['step'])}: {ev['done']} of {ev['total']} done", file=sys.stderr
+            )
+        elif kind == "step_failed":
+            err = ev["error"]
+            _err(f"✗ {self._name(ev['step'])}: {err['message']}")
+            if err.get("hint"):
+                _err(f"  {err['hint']}")
+
+    def finish(self, final: dict[str, Any]) -> int:
         if final.get("status") == "ok":
-            if not args.events:
+            if not self.args.events:
                 print(json.dumps(final.get("output"), indent=2, ensure_ascii=False, default=str))
             return 0
-        if not args.events:
+        if not self.args.events:
             err = final.get("error") or {}
             if err.get("kind") == "bad_input":
                 for problem in err.get("problems", []):
@@ -213,6 +291,50 @@ def cmd_run(args: argparse.Namespace) -> int:
                         + (f" [{issue['step']}]" if issue.get("step") else "")
                     )
         return 1
+
+
+def cmd_worker(args: argparse.Namespace) -> int:
+    """Run jobs from the queue until stopped (Ctrl+C or SIGTERM hands running jobs back)."""
+    import logging
+    import signal
+
+    from .runtime.resources import open_resources
+    from .server.app import default_database_url
+    from .server.db import Database, checkpoint_url
+    from .server.hub import Hub
+    from .server.secrets import SecretStore
+    from .server.store import FlowStore
+    from .server.worker import Worker
+
+    logging.basicConfig(
+        level=logging.INFO if args.verbose else logging.WARNING, format="%(message)s"
+    )
+    home = Path(args.home or os.environ.get("EASYCHAIN_HOME") or Path.home() / ".easychain")
+    workspace = Path(args.workspace or os.environ.get("EASYCHAIN_WORKSPACE") or home / "flows")
+    url = args.database_url or default_database_url(home)
+
+    async def go() -> int:
+        db = await Database.connect(url)
+        resources = await open_resources(checkpoint_url(url))
+        hub = Hub(db, resources, FlowStore(workspace), SecretStore(home))
+        worker = Worker(
+            hub,
+            concurrency=args.concurrency,
+            lease_seconds=args.lease,
+            poll=args.poll,
+            schedules=not args.no_schedules,
+        )
+        stop = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, stop.set)
+        print(f"Easy Chain worker {worker.name} ({db.dialect}) waiting for jobs", flush=True)
+        try:
+            await worker.run(stop)
+        finally:
+            await resources.aclose()
+            await db.close()
+        return 0
 
     return asyncio.run(go())
 
@@ -257,6 +379,12 @@ def cmd_dev(args: argparse.Namespace) -> int:
 
     if args.workspace:
         os.environ["EASYCHAIN_WORKSPACE"] = str(Path(args.workspace).resolve())
+    if args.home:
+        os.environ["EASYCHAIN_HOME"] = str(Path(args.home).resolve())
+    if args.database_url:
+        os.environ["EASYCHAIN_DATABASE_URL"] = args.database_url
+    if args.no_worker:
+        os.environ["EASYCHAIN_WORKER"] = "off"
     print(f"Easy Chain {__version__} running at http://{args.host}:{args.port}", flush=True)
     uvicorn.run(
         "easychain.server.app:create_app",
@@ -327,9 +455,27 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--host", default=os.environ.get("EASYCHAIN_HOST", "127.0.0.1"))
     p.add_argument("--port", type=int, default=int(os.environ.get("EASYCHAIN_PORT", "8000")))
     p.add_argument("--workspace", help="folder where flows are saved")
+    p.add_argument("--home", help="folder for the database, secrets and uploads (~/.easychain)")
+    p.add_argument("--database-url", help="sqlite:///path.db (default) or postgresql://…")
+    p.add_argument(
+        "--no-worker", action="store_true", help="don't run jobs here (use `easychain worker`)"
+    )
     p.add_argument("--reload", action="store_true")
     p.add_argument("--verbose", action="store_true")
     p.set_defaults(func=cmd_dev)
+
+    p = sub.add_parser("worker", help="run queued flow runs (scale out with more workers)")
+    p.add_argument("--home", help="folder for secrets and uploads (~/.easychain)")
+    p.add_argument("--workspace", help="folder where flows are saved")
+    p.add_argument("--database-url", help="sqlite:///path.db or postgresql://… (as the API uses)")
+    p.add_argument("--concurrency", type=int, default=4, help="runs at once (default 4)")
+    p.add_argument(
+        "--lease", type=float, default=30, help="seconds before a silent worker's job is taken over"
+    )
+    p.add_argument("--poll", type=float, default=0.5, help="seconds between queue checks")
+    p.add_argument("--no-schedules", action="store_true", help="don't fire scheduled triggers")
+    p.add_argument("--verbose", action="store_true")
+    p.set_defaults(func=cmd_worker)
     return parser
 
 

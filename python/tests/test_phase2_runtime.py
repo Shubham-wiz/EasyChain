@@ -299,6 +299,7 @@ async def test_sub_flow_usage_counts_toward_the_sub_flow_step():
 
 
 async def test_run_policies_parallel_join_custom_rule_and_idempotent_post(fake_server):
+    httpx.post(f"{fake_server.url}/effects/reset")
     spec = case("run_policies")
     spec.step("notify").settings.url = f"{fake_server.url}/effects"
     final, events = await run(spec, {"text": "hi"})

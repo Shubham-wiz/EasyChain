@@ -8,12 +8,15 @@ import zipfile
 from pathlib import Path
 
 from .compiler import compile_flow
+from .compiler.analysis import Resolver
 from .providers import PROVIDERS, split_model
 from .spec import FlowSpec, dumps_spec
 
 
-def export_files(spec: FlowSpec) -> dict[str, str]:
-    compiled = compile_flow(spec)
+def export_files(
+    spec: FlowSpec, resolve: Resolver | None = None, flow_id: str | None = None
+) -> dict[str, str]:
+    compiled = compile_flow(spec, resolve=resolve, flow_id=flow_id)
     mod = compiled.module_name
     env_lines = []
     providers = {
@@ -89,8 +92,10 @@ graph with the LangGraph API and Studio.
     }
 
 
-def export_zip(spec: FlowSpec) -> bytes:
-    files = export_files(spec)
+def export_zip(
+    spec: FlowSpec, resolve: Resolver | None = None, flow_id: str | None = None
+) -> bytes:
+    files = export_files(spec, resolve, flow_id)
     folder = next(name for name in files if name.endswith(".py"))[:-3]
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -99,11 +104,16 @@ def export_zip(spec: FlowSpec) -> bytes:
     return buf.getvalue()
 
 
-def export_to_dir(spec: FlowSpec, directory: str | Path) -> list[Path]:
+def export_to_dir(
+    spec: FlowSpec,
+    directory: str | Path,
+    resolve: Resolver | None = None,
+    flow_id: str | None = None,
+) -> list[Path]:
     out = Path(directory)
     out.mkdir(parents=True, exist_ok=True)
     written = []
-    for name, content in export_files(spec).items():
+    for name, content in export_files(spec, resolve, flow_id).items():
         path = out / name
         path.write_text(content, encoding="utf-8")
         written.append(path)

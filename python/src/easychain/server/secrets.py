@@ -27,6 +27,7 @@ class SecretStore:
         self._lock = threading.Lock()
         self._values: dict[str, str] = {}
         self._env_before: dict[str, str | None] = {}
+        self._mtime: float | None = None
         self._fernet = Fernet(self._key())
         self._load()
 
@@ -43,9 +44,21 @@ class SecretStore:
         key_path.chmod(0o600)
         return key
 
+    def reload(self) -> None:
+        """Pick up secrets saved by another process (an API server next to this worker)."""
+        try:
+            mtime = self.path.stat().st_mtime
+        except FileNotFoundError:
+            return
+        if mtime == self._mtime:
+            return
+        with self._lock:
+            self._load()
+
     def _load(self) -> None:
         if not self.path.exists():
             return
+        self._mtime = self.path.stat().st_mtime
         try:
             data = json.loads(self._fernet.decrypt(self.path.read_bytes()))
         except (InvalidToken, ValueError):

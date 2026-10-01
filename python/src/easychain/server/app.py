@@ -6,13 +6,20 @@ for runs. It also serves the built web app, so one process is the whole app.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
+import logging
 import os
+import re
+import secrets as secrets_module
+import time
 import uuid
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
-from fastapi import Body, FastAPI, HTTPException, Request
+from fastapi import Body, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
     FileResponse,
@@ -30,14 +37,24 @@ from ..compiler.issues import Fix, warning
 from ..compiler.templates import secrets as template_secrets
 from ..export import export_zip
 from ..providers import PROVIDERS, split_model
-from ..runtime import RunOptions, key_status, stream_run
+from ..runtime import key_status
+from ..runtime.resources import open_resources
 from ..spec import FlowSpec, SpecError, loads_spec, parse_spec, spec_json
 from ..spec.models import SPEC_VERSION
 from ..spec.schema import flow_json_schema
 from ..steps import catalog as step_catalog
 from ..templates import list_templates, load_template
+from . import notify
+from .cron import CronError, next_fire
+from .cron import describe as describe_cron
+from .db import Database, checkpoint_url
+from .hub import Busy, Hub, Invalid, NotFound
 from .secrets import SecretStore
-from .store import FlowNotFound, FlowStore, RunStore
+from .store import FlowNotFound, FlowStore
+from .worker import Worker
+from .worker import fire as fire_trigger
+
+log = logging.getLogger("easychain.server")
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -48,6 +65,47 @@ class RunRequest(BaseModel):
     inputs: dict[str, Any] = Field(default_factory=dict)
     thread_id: str | None = None
     stand_in: bool = False
+    pause_before: list[str] = Field(default_factory=list)
+    pause_after: list[str] = Field(default_factory=list)
+    # Return {run_id} straight away instead of streaming the run's events.
+    background: bool = False
+    trigger: str | None = None
+
+
+class ResumeRequest(BaseModel):
+    # {interrupt_id: answer}; or one answer when only one step is waiting.
+    answers: dict[str, Any] | None = None
+    answer: Any = None
+    by: str | None = None
+    background: bool = False
+
+
+class ForkRequest(BaseModel):
+    checkpoint_id: str
+    update: dict[str, Any] | None = None
+    pause_before: list[str] = Field(default_factory=list)
+    pause_after: list[str] = Field(default_factory=list)
+    background: bool = False
+
+
+class AnswerRequest(BaseModel):
+    action: str = "approve"
+    value: Any = None
+    comment: str = ""
+    by: str | None = None
+
+
+class TriggerRequest(BaseModel):
+    flow_id: str
+    kind: str = Field(pattern="^(webhook|schedule|upload|after_flow)$")
+    name: str | None = None
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class TriggerUpdate(BaseModel):
+    enabled: bool | None = None
+    name: str | None = None
+    config: dict[str, Any] | None = None
 
 
 class CreateFlowRequest(BaseModel):
@@ -90,25 +148,59 @@ def blank_flow(name: str = "My flow") -> FlowSpec:
     )
 
 
+def default_database_url(home: Path) -> str:
+    return os.environ.get("EASYCHAIN_DATABASE_URL") or f"sqlite:///{home / 'easychain.db'}"
+
+
 def create_app(
     workspace: str | Path | None = None,
     home: str | Path | None = None,
     static_dir: str | Path | None = None,
+    database_url: str | None = None,
+    worker: bool | None = None,
+    worker_options: dict[str, Any] | None = None,
 ) -> FastAPI:
+    """The API app. ``worker`` runs jobs inside this process too (the default for one-person use;
+    set EASYCHAIN_WORKER=off when separate ``easychain worker`` processes do the work)."""
     home_path = Path(home or os.environ.get("EASYCHAIN_HOME") or Path.home() / ".easychain")
     workspace_path = Path(workspace or os.environ.get("EASYCHAIN_WORKSPACE") or home_path / "flows")
     flows = FlowStore(workspace_path)
-    runs = RunStore()
     vault = SecretStore(home_path)
     web_dir = Path(static_dir or os.environ.get("EASYCHAIN_WEB_DIST") or STATIC_DIR)
+    db_url = database_url or default_database_url(home_path)
+    inline_worker = (
+        worker if worker is not None else os.environ.get("EASYCHAIN_WORKER", "inline") != "off"
+    )
+
+    @contextlib.asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        db = await Database.connect(db_url)
+        resources = await open_resources(checkpoint_url(db_url))
+        app.state.hub = Hub(db, resources, flows, vault)
+        stop = asyncio.Event()
+        task = None
+        if inline_worker:
+            runner = Worker(app.state.hub, **(worker_options or {}))
+            app.state.worker = runner
+            task = asyncio.create_task(runner.run(stop))
+        try:
+            yield
+        finally:
+            stop.set()
+            if task is not None:
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(task, 15)
+            await resources.aclose()
+            await db.close()
 
     app = FastAPI(
         title="Easy Chain",
         version=__version__,
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
+        lifespan=lifespan,
     )
-    app.state.flows, app.state.runs, app.state.vault = flows, runs, vault
+    app.state.flows, app.state.vault = flows, vault
     origins = os.environ.get(
         "EASYCHAIN_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
     )
@@ -123,11 +215,14 @@ def create_app(
 
     @app.get("/api/health")
     def health() -> dict[str, Any]:
+        hub_ = getattr(app.state, "hub", None)
         return {
             "ok": True,
             "version": __version__,
             "spec_version": SPEC_VERSION,
             "workspace": str(workspace_path),
+            "database": hub_.db.dialect if hub_ else None,
+            "worker": "inline" if inline_worker else "external",
         }
 
     def providers_payload() -> list[dict[str, Any]]:
@@ -170,7 +265,7 @@ def create_app(
                 "messages",
                 "any",
             ],
-            "update_rules": ["replace", "append", "merge", "add"],
+            "update_rules": ["replace", "append", "merge", "add", "custom"],
         }
 
     @app.get("/api/schema")
@@ -221,6 +316,13 @@ def create_app(
         flow_id = flows.create(spec)
         return {"id": flow_id, "spec": spec_json(spec)}
 
+    def resolve_flow(flow_id: str) -> FlowSpec | None:
+        """Flows used as Sub-flows come from the workspace."""
+        try:
+            return flows.get(flow_id)
+        except (FlowNotFound, SpecError):
+            return None
+
     def _get(flow_id: str) -> FlowSpec:
         try:
             return flows.get(flow_id)
@@ -239,13 +341,17 @@ def create_app(
         return {"id": flow_id, "spec": spec_json(_get(flow_id))}
 
     @app.put("/api/flows/{flow_id}")
-    def save_flow(flow_id: str, spec: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    async def save_flow(flow_id: str, spec: dict[str, Any] = Body(...)) -> dict[str, Any]:
         parsed = _spec_or_422(spec)
         try:
             flows.save(flow_id, parsed)
         except FlowNotFound:
             raise HTTPException(404, detail={"message": "Bad flow id."}) from None
-        return {"id": flow_id, "saved": True}
+        version_id = None
+        hub_ = getattr(app.state, "hub", None)
+        if hub_ is not None:
+            version_id = await hub_.db.save_version(flow_id, hub_.bundle(parsed), note="saved")
+        return {"id": flow_id, "saved": True, "version_id": version_id}
 
     @app.delete("/api/flows/{flow_id}")
     def delete_flow(flow_id: str) -> dict[str, Any]:
@@ -264,7 +370,7 @@ def create_app(
 
     @app.get("/api/flows/{flow_id}/export")
     def export_saved(flow_id: str) -> Response:
-        return _export(_get(flow_id))
+        return _export(_get(flow_id), flow_id)
 
     # ── checks, code, export ───────────────────────────────────────────────
 
@@ -309,19 +415,24 @@ def create_app(
         return issues
 
     @app.post("/api/check")
-    def check(spec: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    def check(spec: dict[str, Any] = Body(...), flow_id: str | None = None) -> dict[str, Any]:
         parsed = _spec_or_422(spec)
-        an = FlowAnalysis(parsed)
+        an = FlowAnalysis(parsed, resolve=resolve_flow, flow_id=flow_id)
         issues = validate(parsed, analysis=an) + runtime_issues(parsed)
         return {"issues": [i.to_dict() for i in issues], "analysis": an.summary()}
 
     @app.post("/api/compile")
-    def compile_endpoint(spec: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    def compile_endpoint(
+        spec: dict[str, Any] = Body(...), flow_id: str | None = None
+    ) -> dict[str, Any]:
         parsed = _spec_or_422(spec)
         try:
-            compiled = compile_flow(parsed, allow_errors=True)
+            compiled = compile_flow(
+                parsed, allow_errors=True, resolve=resolve_flow, flow_id=flow_id
+            )
         except Exception as exc:  # code can't be shown until the errors are fixed
-            issues = [i.to_dict() for i in validate(parsed)]
+            an = FlowAnalysis(parsed, resolve=resolve_flow, flow_id=flow_id)
+            issues = [i.to_dict() for i in validate(parsed, analysis=an)]
             return {
                 "source": None,
                 "snippets": {},
@@ -337,9 +448,9 @@ def create_app(
             "issues": [i.to_dict() for i in compiled.issues],
         }
 
-    def _export(spec: FlowSpec) -> Response:
+    def _export(spec: FlowSpec, flow_id: str | None = None) -> Response:
         try:
-            data = export_zip(spec)
+            data = export_zip(spec, resolve_flow, flow_id)
         except CompileError as exc:
             raise HTTPException(
                 422,
@@ -358,41 +469,404 @@ def create_app(
         )
 
     @app.post("/api/export")
-    def export(spec: dict[str, Any] = Body(...)) -> Response:
-        return _export(_spec_or_422(spec))
+    def export(spec: dict[str, Any] = Body(...), flow_id: str | None = None) -> Response:
+        return _export(_spec_or_422(spec), flow_id)
 
     # ── runs ────────────────────────────────────────────────────────────────
 
-    @app.post("/api/runs")
-    async def start_run(req: RunRequest, request: Request) -> StreamingResponse:
-        spec = _spec_or_422(req.spec) if req.spec is not None else _get(req.flow_id or "")
-        run_id = uuid.uuid4().hex
-        runs.start(run_id, req.flow_id, spec.name, req.inputs)
-        options = RunOptions(
-            thread_id=req.thread_id, run_id=run_id, stand_in=req.stand_in, redact=vault.values()
-        )
+    def hub() -> Hub:
+        found = getattr(app.state, "hub", None)
+        if found is None:
+            raise HTTPException(503, detail={"message": "The server is still starting."})
+        return found
 
+    def sse(event: dict[str, Any]) -> str:
+        data = json.dumps(event, ensure_ascii=False, default=str)
+        return f"id: {event.get('event_id', '')}\nevent: {event.get('type', 'message')}\ndata: {data}\n\n"
+
+    def stream(
+        run_id: str, after: int = 0, headers: dict[str, str] | None = None
+    ) -> StreamingResponse:
         async def events():
-            async for event in stream_run(spec, req.inputs, options):
-                runs.add(run_id, event)
-                yield f"event: {event['type']}\ndata: {json.dumps(event, ensure_ascii=False, default=str)}\n\n"
+            async for event in hub().tail(run_id, after):
+                yield sse(event)
 
         return StreamingResponse(
             events(),
             media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "X-Run-Id": run_id},
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+                "X-Run-Id": run_id,
+                **(headers or {}),
+            },
         )
 
+    async def last_event_id(run_id: str) -> int:
+        events = await hub().db.events_after(run_id, 0, limit=100000)
+        return events[-1]["event_id"] if events else 0
+
+    def hub_errors(exc: Exception) -> HTTPException:
+        if isinstance(exc, Busy):
+            return HTTPException(409, detail={"message": str(exc), "kind": "busy"})
+        if isinstance(exc, NotFound):
+            return HTTPException(404, detail={"message": str(exc)})
+        return HTTPException(409, detail={"message": str(exc)})
+
+    def run_summary(run: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "run_id": run["id"],
+            "flow_id": run["flow_id"],
+            "flow": run["flow_name"],
+            "version_id": run["version_id"],
+            "thread_id": run["thread_id"],
+            "status": run["status"],
+            "trigger": run["trigger"],
+            "parent_run_id": run["parent_run_id"],
+            "inputs": run["inputs"],
+            "options": run["options"],
+            "output": run["output"],
+            "error": run["error"],
+            "usage": run["usage"],
+            "cost": run["cost"],
+            "pending": run["pending"],
+            "checkpoint_id": run["checkpoint_id"],
+            "started": run["started_at"] or run["created_at"],
+            "created": run["created_at"],
+            "finished": run["finished_at"],
+            "duration_ms": run["duration_ms"],
+        }
+
+    @app.post("/api/runs")
+    async def start_run(req: RunRequest) -> Response:
+        spec = _spec_or_422(req.spec) if req.spec is not None else _get(req.flow_id or "")
+        try:
+            run_id = await hub().start_run(
+                spec,
+                flow_id=req.flow_id,
+                inputs=req.inputs,
+                thread_id=req.thread_id,
+                stand_in=req.stand_in,
+                pause_before=req.pause_before,
+                pause_after=req.pause_after,
+                trigger=req.trigger or "manual",
+            )
+        except (Busy, NotFound, Invalid) as exc:
+            raise hub_errors(exc) from exc
+        if req.background:
+            run = await hub().db.get_run(run_id)
+            return JSONResponse({"run_id": run_id, "thread_id": run["thread_id"]}, status_code=202)
+        return stream(run_id)
+
     @app.get("/api/runs")
-    def list_runs(flow_id: str | None = None) -> list[dict[str, Any]]:
-        return runs.list(flow_id)
+    async def list_runs(
+        flow_id: str | None = None,
+        thread_id: str | None = None,
+        status: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        rows = await hub().db.list_runs(
+            flow_id=flow_id, thread_id=thread_id, status=status, limit=limit
+        )
+        return [run_summary(r) for r in rows]
+
+    async def _run_or_404(run_id: str) -> dict[str, Any]:
+        run = await hub().db.get_run(run_id)
+        if run is None:
+            raise HTTPException(404, detail={"message": "That run doesn't exist."})
+        return run
 
     @app.get("/api/runs/{run_id}")
-    def get_run(run_id: str) -> dict[str, Any]:
-        run = runs.get(run_id)
-        if run is None:
-            raise HTTPException(404, detail={"message": "That run isn't kept any more."})
-        return run
+    async def get_run(run_id: str) -> dict[str, Any]:
+        run = await _run_or_404(run_id)
+        events = await hub().db.events_after(run_id, 0, limit=100000, include_tokens=False)
+        return {**run_summary(run), "events": events}
+
+    @app.get("/api/runs/{run_id}/events")
+    async def run_events(run_id: str, request: Request, after: int = 0) -> StreamingResponse:
+        await _run_or_404(run_id)
+        last = request.headers.get("last-event-id")
+        if last and last.isdigit():
+            after = max(after, int(last))
+        return stream(run_id, after)
+
+    @app.websocket("/api/runs/{run_id}/ws")
+    async def run_socket(socket: WebSocket, run_id: str, after: int = 0) -> None:
+        await socket.accept()
+        if await hub().db.get_run(run_id) is None:
+            await socket.send_json({"type": "error", "message": "That run doesn't exist."})
+            await socket.close(code=4404)
+            return
+
+        gone = asyncio.Event()
+
+        async def listen() -> None:
+            try:
+                while True:
+                    message = await socket.receive_json()
+                    if message.get("type") == "cancel":
+                        await hub().cancel(run_id)
+            except (WebSocketDisconnect, RuntimeError, ValueError):
+                gone.set()
+
+        listener = asyncio.create_task(listen())
+        try:
+            async for event in hub().tail(run_id, after, until="end", stop=gone):
+                await socket.send_text(json.dumps(event, ensure_ascii=False, default=str))
+        except WebSocketDisconnect:
+            pass
+        finally:
+            listener.cancel()
+            with contextlib.suppress(Exception):
+                await socket.close()
+
+    @app.post("/api/runs/{run_id}/cancel")
+    async def cancel_run(run_id: str) -> dict[str, Any]:
+        await _run_or_404(run_id)
+        return {"run_id": run_id, "status": await hub().cancel(run_id)}
+
+    @app.post("/api/runs/{run_id}/resume")
+    async def resume_run(run_id: str, req: ResumeRequest) -> Response:
+        run = await _run_or_404(run_id)
+        answers = dict(req.answers or {})
+        if req.answer is not None or not answers:
+            waiting = (run.get("pending") or {}).get("interrupts") or []
+            if len(waiting) != 1:
+                raise HTTPException(
+                    409, detail={"message": "Say which waiting step each answer is for (answers)."}
+                )
+            answers = {waiting[0]["id"]: req.answer}
+        after = await last_event_id(run_id)
+        try:
+            for interrupt_id in answers:
+                for item in await hub().db.list_inbox(status="open"):
+                    if item["run_id"] == run_id and item["interrupt_id"] == interrupt_id:
+                        await hub().db.answer_inbox(item["id"], answers[interrupt_id], req.by)
+            await hub().resume(run_id, answers)
+        except (Busy, NotFound, Invalid) as exc:
+            raise hub_errors(exc) from exc
+        if req.background:
+            return JSONResponse({"run_id": run_id, "status": "queued"}, status_code=202)
+        return stream(run_id, after)
+
+    @app.post("/api/runs/{run_id}/continue")
+    async def continue_run(run_id: str, background: bool = False) -> Response:
+        await _run_or_404(run_id)
+        after = await last_event_id(run_id)
+        try:
+            await hub().continue_run(run_id)
+        except (Busy, NotFound, Invalid) as exc:
+            raise hub_errors(exc) from exc
+        if background:
+            return JSONResponse({"run_id": run_id, "status": "queued"}, status_code=202)
+        return stream(run_id, after)
+
+    @app.post("/api/runs/{run_id}/fork")
+    async def fork_run(run_id: str, req: ForkRequest) -> Response:
+        await _run_or_404(run_id)
+        try:
+            new_id = await hub().fork(
+                run_id, req.checkpoint_id, req.update, req.pause_before, req.pause_after
+            )
+        except (Busy, NotFound, Invalid) as exc:
+            raise hub_errors(exc) from exc
+        if req.background:
+            return JSONResponse({"run_id": new_id}, status_code=202)
+        return stream(new_id)
+
+    @app.get("/api/runs/{run_id}/savepoints")
+    async def save_points(run_id: str) -> list[dict[str, Any]]:
+        await _run_or_404(run_id)
+        try:
+            return await hub().save_points(run_id)
+        except NotFound as exc:
+            raise hub_errors(exc) from exc
+
+    @app.get("/api/threads")
+    async def list_threads(flow_id: str | None = None) -> list[dict[str, Any]]:
+        return await hub().db.list_threads(flow_id)
+
+    # ── the Inbox ───────────────────────────────────────────────────────────
+
+    @app.get("/api/inbox")
+    async def list_inbox(status: str | None = "open") -> list[dict[str, Any]]:
+        return await hub().db.list_inbox(status or None)
+
+    @app.get("/api/inbox/{item_id}")
+    async def get_inbox(item_id: str) -> dict[str, Any]:
+        item = await hub().db.get_inbox(item_id)
+        if item is None:
+            raise HTTPException(404, detail={"message": "That Inbox item doesn't exist."})
+        return item
+
+    @app.post("/api/inbox/{item_id}/answer")
+    async def answer_inbox(item_id: str, req: AnswerRequest) -> dict[str, Any]:
+        answer: dict[str, Any] = {"action": req.action}
+        if req.value is not None:
+            answer["value"] = req.value
+        if req.comment:
+            answer["comment"] = req.comment
+        try:
+            item = await hub().answer(item_id, answer, req.by)
+        except (Busy, NotFound, Invalid) as exc:
+            raise hub_errors(exc) from exc
+        return {"answered": True, "run_id": item["run_id"]}
+
+    # ── triggers ────────────────────────────────────────────────────────────
+
+    def trigger_view(trig: dict[str, Any]) -> dict[str, Any]:
+        out = dict(trig)
+        cfg = out.get("config") or {}
+        if trig["kind"] in ("webhook", "upload"):
+            suffix = "/upload" if trig["kind"] == "upload" else ""
+            out["url"] = f"/api/hooks/{trig['id']}{suffix}"
+        if trig["kind"] == "schedule":
+            out["describe"] = describe_cron(cfg.get("cron", ""))
+        return out
+
+    async def _validated_trigger(
+        req: TriggerRequest, flow_id: str
+    ) -> tuple[dict[str, Any], float | None]:
+        _get(flow_id)
+        cfg = dict(req.config or {})
+        next_at = None
+        if req.kind == "schedule":
+            try:
+                next_at = next_fire(cfg.get("cron", ""), cfg.get("timezone"), time.time())
+            except CronError as exc:
+                raise HTTPException(422, detail={"message": str(exc)}) from exc
+        elif req.kind == "after_flow":
+            source = cfg.get("source_flow_id")
+            if not source:
+                raise HTTPException(422, detail={"message": "Pick the flow that comes first."})
+            _get(source)
+            if source == flow_id:
+                raise HTTPException(
+                    422, detail={"message": "A flow can't start itself when it finishes."}
+                )
+        elif req.kind == "upload" and not cfg.get("field"):
+            raise HTTPException(422, detail={"message": "Pick the input field that gets the file."})
+        return cfg, next_at
+
+    @app.get("/api/triggers")
+    async def list_triggers(flow_id: str | None = None) -> list[dict[str, Any]]:
+        return [trigger_view(t) for t in await hub().db.list_triggers(flow_id)]
+
+    @app.post("/api/triggers", status_code=201)
+    async def create_trigger(req: TriggerRequest) -> dict[str, Any]:
+        cfg, next_at = await _validated_trigger(req, req.flow_id)
+        trig = await hub().db.create_trigger(req.flow_id, req.kind, cfg, req.name or "", next_at)
+        return trigger_view(trig)
+
+    @app.patch("/api/triggers/{trigger_id}")
+    async def update_trigger(trigger_id: str, req: TriggerUpdate) -> dict[str, Any]:
+        trig = await hub().db.get_trigger(trigger_id)
+        if trig is None:
+            raise HTTPException(404, detail={"message": "That trigger doesn't exist."})
+        values: dict[str, Any] = {}
+        if req.enabled is not None:
+            values["enabled"] = req.enabled
+        if req.name is not None:
+            values["name"] = req.name
+        if req.config is not None:
+            cfg, next_at = await _validated_trigger(
+                TriggerRequest(flow_id=trig["flow_id"], kind=trig["kind"], config=req.config),
+                trig["flow_id"],
+            )
+            values.update(config=cfg, next_fire_at=next_at)
+        if values:
+            await hub().db.update_trigger(trigger_id, **values)
+        return trigger_view(await hub().db.get_trigger(trigger_id))  # type: ignore[arg-type]
+
+    @app.delete("/api/triggers/{trigger_id}")
+    async def delete_trigger(trigger_id: str) -> dict[str, Any]:
+        if not await hub().db.delete_trigger(trigger_id):
+            raise HTTPException(404, detail={"message": "That trigger doesn't exist."})
+        return {"deleted": True}
+
+    async def _hook(trigger_id: str, kind: str, request: Request) -> dict[str, Any]:
+        trig = await hub().db.get_trigger(trigger_id)
+        token = request.headers.get("x-easychain-token") or request.query_params.get("token")
+        if (
+            trig is None
+            or trig["kind"] != kind
+            or not secrets_module.compare_digest(str(token or ""), trig["token"])
+        ):
+            raise HTTPException(404, detail={"message": "No trigger here, or the token is wrong."})
+        if not trig["enabled"]:
+            raise HTTPException(409, detail={"message": "This trigger is switched off."})
+        return trig
+
+    @app.post("/api/hooks/{trigger_id}", status_code=202)
+    async def webhook(trigger_id: str, request: Request) -> dict[str, Any]:
+        trig = await _hook(trigger_id, "webhook", request)
+        raw = await request.body()
+        try:
+            data = json.loads(raw) if raw.strip() else {}
+        except json.JSONDecodeError:
+            data = {"body": raw.decode("utf-8", "replace")}
+        if not isinstance(data, dict):
+            data = {"body": data}
+        try:
+            run_id = await fire_trigger(hub(), trig, data)
+        except (Busy, NotFound, Invalid) as exc:
+            raise hub_errors(exc) from exc
+        return {"run_id": run_id}
+
+    @app.post("/api/hooks/{trigger_id}/upload", status_code=202)
+    async def upload(
+        trigger_id: str, request: Request, filename: str = "upload.bin"
+    ) -> dict[str, Any]:
+        trig = await _hook(trigger_id, "upload", request)
+        safe = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(filename).name)[:120] or "upload.bin"
+        folder = home_path / "uploads" / uuid.uuid4().hex
+        folder.mkdir(parents=True, exist_ok=True)
+        target = folder / safe
+        target.write_bytes(await request.body())
+        cfg = trig.get("config") or {}
+        data = {cfg["field"]: str(target), "filename": safe}
+        run_id = await fire_trigger(
+            hub(), {**trig, "config": {**cfg, "inputs": cfg.get("inputs")}}, data
+        )
+        return {"run_id": run_id, "file": str(target)}
+
+    # ── settings: notifications ─────────────────────────────────────────────
+
+    @app.get("/api/settings/notifications")
+    async def get_notifications() -> dict[str, Any]:
+        return notify.merged(await hub().db.get_setting("notifications", {}))
+
+    @app.put("/api/settings/notifications")
+    async def set_notifications(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        value = notify.merged(body)
+        await hub().db.set_setting("notifications", value)
+        return value
+
+    @app.post("/api/settings/notifications/test")
+    async def test_notifications() -> dict[str, Any]:
+        config = await hub().db.get_setting("notifications", {})
+        sample = {
+            "id": "test",
+            "run_id": "test",
+            "flow_id": None,
+            "flow_name": "Easy Chain",
+            "step": "test",
+            "request": {"question": "This is a test notification."},
+        }
+        return {"results": await notify.send_all(config, sample)}
+
+    # ── flow versions ───────────────────────────────────────────────────────
+
+    @app.get("/api/flows/{flow_id}/versions")
+    async def list_versions(flow_id: str) -> list[dict[str, Any]]:
+        return await hub().db.list_versions(flow_id)
+
+    @app.get("/api/versions/{version_id}")
+    async def get_version(version_id: str) -> dict[str, Any]:
+        version = await hub().db.get_version(version_id)
+        if version is None:
+            raise HTTPException(404, detail={"message": "That version doesn't exist."})
+        return version
 
     # ── secrets ─────────────────────────────────────────────────────────────
 

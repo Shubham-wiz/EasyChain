@@ -1,16 +1,13 @@
 """Where flows and runs live.
 
-Phase 1 keeps flows as ``*.flow.yaml`` files in a workspace folder (easy to put
-in git) and recent runs in memory. Phase 2 moves runs, threads and Save Points
-to Postgres.
+Flows are ``*.flow.yaml`` files in a workspace folder (easy to put in git). Runs,
+their events, flow versions and Save Points are in the database (``db.py``).
 """
 
 from __future__ import annotations
 
 import re
 import threading
-import time
-from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
@@ -88,52 +85,3 @@ class FlowStore:
         if not path.exists():
             raise FlowNotFound(flow_id)
         return path.read_text(encoding="utf-8")
-
-
-class RunStore:
-    """Recent runs with their full event list (most recent last)."""
-
-    def __init__(self, limit: int = 200):
-        self.limit = limit
-        self._runs: OrderedDict[str, dict[str, Any]] = OrderedDict()
-        self._lock = threading.Lock()
-
-    def start(
-        self, run_id: str, flow_id: str | None, flow_name: str, inputs: dict[str, Any]
-    ) -> None:
-        with self._lock:
-            self._runs[run_id] = {
-                "run_id": run_id,
-                "flow_id": flow_id,
-                "flow": flow_name,
-                "inputs": inputs,
-                "started": time.time(),
-                "status": "running",
-                "events": [],
-            }
-            while len(self._runs) > self.limit:
-                self._runs.popitem(last=False)
-
-    def add(self, run_id: str, event: dict[str, Any]) -> None:
-        with self._lock:
-            run = self._runs.get(run_id)
-            if run is None:
-                return
-            if event["type"] != "token":
-                run["events"].append(event)
-            if event["type"] == "run_finished":
-                run["status"] = event["status"]
-                run["duration_ms"] = event.get("duration_ms")
-                run["cost"] = event.get("cost")
-                run["usage"] = event.get("usage")
-                run["thread_id"] = event.get("thread_id")
-
-    def list(self, flow_id: str | None = None) -> list[dict[str, Any]]:
-        with self._lock:
-            runs = [r for r in self._runs.values() if flow_id is None or r["flow_id"] == flow_id]
-            return [{k: v for k, v in r.items() if k != "events"} for r in reversed(runs)]
-
-    def get(self, run_id: str) -> dict[str, Any] | None:
-        with self._lock:
-            run = self._runs.get(run_id)
-            return dict(run) if run else None

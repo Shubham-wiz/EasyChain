@@ -14,8 +14,12 @@ from easychain.server.app import create_app
 
 
 @pytest.fixture
-def client(tmp_path: Path) -> TestClient:
-    return TestClient(create_app(home=tmp_path / "home", static_dir=tmp_path / "no-web"))
+def client(tmp_path: Path):
+    app = create_app(
+        home=tmp_path / "home", static_dir=tmp_path / "no-web", worker_options={"poll": 0.05}
+    )
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 def sse_events(response) -> list[dict]:
@@ -155,7 +159,7 @@ def test_run_streams_events_and_is_recorded(client):
         assert response.headers["content-type"].startswith("text/event-stream")
         events = sse_events(response)
     kinds = [e["type"] for e in events]
-    assert kinds[0] == "run_started" and kinds[-1] == "run_finished"
+    assert kinds[:2] == ["run_queued", "run_started"] and kinds[-1] == "run_finished"
     assert "token" in kinds and "route" in kinds
     assert events[-1]["status"] == "ok"
     runs = client.get(f"/api/runs?flow_id={flow_id}").json()

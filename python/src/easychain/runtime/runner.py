@@ -211,6 +211,9 @@ class RunOptions:
     cancel: asyncio.Event | None = None
     # Saved with every Save Point (the run id is always added).
     metadata: dict[str, Any] = field(default_factory=dict)
+    # For "continue": when nothing is left to run, finish with the Flow Data as it is
+    # (a worker recovering a run that ended just before it crashed).
+    finish_if_done: bool = False
 
 
 def _now() -> float:
@@ -398,6 +401,9 @@ async def stream_run(
     last_values: dict[str, Any] = dict(prepared)
     if action == "start":
         graph_input = prepared
+        if opts.checkpoint_id:
+            # Start from an earlier Save Point (rolling a conversation back).
+            config["configurable"]["checkpoint_id"] = opts.checkpoint_id
     else:
         try:
             graph_input, last_values = await _prepare_action(graph, opts, config, thread_config)
@@ -451,6 +457,9 @@ async def stream_run(
     queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
 
     async def produce() -> None:
+        if graph_input is _ALREADY_DONE:
+            await queue.put(("done", None))
+            return
         try:
             async with contextlib.aclosing(
                 graph.astream(graph_input, config, **stream_kwargs)
@@ -794,8 +803,13 @@ async def _prepare_action(
             raise _NotResumable("not_waiting", "This run isn't waiting for an answer.")
         return Command(resume=opts.resume), dict(snapshot.values)
     if not snapshot.next:
+        if opts.finish_if_done:
+            return _ALREADY_DONE, dict(snapshot.values)
         raise _NotResumable("finished", "This run has already finished.")
     return None, dict(snapshot.values)
+
+
+_ALREADY_DONE = object()
 
 
 def _interrupt_step(value: Any) -> dict[str, Any]:
