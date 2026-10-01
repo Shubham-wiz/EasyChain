@@ -1,5 +1,5 @@
 import * as Popover from "@radix-ui/react-popover";
-import { AlertTriangle, CheckCircle2, CircleAlert, Cloud, CloudOff, Code2, KeyRound, LayoutGrid, Loader2, Moon, Play, Redo2, Sun, Undo2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CircleAlert, Cloud, CloudOff, Code2, Inbox, KeyRound, LayoutGrid, Loader2, Moon, Play, Redo2, Sun, Undo2, Zap } from "lucide-react";
 import { useStore } from "zustand";
 import { autoLayout } from "../lib/spec";
 import { cn, modKey } from "../lib/utils";
@@ -7,6 +7,7 @@ import { useCheck } from "../state/check";
 import { redo, undo, useFlow } from "../state/flow";
 import { useRun } from "../state/run";
 import { useUi } from "../state/ui";
+import { useInboxCount } from "./Inbox";
 import { IssueList } from "./inspector/Inspector";
 import { Button, Tooltip } from "./ui";
 
@@ -51,13 +52,30 @@ function ProblemsButton() {
   );
 }
 
+export function InboxLink() {
+  const count = useInboxCount();
+  return (
+    <Tooltip content="Runs waiting for your answer">
+      <a href="#/inbox" className="relative flex h-8 items-center gap-1 rounded-md px-2 text-sm text-muted hover:bg-surface-2 hover:text-text" data-testid="inbox-link">
+        <Inbox size={15} />
+        <span className="hidden md:inline">Inbox</span>
+        {count > 0 && (
+          <span className="rounded-full bg-warn px-1.5 text-[10px] leading-4 font-semibold text-white" data-testid="inbox-count">
+            {count}
+          </span>
+        )}
+      </a>
+    </Tooltip>
+  );
+}
+
 export function TopBar({ onHome }: { onHome: () => void }) {
   const name = useFlow((s) => s.spec?.name);
   const apply = useFlow((s) => s.apply);
   const canUndo = useStore(useFlow.temporal, (s) => s.pastStates.length > 0);
   const canRedo = useStore(useFlow.temporal, (s) => s.futureStates.length > 0);
-  const { mode, setMode, theme, toggleTheme, openSettings, setExportOpen, setRightTab, select } = useUi();
-  const running = useRun((s) => s.status === "running");
+  const { mode, setMode, theme, toggleTheme, openSettings, setExportOpen, setRightTab, select, setTriggersOpen } = useUi();
+  const running = useRun((s) => s.status === "running" || s.status === "queued");
   const mod = modKey();
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-surface px-3">
@@ -89,6 +107,12 @@ export function TopBar({ onHome }: { onHome: () => void }) {
       </div>
       <div className="ml-auto flex items-center gap-1.5">
         <ProblemsButton />
+        <InboxLink />
+        <Tooltip content="Start this flow from a webhook, a schedule, an upload or another flow">
+          <Button variant="ghost" size="icon-sm" aria-label="Triggers" onClick={() => setTriggersOpen(true)}>
+            <Zap size={15} />
+          </Button>
+        </Tooltip>
         <div className="flex items-center rounded-md bg-surface-2 p-0.5 text-xs" role="group" aria-label="Mode">
           {(["beginner", "pro"] as const).map((m) => (
             <button

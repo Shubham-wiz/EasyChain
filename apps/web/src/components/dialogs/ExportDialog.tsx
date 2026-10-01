@@ -22,7 +22,7 @@ export function ExportDialog() {
     if (!open || !spec) return;
     setResult(null);
     setError(null);
-    api.compile(spec).then(setResult).catch((e) => setError(String(e.message ?? e)));
+    api.compile(spec, flowId).then(setResult).catch((e) => setError(String(e.message ?? e)));
   }, [open, spec]);
 
   if (!spec) return null;
@@ -48,7 +48,7 @@ export function ExportDialog() {
             onClick={async () => {
               setBusy(true);
               try {
-                download(await api.exportZip(spec), `${module}.zip`);
+                download(await api.exportZip(spec, useFlow.getState().flowId), `${module}.zip`);
               } catch (e) {
                 setError(e instanceof Error ? e.message : String(e));
               } finally {

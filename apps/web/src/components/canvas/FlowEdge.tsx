@@ -6,6 +6,9 @@ import { useRun } from "../../state/run";
 
 export interface FlowEdgeData extends Record<string, unknown> {
   exit?: string | null;
+  /** Drawn by Easy Chain (For Each results), not a connection in the flow. */
+  virtual?: boolean;
+  label?: string;
 }
 
 export const FlowEdge = memo(function FlowEdge(props: EdgeProps) {
@@ -28,7 +31,17 @@ export const FlowEdge = memo(function FlowEdge(props: EdgeProps) {
         className={cn(flowing && "edge-flowing", done && "edge-done")}
         style={{ strokeWidth: selected ? 2.5 : 1.75 }}
       />
-      {(data?.exit || selected) && (
+      {data?.virtual && data.label && (
+        <EdgeLabelRenderer>
+          <div
+            className="nodrag nopan pointer-events-none absolute rounded-full bg-surface px-1.5 py-px text-[10px] text-faint italic"
+            style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
+          >
+            {data.label}
+          </div>
+        </EdgeLabelRenderer>
+      )}
+      {!data?.virtual && (data?.exit || selected) && (
         <EdgeLabelRenderer>
           <div
             className="nodrag nopan pointer-events-auto absolute flex items-center gap-1"

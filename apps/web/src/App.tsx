@@ -2,18 +2,29 @@ import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Editor } from "./components/Editor";
 import { Home } from "./components/Home";
+import { Inbox } from "./components/Inbox";
 import { Button } from "./components/ui";
 import { useCatalog } from "./state/catalog";
 
 interface Route {
   flowId: string | null;
   tryIt: boolean;
+  inbox: string | null | undefined;
 }
 
 function parseHash(): Route {
+  const inbox = /^#\/inbox(?:\/([a-f0-9]+))?/.exec(window.location.hash);
+  if (inbox) return { flowId: null, tryIt: false, inbox: inbox[1] ?? null };
   const match = /^#\/flows\/([a-z0-9-]+)(\?try=1)?/.exec(window.location.hash);
-  return match ? { flowId: match[1], tryIt: !!match[2] } : { flowId: null, tryIt: false };
+  return match ? { flowId: match[1], tryIt: !!match[2], inbox: undefined } : { flowId: null, tryIt: false, inbox: undefined };
 }
+
+/** Links in notifications point at /inbox/<id>; the app routes with the hash. */
+function redirectPath() {
+  const match = /^\/inbox(?:\/([a-f0-9]+))?\/?$/.exec(window.location.pathname);
+  if (match) window.history.replaceState(null, "", `/#/inbox${match[1] ? `/${match[1]}` : ""}`);
+}
+redirectPath();
 
 export function navigate(flowId: string | null, opts: { tryIt?: boolean } = {}) {
   window.location.hash = flowId ? `#/flows/${flowId}${opts.tryIt ? "?try=1" : ""}` : "#/";
@@ -50,6 +61,7 @@ export default function App() {
       </div>
     );
   }
+  if (route.inbox !== undefined) return <Inbox focus={route.inbox} onHome={() => navigate(null)} />;
   return route.flowId ? (
     <Editor key={route.flowId} flowId={route.flowId} tryIt={route.tryIt} onHome={() => navigate(null)} />
   ) : (

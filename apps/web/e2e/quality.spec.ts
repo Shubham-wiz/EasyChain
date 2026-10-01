@@ -87,3 +87,37 @@ test("home and editor have no serious accessibility violations", async ({ page }
   expect(await axe(page)).toEqual([]);
   await page.getByRole("button", { name: "Toggle theme" }).click();
 });
+
+test("the Inbox, a waiting run and the Flow Data panel have no serious accessibility violations", async ({ page, request }) => {
+  const spec = {
+    name: "Accessible approval",
+    steps: [
+      { id: "input", type: "input", name: "Input", settings: { fields: [{ name: "draft" }] } },
+      { id: "review", type: "ask_human", name: "Review", settings: { kind: "choose", question: "Which tone?", options: ["Warm", "Formal"], show: ["draft"] } },
+      { id: "output", type: "output", name: "Output", settings: { fields: ["human_answer"] } },
+    ],
+    connections: [
+      { from: "input", to: "review" },
+      { from: "review", to: "output", exit: "Warm" },
+      { from: "review", to: "output", exit: "Formal" },
+    ],
+    canvas: { steps: { input: { x: 0, y: 100 }, review: { x: 300, y: 100 }, output: { x: 650, y: 100 } }, notes: [] },
+  };
+  const id = (await (await request.post("/api/flows", { data: { spec } })).json()).id;
+  await request.post("/api/runs", { data: { flow_id: id, inputs: { draft: "Hello" }, background: true } });
+  await expect.poll(async () => (await (await request.get("/api/inbox")).json()).length, { timeout: 15_000 }).toBeGreaterThan(0);
+  await page.goto("/#/inbox");
+  await expect(page.getByTestId("inbox-item").first()).toBeVisible();
+  expect(await axe(page)).toEqual([]);
+
+  await page.goto(`/#/flows/${id}`);
+  await expect(step(page, "review")).toBeVisible();
+  await expect(page.getByLabel("Most rounds of steps")).toBeVisible();
+  expect(await axe(page)).toEqual([]);
+  await page.getByTestId("open-run").click();
+  await expect(page.getByTestId("run-waiting")).toBeVisible();
+  expect(await axe(page)).toEqual([]);
+  await page.getByRole("button", { name: "Toggle theme" }).click();
+  expect(await axe(page)).toEqual([]);
+  await page.getByRole("button", { name: "Toggle theme" }).click();
+});

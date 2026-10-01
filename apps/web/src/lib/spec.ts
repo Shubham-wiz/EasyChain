@@ -86,8 +86,8 @@ export function updateSettings(spec: FlowSpec, id: string, patch: Record<string,
   const step = next.steps.find((s) => s.id === id);
   if (!step) return spec;
   step.settings = { ...step.settings, ...patch };
-  // Renaming a Decision exit keeps its connection attached.
-  if (step.type === "decision" && ("exits" in patch || "otherwise" in patch)) {
+  // Renaming an exit keeps its connection attached.
+  if (hasExits(step) && ("exits" in patch || "otherwise" in patch || "options" in patch || "kind" in patch)) {
     const before = exitLabels(getStep(spec, id)!);
     const after = exitLabels(step);
     if (before.length === after.length) {
@@ -101,10 +101,30 @@ export function updateSettings(spec: FlowSpec, id: string, patch: Record<string,
   return next;
 }
 
+export const EACH_ITEM = "Each item";
+export const WHEN_DONE = "When done";
+
+/** The labelled exits a step leaves by (a step without exits has one plain way out). */
 export function exitLabels(step: Step): string[] {
-  if (step.type !== "decision") return [];
-  const exits = (step.settings.exits ?? []) as { label: string }[];
-  return [...exits.map((e) => e.label), step.settings.otherwise ?? "Otherwise"];
+  const s = step.settings ?? {};
+  switch (step.type) {
+    case "decision":
+      return [...((s.exits ?? []) as { label: string }[]).map((e) => e.label), s.otherwise ?? "Otherwise"];
+    case "jump":
+      return [...((s.exits ?? []) as { label: string }[]).map((e) => e.label), s.otherwise ?? "Next"];
+    case "ask_human":
+      if (s.kind === "choose") return Array.from(new Set((s.options ?? []) as string[]));
+      if (s.kind === "answer") return [];
+      return ["Approved", "Rejected"];
+    case "for_each":
+      return [EACH_ITEM, WHEN_DONE];
+    default:
+      return [];
+  }
+}
+
+export function hasExits(step: Step): boolean {
+  return exitLabels(step).length > 0;
 }
 
 /** Why a connection is not allowed, or null when it is fine. */
@@ -116,9 +136,18 @@ export function canConnect(spec: FlowSpec, from: string, to: string, exit: strin
   if (target.type === "input") return "Nothing can lead into Input; it's where runs start.";
   if (source.type === "output") return "Output is the end of the flow.";
   if (source.type === "input" && target.type === "output") return "Put at least one step between Input and Output.";
-  if (source.type === "decision" && !exit) return "Drag from one of the Decision's exits.";
-  if (source.type === "decision" && spec.connections.some((c) => c.from === from && c.exit === exit))
+  if (hasExits(source) && !exit) return "Drag from one of the step's exits.";
+  if (hasExits(source) && spec.connections.some((c) => c.from === from && c.exit === exit))
     return `The exit “${exit}” already leads somewhere. Delete that connection first.`;
+  if (source.type === "for_each" && exit === EACH_ITEM) {
+    if (target.type === "output" || hasExits(target) || target.type === "for_each")
+      return "“Each item” leads to one action, AI or Sub-flow step. To choose per item, use a Sub-flow.";
+    if (spec.connections.some((c) => c.to === to)) return "That step already has a way in; the step run per item can't have another.";
+  }
+  const body = spec.connections.find((c) => c.to === from && c.exit === EACH_ITEM);
+  if (body) return "This step runs once per item, so it can't lead on. Connect the For Each's “When done” exit instead.";
+  if (spec.connections.some((c) => c.to === to && c.exit === EACH_ITEM))
+    return "This step runs once per item for a For Each; nothing else can lead into it.";
   if (spec.connections.some((c) => c.from === from && c.to === to && (c.exit ?? null) === (exit ?? null)))
     return "These steps are already connected.";
   return null;
@@ -225,8 +254,8 @@ export function autoLayout(spec: FlowSpec): FlowSpec {
   for (const step of spec.steps) {
     const exits = exitLabels(step).length;
     g.setNode(step.id, {
-      width: step.type === "decision" ? DECISION_WIDTH : NODE_WIDTH,
-      height: step.type === "decision" ? 110 + exits * 8 : NODE_HEIGHT,
+      width: exits ? DECISION_WIDTH : NODE_WIDTH,
+      height: exits ? 80 + exits * 26 : NODE_HEIGHT,
     });
   }
   for (const c of spec.connections) if (getStep(spec, c.from) && getStep(spec, c.to)) g.setEdge(c.from, c.to);
@@ -282,4 +311,27 @@ export function pasteSteps(spec: FlowSpec, clip: Clipboard, offset = 40): { spec
   return { spec: next, ids: Object.values(remap) };
 }
 
-export const STEP_TYPES_WITH_OUTPUT: StepType[] = ["ai_model", "instructions", "http_request", "code"];
+export const STEP_TYPES_WITH_OUTPUT: StepType[] = ["ai_model", "instructions", "http_request", "code", "subflow"];
+
+/** Flow Data fields declared in the Flow Data panel. */
+export function setDataFields(spec: FlowSpec, data: FlowSpec["data"]): FlowSpec {
+  return { ...clone(spec), data: clone(data) };
+}
+
+export function setFlowSettings(spec: FlowSpec, patch: Record<string, unknown>): FlowSpec {
+  const next = clone(spec);
+  next.settings = { ...(next.settings ?? {}), ...patch };
+  for (const [k, v] of Object.entries(next.settings)) if (v === null || v === undefined || v === "") delete (next.settings as Record<string, unknown>)[k];
+  return next;
+}
+
+export function setRunPolicy(spec: FlowSpec, id: string, patch: Record<string, unknown>): FlowSpec {
+  const next = clone(spec);
+  const step = next.steps.find((s) => s.id === id);
+  if (!step) return spec;
+  const policy: Record<string, unknown> = { ...(step.run ?? {}), ...patch };
+  for (const [k, v] of Object.entries(policy)) if (v === null || v === undefined || v === "" || v === false || v === 0) delete policy[k];
+  if (Object.keys(policy).length) step.run = policy;
+  else delete step.run;
+  return next;
+}

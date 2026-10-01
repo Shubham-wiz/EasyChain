@@ -2,10 +2,12 @@
 
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { api } from "../../lib/api";
 import { toIdent } from "../../lib/spec";
-import type { FieldInfo, FormField, ProviderInfo } from "../../lib/types";
+import type { FieldInfo, FlowListItem, FormField, ProviderInfo } from "../../lib/types";
 import { cn } from "../../lib/utils";
 import { useCatalog } from "../../state/catalog";
+import { useFlow } from "../../state/flow";
 import { useUi } from "../../state/ui";
 import { CodeView } from "../CodeView";
 import { Button, Input, Select, Switch, Textarea } from "../ui";
@@ -291,23 +293,124 @@ export function OutputFieldsPicker({ value, onChange, fields }: FieldProps) {
   );
 }
 
-export function KeyValueEditor({ value, onChange }: FieldProps) {
+const KEY_VALUE_LABELS: Record<string, { key: string; value: string; add: string; first: () => string }> = {
+  headers: { key: "Header name", value: "Header value", add: "Add a header", first: () => "X-Header" },
+  inputs: { key: "Its input", value: "Value", add: "Give it a value", first: () => "input" },
+  outputs: { key: "Field here", value: "Its result", add: "Save a result", first: () => "result" },
+};
+
+export function KeyValueEditor({ value, onChange, field }: FieldProps) {
+  const labels = KEY_VALUE_LABELS[field.key] ?? KEY_VALUE_LABELS.headers;
   const entries = Object.entries((value ?? {}) as Record<string, string>);
-  const write = (list: [string, string][]) => onChange(Object.fromEntries(list.filter(([k]) => k !== "" || true)));
+  const write = (list: [string, string][]) => onChange(Object.fromEntries(list));
+  const clean = (k: string) => (field.key === "headers" ? k : toIdent(k, "field"));
   return (
     <div className="space-y-1.5">
       {entries.map(([k, v], i) => (
-        <div key={i} className="flex gap-1.5">
-          <Input aria-label="Header name" className="w-2/5" defaultValue={k} onBlur={(e) => write(entries.map((p, j) => (j === i ? [e.target.value, p[1]] : p)))} />
-          <Input aria-label="Header value" className="font-mono text-[12px]" value={v} onChange={(e) => write(entries.map((p, j) => (j === i ? [p[0], e.target.value] : p)))} />
-          <Button size="icon" variant="ghost" aria-label="Remove header" onClick={() => write(entries.filter((_, j) => j !== i))}>
+        <div key={`${k}-${i}`} className="flex gap-1.5">
+          <Input
+            aria-label={labels.key}
+            className={cn("w-2/5", field.key !== "headers" && "font-mono text-[12px]")}
+            defaultValue={k}
+            onBlur={(e) => write(entries.map((p, j) => (j === i ? [clean(e.target.value), p[1]] : p)))}
+          />
+          <Input
+            aria-label={labels.value}
+            className="font-mono text-[12px]"
+            value={v}
+            onChange={(e) => write(entries.map((p, j) => (j === i ? [p[0], e.target.value] : p)))}
+          />
+          <Button size="icon" variant="ghost" aria-label={`Remove ${labels.key.toLowerCase()}`} onClick={() => write(entries.filter((_, j) => j !== i))}>
             <Trash2 size={13} />
           </Button>
         </div>
       ))}
-      <Button size="sm" variant="outline" onClick={() => write([...entries, [`X-Header-${entries.length + 1}`, ""]])}>
-        <Plus size={13} /> Add a header
+      <Button size="sm" variant="outline" onClick={() => write([...entries, [`${labels.first()}_${entries.length + 1}`.replace("X-Header_", "X-Header-"), ""]])}>
+        <Plus size={13} /> {labels.add}
       </Button>
+    </div>
+  );
+}
+
+/** Jump: fields to set, each to text with {placeholders} or (Pro) an expression. */
+export function FieldUpdatesEditor({ value, onChange, fields }: FieldProps) {
+  const mode = useUi((s) => s.mode);
+  const list: { field: string; value?: string; expression?: string | null }[] = value ?? [];
+  const set = (i: number, patch: Record<string, unknown>) => onChange(list.map((u, j) => (j === i ? { ...u, ...patch } : u)));
+  const listId = "field-updates-names";
+  return (
+    <div className="space-y-2">
+      <datalist id={listId}>
+        {fields.map((f) => (
+          <option key={f.name} value={f.name} />
+        ))}
+      </datalist>
+      {list.map((u, i) => {
+        const usesExpression = u.expression != null;
+        return (
+          <Row key={i} label={`update of ${u.field}`} onRemove={() => onChange(list.filter((_, j) => j !== i))}>
+            <div className="flex items-center gap-1.5">
+              <Input
+                aria-label="Field to set"
+                list={listId}
+                className="w-2/5 font-mono text-[12px]"
+                defaultValue={u.field}
+                onBlur={(e) => {
+                  const clean = toIdent(e.target.value, "field");
+                  e.target.value = clean;
+                  if (clean !== u.field) set(i, { field: clean });
+                }}
+              />
+              <span className="text-xs text-muted">=</span>
+              {usesExpression ? (
+                <Input aria-label="Expression" className="font-mono text-[12px]" value={u.expression ?? ""} onChange={(e) => set(i, { expression: e.target.value })} />
+              ) : (
+                <Input aria-label="New value" className="font-mono text-[12px]" placeholder="text or {field}" value={u.value ?? ""} onChange={(e) => set(i, { value: e.target.value })} />
+              )}
+            </div>
+            {mode === "pro" && (
+              <button
+                type="button"
+                className="text-[11px] text-accent underline"
+                onClick={() => set(i, usesExpression ? { expression: null } : { expression: `${u.field} + 1`, value: "" })}
+              >
+                {usesExpression ? "Use text" : "Use an expression"}
+              </button>
+            )}
+          </Row>
+        );
+      })}
+      <Button size="sm" variant="outline" onClick={() => onChange([...list, { field: `field_${list.length + 1}`, value: "" }])}>
+        <Plus size={13} /> Set a field
+      </Button>
+    </div>
+  );
+}
+
+/** Sub-flow: pick another flow of the workspace. */
+export function FlowPicker({ value, onChange, id }: FieldProps) {
+  const flowId = useFlow((s) => s.flowId);
+  const [flows, setFlows] = useState<FlowListItem[] | null>(null);
+  useEffect(() => {
+    api.flows().then(setFlows).catch(() => setFlows([]));
+  }, []);
+  const options = (flows ?? []).filter((f) => f.id !== flowId);
+  return (
+    <div className="flex gap-1.5">
+      <Select id={id} value={value ?? ""} onChange={(e) => onChange(e.target.value)}>
+        <option value="">{flows ? (options.length ? "Pick a flow" : "No other flows yet") : "Loading…"}</option>
+        {options.map((f) => (
+          <option key={f.id} value={f.id}>
+            {f.name}
+          </option>
+        ))}
+        {value && !options.some((f) => f.id === value) && <option value={value}>{value}</option>}
+      </Select>
+      {value && (
+        <Button variant="outline" size="sm" onClick={() => (window.location.hash = `#/flows/${value}`)}>
+          Open
+        </Button>
+      )}
     </div>
   );
 }
@@ -539,6 +642,10 @@ export function renderControl(props: FieldProps): ReactNode {
       return <ExamplesEditor {...props} />;
     case "exits":
       return <ExitsEditor {...props} />;
+    case "field_updates":
+      return <FieldUpdatesEditor {...props} />;
+    case "flow":
+      return <FlowPicker {...props} />;
     case "code":
       return <CodeView value={value ?? ""} onChange={onChange} height={260} label="Python code" />;
     default:

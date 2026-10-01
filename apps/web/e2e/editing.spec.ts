@@ -100,7 +100,7 @@ test("pro mode, dark theme, code tab and settings", async ({ page }) => {
   await page.getByRole("button", { name: "Settings" }).click();
   await page.getByLabel("Secret name").fill("MY_TOKEN");
   await page.getByLabel("Secret value").fill("tok-123456");
-  await page.getByRole("button", { name: "Add" }).click();
+  await page.getByRole("button", { name: "Add", exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText("MY_TOKEN");
   await expect(page.getByRole("dialog")).not.toContainText("tok-123456");
   await page.getByRole("button", { name: "Delete MY_TOKEN" }).click();

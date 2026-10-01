@@ -2,14 +2,36 @@
 // and the API payloads. Settings stay loosely typed: the step catalog drives the forms.
 
 export type FieldType = "text" | "number" | "yes_no" | "list" | "object" | "file" | "messages" | "any";
-export type UpdateRule = "replace" | "append" | "merge" | "add";
-export type StepType = "input" | "output" | "ai_model" | "instructions" | "http_request" | "code" | "decision";
+export type UpdateRule = "replace" | "append" | "merge" | "add" | "custom";
+export type StepType =
+  | "input"
+  | "output"
+  | "ai_model"
+  | "instructions"
+  | "http_request"
+  | "code"
+  | "decision"
+  | "ask_human"
+  | "for_each"
+  | "subflow"
+  | "jump";
 
 export interface DataField {
   name: string;
   type: FieldType;
   update: UpdateRule;
   description: string;
+  combine?: string;
+}
+
+/** How a step runs: retries, time limit, cache and waiting for parallel branches. */
+export interface RunPolicy {
+  retries?: number;
+  retry_wait?: number;
+  timeout?: number | null;
+  cache?: boolean;
+  cache_ttl?: number | null;
+  wait_for_all?: boolean;
 }
 
 export interface Step {
@@ -19,6 +41,14 @@ export interface Step {
   description: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   settings: Record<string, any>;
+  run?: RunPolicy;
+}
+
+export interface FlowSettings {
+  max_steps?: number;
+  max_parallel?: number | null;
+  double_texting?: "reject" | "queue" | "interrupt" | "rollback";
+  max_concurrent_runs?: number | null;
 }
 
 export interface Connection {
@@ -45,6 +75,7 @@ export interface FlowSpec {
   version: 1;
   name: string;
   description: string;
+  settings?: FlowSettings;
   data: DataField[];
   steps: Step[];
   connections: Connection[];
@@ -140,6 +171,7 @@ export interface FieldInfo {
   is_output: boolean;
   written_by: string[];
   read_by: string[];
+  private?: boolean;
 }
 
 export interface Analysis {
@@ -150,6 +182,7 @@ export interface Analysis {
   reachable: string[];
   upstream: Record<string, string | null>;
   exits: Record<string, string[]>;
+  foreach_body?: Record<string, string>;
 }
 
 export interface CheckResult {
@@ -182,49 +215,172 @@ export interface RunError {
   problems?: { field: string; message: string }[];
 }
 
-export type RunEvent =
-  | { type: "run_started"; run_id: string; ts: number; thread_id: string; flow: string; stand_in: boolean }
-  | { type: "step_started"; run_id: string; ts: number; step: string; input: Record<string, unknown> }
-  | { type: "token"; run_id: string; ts: number; step: string; text: string }
-  | {
-      type: "step_finished";
-      run_id: string;
-      ts: number;
-      step: string;
-      output: Record<string, unknown>;
-      duration_ms: number;
-      usage?: Usage;
-      cost?: number | null;
-      model?: string | null;
-    }
-  | { type: "route"; run_id: string; ts: number; step: string; exit: string }
-  | { type: "step_failed"; run_id: string; ts: number; step: string; error: RunError }
-  | {
-      type: "run_finished";
-      run_id: string;
-      ts: number;
-      status: "ok" | "error";
-      duration_ms: number;
-      output?: Record<string, unknown>;
-      reply?: string | null;
-      usage?: Usage;
-      cost?: number | null;
-      error?: RunError;
-      issues?: Issue[];
-      step?: string | null;
-      thread_id?: string;
-    };
+export type RunStatus = "queued" | "running" | "paused" | "ok" | "error" | "cancelled";
+
+/** An Ask a Human step waiting for an answer. */
+export interface Waiting {
+  id: string;
+  step: string | null;
+  path: string[];
+  request: AskRequest;
+}
+
+export interface AskRequest {
+  step?: string;
+  kind: "approve" | "edit" | "answer" | "choose";
+  question: string;
+  show?: Record<string, unknown>;
+  field?: string;
+  value?: unknown;
+  options?: string[];
+}
+
+interface EventBase {
+  run_id: string;
+  ts: number;
+  event_id?: number;
+  /** Sub-flow steps leading to the step this event is about. */
+  path?: string[];
+}
+
+export type RunEvent = EventBase &
+  (
+    | { type: "run_queued"; thread_id?: string; action?: string }
+    | { type: "run_started"; thread_id: string; flow: string; stand_in: boolean; action?: string }
+    | { type: "step_started"; step: string; input: Record<string, unknown>; item?: number }
+    | { type: "token"; step: string; text: string }
+    | {
+        type: "step_finished";
+        step: string;
+        output: Record<string, unknown>;
+        duration_ms: number;
+        usage?: Usage;
+        cost?: number | null;
+        model?: string | null;
+        item?: number;
+      }
+    | { type: "route"; step: string; exit: string }
+    | { type: "progress"; step: string; done: number; total: number }
+    | { type: "step_paused"; step: string; interrupt_id: string; request: AskRequest }
+    | { type: "save_point"; checkpoint_id: string; next: string[]; step_number: number | null }
+    | { type: "step_failed"; step: string; error: RunError }
+    | { type: "paused"; reason: "ask_human" | "breakpoint"; interrupts: Waiting[]; next: string[] }
+    | { type: "notified"; inbox_id: string; results: { channel: string; ok: boolean; error?: string }[] }
+    | {
+        type: "run_finished";
+        status: Exclude<RunStatus, "queued" | "running">;
+        duration_ms?: number;
+        output?: Record<string, unknown>;
+        reply?: string | null;
+        usage?: Usage;
+        cost?: number | null;
+        error?: RunError;
+        issues?: Issue[];
+        step?: string | null;
+        thread_id?: string;
+        checkpoint_id?: string | null;
+        reason?: "ask_human" | "breakpoint";
+        interrupts?: Waiting[];
+        next?: string[];
+      }
+  );
 
 export interface RunSummary {
   run_id: string;
   flow_id: string | null;
   flow: string;
+  version_id?: string;
+  thread_id?: string;
+  status: RunStatus;
+  trigger?: string;
+  parent_run_id?: string | null;
   inputs: Record<string, unknown>;
+  output?: Record<string, unknown> | null;
+  error?: RunError | null;
+  pending?: { reason: string; interrupts: Waiting[]; next: string[] } | null;
   started: number;
-  status: "running" | "ok" | "error";
-  duration_ms?: number;
+  finished?: number | null;
+  duration_ms?: number | null;
   cost?: number | null;
-  usage?: Usage;
+  usage?: Usage | null;
+}
+
+export interface SavePoint {
+  checkpoint_id: string;
+  parent_id: string | null;
+  run_id: string | null;
+  step_number: number | null;
+  source: string | null;
+  next: string[];
+  created_at: string;
+  values: Record<string, unknown>;
+  waiting: AskRequest[];
+}
+
+export interface InboxItem {
+  id: string;
+  run_id: string;
+  thread_id: string;
+  flow_id: string | null;
+  flow_name: string;
+  step: string;
+  path: string[];
+  interrupt_id: string;
+  request: AskRequest;
+  status: "open" | "answered" | "cancelled";
+  answer?: unknown;
+  answered_by?: string | null;
+  created_at: number;
+  answered_at?: number | null;
+}
+
+export type TriggerKind = "webhook" | "schedule" | "upload" | "after_flow";
+
+export interface Trigger {
+  id: string;
+  flow_id: string;
+  kind: TriggerKind;
+  name: string;
+  config: Record<string, unknown>;
+  enabled: boolean;
+  token: string;
+  url?: string;
+  describe?: string;
+  next_fire_at?: number | null;
+  last_fired_at?: number | null;
+  last_run_id?: string | null;
+  created_at: number;
+}
+
+export interface NotificationSettings {
+  webhook: { enabled: boolean; url: string };
+  slack: { enabled: boolean; webhook_url: string };
+  email: {
+    enabled: boolean;
+    smtp_host: string;
+    smtp_port: number;
+    starttls: boolean;
+    username: string;
+    password: string;
+    sender: string;
+    to: string[];
+  };
+  public_url: string;
+}
+
+export interface FlowVersion {
+  id: string;
+  flow_id: string;
+  name: string;
+  note: string;
+  created_at: number;
+}
+
+export interface ThreadInfo {
+  thread_id: string;
+  flow_id: string | null;
+  runs: number;
+  last_at: number;
 }
 
 export interface FlowListItem {

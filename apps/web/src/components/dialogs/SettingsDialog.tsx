@@ -5,6 +5,7 @@ import type { SecretInfo } from "../../lib/types";
 import { useCatalog } from "../../state/catalog";
 import { useUi } from "../../state/ui";
 import { Badge, Button, Dialog, Input } from "../ui";
+import { NotificationsSection } from "./Notifications";
 
 function KeyRow({ env, label, url, set, source, focus, onSaved }: { env: string; label: string; url?: string | null; set: boolean; source?: string | null; focus: boolean; onSaved: () => void }) {
   const [value, setValue] = useState("");
@@ -168,6 +169,7 @@ export function SettingsDialog() {
           </form>
           {error && <p className="text-xs text-danger">{error}</p>}
         </section>
+        {settings.open && <NotificationsSection />}
       </div>
     </Dialog>
   );

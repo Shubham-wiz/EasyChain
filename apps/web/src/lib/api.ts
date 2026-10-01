@@ -4,10 +4,17 @@ import type {
   CompileResult,
   FlowListItem,
   FlowSpec,
+  FlowVersion,
+  InboxItem,
+  NotificationSettings,
   RunEvent,
   RunSummary,
+  SavePoint,
   SecretInfo,
   TemplateInfo,
+  ThreadInfo,
+  Trigger,
+  TriggerKind,
 } from "./types";
 
 export class ApiError extends Error {
@@ -42,6 +49,31 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 const json = (body: unknown) => ({ body: JSON.stringify(body) });
+const flowParam = (flowId?: string | null) => (flowId ? `?flow_id=${encodeURIComponent(flowId)}` : "");
+
+export interface RunOptionsBody {
+  flow_id?: string;
+  spec?: FlowSpec;
+  inputs: Record<string, unknown>;
+  thread_id?: string;
+  stand_in?: boolean;
+  pause_before?: string[];
+  pause_after?: string[];
+}
+
+/** POST or GET an endpoint that answers with Server-Sent Events; call onEvent for each. */
+async function streamEvents(path: string, init: RequestInit, onEvent: (event: RunEvent) => void, signal?: AbortSignal): Promise<void> {
+  const res = await fetch(path, {
+    ...init,
+    headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...(init.headers ?? {}) },
+    signal,
+  });
+  if (!res.ok || !res.body) {
+    const err = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, err.message ?? "The run could not start", err.problems ?? []);
+  }
+  await readSse(res.body, (data) => onEvent(JSON.parse(data) as RunEvent));
+}
 
 export const api = {
   catalog: () => request<Catalog>("/api/catalog"),
@@ -54,18 +86,43 @@ export const api = {
     request<{ saved: boolean }>(`/api/flows/${id}`, { method: "PUT", ...json(spec) }),
   deleteFlow: (id: string) => request<{ deleted: boolean }>(`/api/flows/${id}`, { method: "DELETE" }),
   flowYaml: (id: string) => request<string>(`/api/flows/${id}/yaml`),
-  check: (spec: FlowSpec) => request<CheckResult>("/api/check", { method: "POST", ...json(spec) }),
-  compile: (spec: FlowSpec) => request<CompileResult>("/api/compile", { method: "POST", ...json(spec) }),
-  runs: (flowId: string) => request<RunSummary[]>(`/api/runs?flow_id=${encodeURIComponent(flowId)}`),
+  check: (spec: FlowSpec, flowId?: string | null) =>
+    request<CheckResult>(`/api/check${flowParam(flowId)}`, { method: "POST", ...json(spec) }),
+  compile: (spec: FlowSpec, flowId?: string | null) =>
+    request<CompileResult>(`/api/compile${flowParam(flowId)}`, { method: "POST", ...json(spec) }),
+  runs: (flowId: string, opts: { thread?: string; status?: string } = {}) => {
+    const params = new URLSearchParams({ flow_id: flowId });
+    if (opts.thread) params.set("thread_id", opts.thread);
+    if (opts.status) params.set("status", opts.status);
+    return request<RunSummary[]>(`/api/runs?${params}`);
+  },
   run: (runId: string) => request<RunSummary & { events: RunEvent[] }>(`/api/runs/${runId}`),
+  cancelRun: (runId: string) => request<{ status: string }>(`/api/runs/${runId}/cancel`, { method: "POST" }),
+  savePoints: (runId: string) => request<SavePoint[]>(`/api/runs/${runId}/savepoints`),
+  threads: (flowId: string) => request<ThreadInfo[]>(`/api/threads${flowParam(flowId)}`),
+  inbox: (status = "open") => request<InboxItem[]>(`/api/inbox?status=${status}`),
+  answer: (itemId: string, body: { action: string; value?: unknown; comment?: string }) =>
+    request<{ answered: boolean; run_id: string }>(`/api/inbox/${itemId}/answer`, { method: "POST", ...json(body) }),
+  triggers: (flowId: string) => request<Trigger[]>(`/api/triggers${flowParam(flowId)}`),
+  createTrigger: (body: { flow_id: string; kind: TriggerKind; name?: string; config: Record<string, unknown> }) =>
+    request<Trigger>("/api/triggers", { method: "POST", ...json(body) }),
+  updateTrigger: (id: string, body: { enabled?: boolean; name?: string; config?: Record<string, unknown> }) =>
+    request<Trigger>(`/api/triggers/${id}`, { method: "PATCH", ...json(body) }),
+  deleteTrigger: (id: string) => request<{ deleted: boolean }>(`/api/triggers/${id}`, { method: "DELETE" }),
+  notifications: () => request<NotificationSettings>("/api/settings/notifications"),
+  saveNotifications: (body: NotificationSettings) =>
+    request<NotificationSettings>("/api/settings/notifications", { method: "PUT", ...json(body) }),
+  testNotifications: () =>
+    request<{ results: { channel: string; ok: boolean; error?: string }[] }>("/api/settings/notifications/test", { method: "POST" }),
+  versions: (flowId: string) => request<FlowVersion[]>(`/api/flows/${flowId}/versions`),
   secrets: () => request<SecretInfo[]>("/api/secrets"),
   setSecret: (name: string, value: string) =>
     request<{ saved: boolean }>(`/api/secrets/${encodeURIComponent(name)}`, { method: "PUT", ...json({ value }) }),
   deleteSecret: (name: string) =>
     request<{ deleted: boolean }>(`/api/secrets/${encodeURIComponent(name)}`, { method: "DELETE" }),
 
-  async exportZip(spec: FlowSpec): Promise<Blob> {
-    const res = await fetch("/api/export", { method: "POST", headers: { "Content-Type": "application/json" }, ...json(spec) });
+  async exportZip(spec: FlowSpec, flowId?: string | null): Promise<Blob> {
+    const res = await fetch(`/api/export${flowParam(flowId)}`, { method: "POST", headers: { "Content-Type": "application/json" }, ...json(spec) });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new ApiError(res.status, body.message ?? "Export failed");
@@ -73,24 +130,29 @@ export const api = {
     return res.blob();
   },
 
-  /** Start a run and call onEvent for every streamed event. Resolves when the stream ends. */
-  async runStream(
-    body: { flow_id?: string; spec?: FlowSpec; inputs: Record<string, unknown>; thread_id?: string; stand_in?: boolean },
+  /** Start a run and call onEvent for every streamed event. Resolves when this part of the run ends. */
+  runStream: (body: RunOptionsBody, onEvent: (event: RunEvent) => void, signal?: AbortSignal) =>
+    streamEvents("/api/runs", { method: "POST", ...json(body) }, onEvent, signal),
+
+  /** Answer waiting Ask a Human steps ({interrupt id: answer}) and follow the rest of the run. */
+  resumeStream: (runId: string, answers: Record<string, unknown>, onEvent: (event: RunEvent) => void, signal?: AbortSignal) =>
+    streamEvents(`/api/runs/${runId}/resume`, { method: "POST", ...json({ answers }) }, onEvent, signal),
+
+  /** Carry on after a breakpoint or an error. */
+  continueStream: (runId: string, onEvent: (event: RunEvent) => void, signal?: AbortSignal) =>
+    streamEvents(`/api/runs/${runId}/continue`, { method: "POST" }, onEvent, signal),
+
+  /** Re-run from a Save Point, optionally with changed Flow Data. */
+  forkStream: (
+    runId: string,
+    body: { checkpoint_id: string; update?: Record<string, unknown> | null; pause_before?: string[]; pause_after?: string[] },
     onEvent: (event: RunEvent) => void,
     signal?: AbortSignal,
-  ): Promise<void> {
-    const res = await fetch("/api/runs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-      body: JSON.stringify(body),
-      signal,
-    });
-    if (!res.ok || !res.body) {
-      const err = await res.json().catch(() => ({}));
-      throw new ApiError(res.status, err.message ?? "The run could not start", err.problems ?? []);
-    }
-    await readSse(res.body, (data) => onEvent(JSON.parse(data) as RunEvent));
-  },
+  ) => streamEvents(`/api/runs/${runId}/fork`, { method: "POST", ...json(body) }, onEvent, signal),
+
+  /** Follow a run that is already going (after a reload, or one started elsewhere). */
+  followStream: (runId: string, after: number, onEvent: (event: RunEvent) => void, signal?: AbortSignal) =>
+    streamEvents(`/api/runs/${runId}/events?after=${after}`, { method: "GET" }, onEvent, signal),
 };
 
 /** Minimal Server-Sent Events reader for a fetch() body. */

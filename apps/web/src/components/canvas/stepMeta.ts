@@ -1,4 +1,4 @@
-import { Box, Code2, Globe, LogIn, LogOut, ScrollText, Sparkles, Split, type LucideIcon } from "lucide-react";
+import { Box, Code2, CornerDownRight, Globe, Layers, LogIn, LogOut, Repeat, ScrollText, Sparkles, Split, UserCheck, type LucideIcon } from "lucide-react";
 import type { Step } from "../../lib/types";
 
 export const ICONS: Record<string, LucideIcon> = {
@@ -9,6 +9,10 @@ export const ICONS: Record<string, LucideIcon> = {
   globe: Globe,
   code: Code2,
   split: Split,
+  repeat: Repeat,
+  layers: Layers,
+  "user-check": UserCheck,
+  "corner-down-right": CornerDownRight,
 };
 
 export function iconFor(name: string | undefined): LucideIcon {
@@ -20,6 +24,7 @@ export const CATEGORY_COLORS: Record<string, { chip: string; ring: string }> = {
   ai: { chip: "bg-violet-500/12 text-violet-600 dark:text-violet-400", ring: "#8b5cf6" },
   actions: { chip: "bg-sky-500/12 text-sky-600 dark:text-sky-400", ring: "#0ea5e9" },
   logic: { chip: "bg-amber-500/14 text-amber-600 dark:text-amber-400", ring: "#f59e0b" },
+  people: { chip: "bg-rose-500/12 text-rose-600 dark:text-rose-400", ring: "#f43f5e" },
 };
 
 export function colorsFor(category: string | undefined) {
@@ -49,8 +54,22 @@ export function stepSummary(step: Step, upstream?: string | null): string {
       const match = /"""([^"]+)"""/.exec(String(s.code ?? ""));
       return match ? match[1].trim() : "Python code";
     }
-    case "decision":
-      return s.mode === "ai" ? `AI decides from ${s.input || upstream || "?"}` : `${(s.exits ?? []).length} rule(s)`;
+    case "decision": {
+      const base = s.mode === "ai" ? `AI decides from ${s.input || upstream || "?"}` : `${(s.exits ?? []).length} rule(s)`;
+      return s.max_rounds ? `${base} · at most ${s.max_rounds} rounds` : base;
+    }
+    case "ask_human": {
+      const question = String(s.question ?? "").replace(/\s+/g, " ").trim();
+      return question || "Asks a person";
+    }
+    case "for_each":
+      return `Each ${s.item_name || "item"} of ${s.items || upstream || "?"} → ${s.save_as}${s.concurrency ? ` · ${s.concurrency} at a time` : ""}`;
+    case "subflow":
+      return s.flow ? `Runs “${s.flow}”${s.share_data ? " on this flow's data" : ""}` : "Pick a flow to run";
+    case "jump": {
+      const updates = (s.updates ?? []) as { field: string }[];
+      return updates.length ? `Sets ${updates.map((u) => u.field).join(", ")}` : "Picks the next step";
+    }
     default:
       return "";
   }

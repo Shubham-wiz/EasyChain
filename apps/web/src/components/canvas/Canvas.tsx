@@ -18,7 +18,7 @@ import {
 } from "@xyflow/react";
 import { MousePointerClick } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addStep, canConnect, clone, connect, createStep, getStep, moveSteps, removeConnection, removeSteps, NODE_WIDTH } from "../../lib/spec";
+import { addStep, canConnect, clone, connect, createStep, EACH_ITEM, getStep, hasExits, moveSteps, removeConnection, removeSteps, NODE_WIDTH } from "../../lib/spec";
 import type { Connection, FlowSpec, Position } from "../../lib/types";
 import { useCatalog } from "../../state/catalog";
 import { useCheck } from "../../state/check";
@@ -44,7 +44,7 @@ function syncNodes(prev: Node[], spec: FlowSpec, selected: Set<string>): Node[] 
   const out: Node[] = [];
   spec.steps.forEach((step, i) => {
     const position = spec.canvas.steps[step.id] ?? { x: (i % 5) * (NODE_WIDTH + 60), y: Math.floor(i / 5) * 160 };
-    const type = step.type === "decision" ? "decision" : "step";
+    const type = hasExits(step) ? "decision" : "step";
     const old = byId.get(step.id);
     const isSelected = selected.has(step.id);
     if (old && old.type === type && old.position.x === position.x && old.position.y === position.y && !!old.selected === isSelected && !old.dragging) {
@@ -72,22 +72,40 @@ function syncNodes(prev: Node[], spec: FlowSpec, selected: Set<string>): Node[] 
 
 function syncEdges(prev: Edge[], spec: FlowSpec): Edge[] {
   const selected = new Set(prev.filter((e) => e.selected).map((e) => e.id));
-  return spec.connections
+  const edges: Edge[] = spec.connections
     .filter((c) => getStep(spec, c.from) && getStep(spec, c.to))
     .map((c) => {
       const source = getStep(spec, c.from)!;
       const id = edgeId(c);
+      const exits = hasExits(source);
       return {
         id,
         source: c.from,
         target: c.to,
-        sourceHandle: source.type === "decision" && c.exit != null ? `exit:${c.exit}` : null,
+        sourceHandle: exits && c.exit != null ? `exit:${c.exit}` : null,
         type: "flow",
-        data: { exit: source.type === "decision" ? c.exit : null },
+        data: { exit: exits ? c.exit : null },
         markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
         selected: selected.has(id),
       };
     });
+  // For Each: each item's result goes back to the For Each (drawn, not editable).
+  for (const c of spec.connections) {
+    if (c.exit !== EACH_ITEM || !getStep(spec, c.to)) continue;
+    edges.push({
+      id: `results:${c.to}->${c.from}`,
+      source: c.to,
+      target: c.from,
+      targetHandle: "results",
+      type: "flow",
+      data: { virtual: true, label: "results" },
+      selectable: false,
+      deletable: false,
+      focusable: false,
+      style: { strokeDasharray: "4 4" },
+    });
+  }
+  return edges;
 }
 
 interface QuickAdd {
@@ -174,7 +192,7 @@ export function Canvas() {
     (deleted: Edge[]) =>
       apply((s) => {
         let next = s;
-        for (const e of deleted) {
+        for (const e of deleted.filter((x) => !x.id.startsWith("results:"))) {
           const exit = e.sourceHandle?.startsWith("exit:") ? e.sourceHandle.slice(5) : null;
           next = removeConnection(next, { from: e.source, to: e.target, exit });
         }

@@ -6,11 +6,12 @@ import { copySteps, pasteSteps, type Clipboard } from "../lib/spec";
 import type { FlowSpec } from "../lib/types";
 import { useCheck } from "../state/check";
 import { redo, undo, useFlow } from "../state/flow";
-import { startRun, useRun } from "../state/run";
+import { attachRun, startRun, useRun } from "../state/run";
 import { useUi } from "../state/ui";
 import { Canvas } from "./canvas/Canvas";
 import { ExportDialog } from "./dialogs/ExportDialog";
 import { SettingsDialog } from "./dialogs/SettingsDialog";
+import { TriggersDialog } from "./dialogs/TriggersDialog";
 import { Inspector } from "./inspector/Inspector";
 import { RunPanel } from "./run/RunPanel";
 import { StepLibrary } from "./StepLibrary";
@@ -52,7 +53,7 @@ function useBackgroundSync() {
     const t = setTimeout(async () => {
       useCheck.getState().set({ checking: true });
       try {
-        const result = await api.check(spec);
+        const result = await api.check(spec, flowId);
         if (!cancelled) useCheck.getState().set({ issues: result.issues, analysis: result.analysis, checking: false });
       } catch {
         if (!cancelled) useCheck.getState().set({ checking: false });
@@ -60,7 +61,7 @@ function useBackgroundSync() {
     }, 250);
     const c = setTimeout(async () => {
       try {
-        const compiled = await api.compile(spec);
+        const compiled = await api.compile(spec, flowId);
         if (!cancelled) useCheck.getState().set({ compiled });
       } catch {
         /* shown via checks */
@@ -71,7 +72,7 @@ function useBackgroundSync() {
       clearTimeout(t);
       clearTimeout(c);
     };
-  }, [spec]);
+  }, [spec, flowId]);
 }
 
 /**
@@ -156,12 +157,14 @@ export function Editor({ flowId, tryIt, onHome }: { flowId: string; tryIt: boole
     useCheck.getState().set({ issues: [], analysis: null, compiled: null });
     useUi.getState().select([]);
     useUi.getState().setRightTab(tryIt ? "run" : "inspect");
+    useUi.getState().loadBreakpoints(flowId);
     api
       .flow(flowId)
       .then(({ spec }) => {
         if (cancelled) return;
         useFlow.getState().load(flowId, spec);
         if (tryIt) void tryRun(spec);
+        else void showActiveRun(flowId);
       })
       .catch((err) => !cancelled && setError(err instanceof Error ? err.message : String(err)));
     return () => {
@@ -215,9 +218,23 @@ export function Editor({ flowId, tryIt, onHome }: { flowId: string; tryIt: boole
         </div>
         <ExportDialog />
         <SettingsDialog />
+        <TriggersDialog />
       </div>
     </ReactFlowProvider>
   );
+}
+
+/** A run of this flow that is still going or waiting for someone: show it (it survives reloads). */
+async function showActiveRun(flowId: string) {
+  try {
+    const runs = await api.runs(flowId, { status: "running,queued,paused" });
+    const active = runs.find((r) => r.status === "running" || r.status === "queued") ?? runs[0];
+    if (!active || useFlow.getState().flowId !== flowId) return;
+    if (active.status === "paused" && Date.now() / 1000 - active.started > 3600) return; // old pauses live in the Inbox
+    await attachRun(active.run_id);
+  } catch {
+    /* nothing to show */
+  }
 }
 
 /** "Try it" from the gallery: run on the template's sample data (stand-in AI if a key is missing). */

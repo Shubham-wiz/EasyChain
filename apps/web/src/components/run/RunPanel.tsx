@@ -1,15 +1,33 @@
-import { CheckCircle2, ChevronDown, ChevronRight, CircleAlert, History, Loader2, MessageSquarePlus, Play, RotateCcw, Send, Square, Wrench } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  CircleAlert,
+  CircleSlash,
+  Hand,
+  History,
+  Loader2,
+  MessageSquarePlus,
+  Play,
+  RotateCcw,
+  Send,
+  SkipForward,
+  Square,
+  Wrench,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../lib/api";
 import { applyFix } from "../../lib/fixes";
-import type { RunError, RunSummary, Step } from "../../lib/types";
+import type { RunError, RunSummary, Step, ThreadInfo } from "../../lib/types";
 import { cn, formatCost, formatMs, formatTokens, preview, timeAgo } from "../../lib/utils";
 import { useCheck } from "../../state/check";
 import { useFlow } from "../../state/flow";
-import { replayRun, startRun, stopRun, useRun } from "../../state/run";
+import { answerWaiting, attachRun, continueRun, replayRun, startRun, stopRun, useRun, type InnerEvent, type StepRun } from "../../state/run";
 import { useUi } from "../../state/ui";
 import { IssueList } from "../inspector/Inspector";
-import { Badge, Button, Field, Input, Switch, Textarea, Tooltip } from "../ui";
+import { Badge, Button, Field, Input, Select, Switch, Textarea, Tooltip } from "../ui";
+import { AnswerForm } from "./AnswerForm";
+import { SavePoints } from "./SavePoints";
 
 function useInputStep(): Step | undefined {
   return useFlow((s) => s.spec?.steps.find((x) => x.type === "input"));
@@ -19,6 +37,7 @@ function ErrorCard({ error, retry }: { error: RunError; retry: () => void }) {
   const failedStep = useRun((s) => (s.final?.step ? s.final.step : Object.entries(s.steps).find(([, v]) => v.status === "error")?.[0]));
   const stepName = useFlow((s) => s.spec?.steps.find((x) => x.id === failedStep)?.name);
   const select = useUi((s) => s.select);
+  const canCarryOn = useRun((s) => !!s.runId && s.status === "error" && !!s.final?.checkpoint_id && !["bad_input", "invalid_flow", "busy"].includes(error.kind));
   const [details, setDetails] = useState(false);
   return (
     <div className="rounded-lg border border-danger/30 bg-danger-soft p-3 text-sm" role="alert" data-testid="run-error">
@@ -37,15 +56,20 @@ function ErrorCard({ error, retry }: { error: RunError; retry: () => void }) {
               • {p.message}
             </p>
           ))}
-          {error.fixes.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              {error.fixes.map((fix) => (
-                <Button key={fix.kind} size="sm" variant={fix.kind === "add_key" ? "primary" : "outline"} onClick={() => applyFix(fix, failedStep ?? undefined, retry)}>
-                  <Wrench size={12} /> {fix.label}
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            {error.fixes.map((fix) => (
+              <Button key={fix.kind} size="sm" variant={fix.kind === "add_key" ? "primary" : "outline"} onClick={() => applyFix(fix, failedStep ?? undefined, retry)}>
+                <Wrench size={12} /> {fix.label}
+              </Button>
+            ))}
+            {canCarryOn && (
+              <Tooltip content="Run the failed step again and carry on; steps that already finished are not repeated.">
+                <Button size="sm" variant="outline" onClick={() => void continueRun()} data-testid="carry-on">
+                  <SkipForward size={12} /> Try the failed step again
                 </Button>
-              ))}
-            </div>
-          )}
+              </Tooltip>
+            )}
+          </div>
           {error.detail && (
             <div className="pt-1">
               <button type="button" className="text-[11px] text-muted underline" onClick={() => setDetails(!details)}>
@@ -102,16 +126,16 @@ function Trace() {
                 }}
                 aria-expanded={expanded}
               >
-                {run.status === "running" ? (
-                  <Loader2 size={13} className="animate-spin text-accent" />
-                ) : run.status === "error" ? (
-                  <CircleAlert size={13} className="text-danger" />
-                ) : (
-                  <CheckCircle2 size={13} className="text-ok" />
-                )}
+                <StatusIcon status={run.status} />
                 <span className="min-w-[6rem] flex-1 truncate font-medium" title={step?.name || id}>
                   {step?.name || id}
                 </span>
+                {run.progress && (
+                  <span className="text-faint">
+                    {run.progress.done}/{run.progress.total}
+                  </span>
+                )}
+                {run.items && <span className="text-faint">{Object.keys(run.items).length} item(s)</span>}
                 {run.exit && (
                   <Badge tone="accent" className="max-w-[7rem] truncate">
                     ↳ {run.exit}
@@ -133,6 +157,8 @@ function Trace() {
                     <p className="font-semibold text-muted">Saved</p>
                     {run.error ? <p className="text-danger">{run.error.message}</p> : Object.keys(run.output ?? {}).length ? <ValueView value={run.output} /> : <p className="text-faint">no changes</p>}
                   </div>
+                  <ItemsView run={run} />
+                  <InnerView inner={run.inner} />
                 </div>
               )}
             </li>
@@ -140,6 +166,112 @@ function Trace() {
         })}
       </ol>
     </section>
+  );
+}
+
+function StatusIcon({ status }: { status: StepRun["status"] | RunSummary["status"] }) {
+  if (status === "running" || status === "queued") return <Loader2 size={13} className="animate-spin text-accent" />;
+  if (status === "error") return <CircleAlert size={13} className="text-danger" />;
+  if (status === "waiting" || status === "paused") return <Hand size={13} className="text-warn" />;
+  if (status === "cancelled") return <CircleSlash size={13} className="text-faint" />;
+  return <CheckCircle2 size={13} className="text-ok" />;
+}
+
+/** What each item produced, for the step a For Each runs per item. */
+function ItemsView({ run }: { run: StepRun }) {
+  if (!run.items) return null;
+  const entries = Object.entries(run.items).sort(([a], [b]) => Number(a) - Number(b));
+  return (
+    <div>
+      <p className="font-semibold text-muted">Per item</p>
+      <ol className="space-y-0.5">
+        {entries.map(([i, item]) => (
+          <li key={i} className="flex gap-1.5">
+            <span className="w-6 shrink-0 text-faint">#{Number(i) + 1}</span>
+            <span className="min-w-0 flex-1 truncate">{item.status === "done" ? preview(item.output, 120) : "…"}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+/** Steps that ran inside a Sub-flow step. */
+function InnerView({ inner }: { inner?: InnerEvent[] }) {
+  if (!inner?.length) return null;
+  const finished = inner.filter((e) => e.type !== "started");
+  return (
+    <div>
+      <p className="font-semibold text-muted">Inside the sub-flow</p>
+      <ol className="space-y-0.5">
+        {finished.map((e, i) => (
+          <li key={i} className="flex gap-1.5">
+            <span className="shrink-0 font-mono text-faint">{[...e.path.slice(1), e.step].join(" › ")}</span>
+            <span className="min-w-0 flex-1 truncate">
+              {e.type === "failed" ? <span className="text-danger">{e.error?.message}</span> : e.type === "route" ? `↳ ${e.exit}` : e.type === "paused" ? "waiting for an answer" : preview(e.output, 100)}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+/** A run that stopped part-way: answer the person-shaped questions, or carry on. */
+function PausedCard() {
+  const status = useRun((s) => s.status);
+  const waiting = useRun((s) => s.waiting);
+  const reason = useRun((s) => s.pauseReason);
+  const next = useRun((s) => s.next);
+  const spec = useFlow((s) => s.spec);
+  const [busy, setBusy] = useState(false);
+  const name = (id: string | null) => (id && spec?.steps.find((s) => s.id === id)?.name) || id || "a step";
+  if (status === "cancelled") {
+    return (
+      <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface-2/60 p-3 text-sm" data-testid="run-cancelled">
+        <span>Stopped. Its Save Points are kept.</span>
+        <Button size="sm" variant="outline" onClick={() => void continueRun()}>
+          <SkipForward size={13} /> Carry on
+        </Button>
+      </div>
+    );
+  }
+  if (status !== "paused") return null;
+  if (reason === "breakpoint") {
+    return (
+      <div className="space-y-2 rounded-lg border border-warn/40 bg-warn-soft p-3 text-sm" data-testid="run-breakpoint">
+        <p className="font-medium">Paused at a breakpoint{next.length ? `, before ${next.map(name).join(", ")}` : ""}.</p>
+        <p className="text-xs text-muted">Look at the Flow Data under Save Points below, then carry on.</p>
+        <Button size="sm" variant="primary" onClick={() => void continueRun()} data-testid="continue-run">
+          <Play size={13} /> Continue
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-3" data-testid="run-waiting">
+      {waiting.map((w) => (
+        <div key={w.id} className="space-y-2 rounded-lg border border-warn/40 bg-warn-soft p-3">
+          <p className="flex items-center gap-1.5 text-xs font-semibold text-warn">
+            <Hand size={13} /> {name(w.step)}{w.path.length ? ` (in ${w.path.map(name).join(" › ")})` : ""} is waiting for you
+          </p>
+          <AnswerForm
+            request={w.request}
+            busy={busy}
+            testId={`answer-${w.step}`}
+            onAnswer={async (answer) => {
+              setBusy(true);
+              try {
+                await answerWaiting({ [w.id]: answer });
+              } finally {
+                setBusy(false);
+              }
+            }}
+          />
+        </div>
+      ))}
+      <p className="text-[11px] text-muted">It waits as long as needed: you can also answer later from the Inbox.</p>
+    </div>
   );
 }
 
@@ -160,9 +292,19 @@ function RunHistory({ flowId }: { flowId: string }) {
           {!runs.length && <li className="text-xs text-faint">No runs yet.</li>}
           {runs.slice(0, 12).map((r) => (
             <li key={r.run_id} className="flex items-center gap-2 text-xs">
-              {r.status === "ok" ? <CheckCircle2 size={12} className="text-ok" /> : r.status === "error" ? <CircleAlert size={12} className="text-danger" /> : <Loader2 size={12} className="animate-spin" />}
-              <span className="min-w-0 flex-1 truncate text-muted">{preview(r.inputs, 50) || "(no inputs)"}</span>
+              <StatusIcon status={r.status} />
+              <span className="min-w-0 flex-1 truncate text-muted">
+                {r.trigger && r.trigger !== "manual" && <span className="mr-1 text-faint">[{r.trigger}]</span>}
+                {preview(r.inputs, 50) || "(no inputs)"}
+              </span>
               <span className="text-faint">{timeAgo(r.started)}</span>
+              {["paused", "running", "queued", "error", "cancelled"].includes(r.status) && (
+                <Tooltip content="Show this run here (answer it, carry on, or look at its Save Points)">
+                  <button type="button" className="text-accent hover:underline" onClick={() => void attachRun(r.run_id)}>
+                    Open
+                  </button>
+                </Tooltip>
+              )}
               <Tooltip content="Play this run back on the canvas">
                 <button
                   type="button"
@@ -202,7 +344,7 @@ function FormRun({ inputStep }: { inputStep: Step | undefined }) {
   const fields = (inputStep?.settings.fields ?? []) as { name: string; type: string; description: string; example: unknown; default: unknown; required: boolean }[];
   const [values, setValues] = useState<Record<string, unknown>>(lastInputs);
   useEffect(() => setValues(lastInputs), [lastInputs]);
-  const running = status === "running";
+  const running = status === "running" || status === "queued";
   const run = useCallback(() => void startRun(values), [values]);
   useEffect(() => {
     const handler = () => run();
@@ -264,9 +406,40 @@ function FormRun({ inputStep }: { inputStep: Step | undefined }) {
   );
 }
 
+function Conversations() {
+  const flowId = useFlow((s) => s.flowId);
+  const threadId = useRun((s) => s.threadId);
+  const status = useRun((s) => s.status);
+  const [threads, setThreads] = useState<ThreadInfo[]>([]);
+  useEffect(() => {
+    if (flowId && status !== "running" && status !== "queued") api.threads(flowId).then(setThreads).catch(() => setThreads([]));
+  }, [flowId, status]);
+  if (!flowId || threads.length < 1) return null;
+  const open = async (id: string) => {
+    const runs = await api.runs(flowId, { thread: id });
+    const last = runs.find((r) => r.status === "ok") ?? runs[0];
+    const messages = ((last?.output?.messages ?? []) as { role: string; content: string }[]).filter((m) => m.role === "user" || m.role === "assistant");
+    useRun.setState({
+      ...useRun.getState(),
+      threadId: id,
+      chat: messages.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+    });
+  };
+  return (
+    <Select aria-label="Conversation" className="h-8 text-xs" value={threads.some((t) => t.thread_id === threadId) ? threadId ?? "" : ""} onChange={(e) => e.target.value && void open(e.target.value)}>
+      <option value="">Earlier conversations…</option>
+      {threads.map((t) => (
+        <option key={t.thread_id} value={t.thread_id}>
+          {timeAgo(t.last_at)} · {t.runs} message{t.runs === 1 ? "" : "s"}
+        </option>
+      ))}
+    </Select>
+  );
+}
+
 function ChatRun() {
   const chat = useRun((s) => s.chat);
-  const status = useRun((s) => s.status);
+  const status = useRun((s) => s.status === "queued" ? "running" : s.status);
   const newChat = useRun((s) => s.newChat);
   const [text, setText] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
@@ -305,9 +478,12 @@ function ChatRun() {
           <Send size={15} />
         </Button>
       </form>
-      <Button variant="ghost" size="sm" className="self-start" onClick={newChat}>
-        <MessageSquarePlus size={13} /> New conversation
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="sm" className="shrink-0" onClick={newChat}>
+          <MessageSquarePlus size={13} /> New conversation
+        </Button>
+        <Conversations />
+      </div>
     </div>
   );
 }
@@ -343,6 +519,16 @@ export function RunPanel() {
             <Loader2 size={11} className="animate-spin" /> Running
           </Badge>
         )}
+        {run.status === "queued" && (
+          <Badge>
+            <Loader2 size={11} className="animate-spin" /> Waiting for a worker
+          </Badge>
+        )}
+        {run.status === "paused" && (
+          <Badge tone="warn">
+            <Hand size={11} /> Paused
+          </Badge>
+        )}
         {run.replaying && (
           <Button size="sm" variant="ghost" onClick={() => useRun.setState({ replaying: false })}>
             Stop replay
@@ -357,10 +543,13 @@ export function RunPanel() {
         </div>
       )}
       {chat ? <ChatRun /> : <FormRun inputStep={inputStep} />}
+      <PausedCard />
 
-      {run.status !== "idle" && run.status !== "running" && run.final && (
+      {run.status !== "idle" && run.status !== "running" && run.status !== "queued" && run.final && (
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted" data-testid="run-summary">
-          <span className={run.status === "ok" ? "text-ok" : "text-danger"}>{run.status === "ok" ? "Finished" : "Failed"}</span>
+          <span className={run.status === "ok" ? "text-ok" : run.status === "error" ? "text-danger" : "text-muted"}>
+            {{ ok: "Finished", error: "Failed", paused: "Paused", cancelled: "Stopped" }[run.status]}
+          </span>
           <span>{formatMs(run.final.duration_ms)}</span>
           {!!run.final.usage?.output_tokens && <span>{formatTokens(run.final.usage.input_tokens + run.final.usage.output_tokens)} tokens</span>}
           {!!run.final.cost && <span>{formatCost(run.final.cost)}</span>}
@@ -384,8 +573,9 @@ export function RunPanel() {
         </section>
       )}
       <Trace />
+      {run.runId && !run.replaying && run.status !== "idle" && <SavePoints key={run.runId} runId={run.runId} />}
       {flowId && <RunHistory flowId={flowId} />}
-      {run.status !== "idle" && run.status !== "running" && (
+      {run.status !== "idle" && run.status !== "running" && run.status !== "queued" && (
         <Button variant="ghost" size="sm" onClick={() => useRun.getState().reset()}>
           <RotateCcw size={13} /> Clear the run from the canvas
         </Button>

@@ -20,6 +20,21 @@ function persist(key: string, value: string) {
   }
 }
 
+export interface Breakpoints {
+  before: string[];
+  after: string[];
+}
+
+function storedBreakpoints(flowId: string): Breakpoints {
+  try {
+    const raw = JSON.parse(localStorage.getItem(`easychain.breakpoints.${flowId}`) ?? "null");
+    if (raw && Array.isArray(raw.before) && Array.isArray(raw.after)) return raw;
+  } catch {
+    /* ignore */
+  }
+  return { before: [], after: [] };
+}
+
 interface UiState {
   mode: Mode;
   theme: Theme;
@@ -30,6 +45,10 @@ interface UiState {
   problemsOpen: boolean;
   standIn: boolean;
   focusSetting: { step: string; key: string; at: number } | null;
+  triggersOpen: boolean;
+  /** Breakpoints for test runs of the open flow (kept per flow in this browser). */
+  breakpoints: Breakpoints;
+  breakpointsFor: string | null;
   setMode: (mode: Mode) => void;
   toggleTheme: () => void;
   select: (ids: string[]) => void;
@@ -40,6 +59,9 @@ interface UiState {
   setProblemsOpen: (open: boolean) => void;
   setStandIn: (on: boolean) => void;
   focus: (step: string, key: string) => void;
+  setTriggersOpen: (open: boolean) => void;
+  loadBreakpoints: (flowId: string) => void;
+  toggleBreakpoint: (step: string, where: "before" | "after") => void;
 }
 
 const initialTheme: Theme =
@@ -55,6 +77,9 @@ export const useUi = create<UiState>()((set, get) => ({
   problemsOpen: false,
   standIn: stored<string>("easychain.standIn", "false") === "true",
   focusSetting: null,
+  triggersOpen: false,
+  breakpoints: { before: [], after: [] },
+  breakpointsFor: null,
   setMode: (mode) => {
     persist("easychain.mode", mode);
     set({ mode });
@@ -80,4 +105,14 @@ export const useUi = create<UiState>()((set, get) => ({
     set({ standIn });
   },
   focus: (step, key) => set({ selected: [step], rightTab: "inspect", focusSetting: { step, key, at: Date.now() } }),
+  setTriggersOpen: (triggersOpen) => set({ triggersOpen }),
+  loadBreakpoints: (flowId) => set({ breakpoints: storedBreakpoints(flowId), breakpointsFor: flowId }),
+  toggleBreakpoint: (step, where) => {
+    const current = get().breakpoints;
+    const list = current[where].includes(step) ? current[where].filter((s) => s !== step) : [...current[where], step];
+    const breakpoints = { ...current, [where]: list };
+    const flowId = get().breakpointsFor;
+    if (flowId) persist(`easychain.breakpoints.${flowId}`, JSON.stringify(breakpoints));
+    set({ breakpoints });
+  },
 }));

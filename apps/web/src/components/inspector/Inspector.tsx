@@ -2,7 +2,7 @@ import { AlertTriangle, ChevronDown, ChevronRight, CircleAlert, Wrench } from "l
 import { useEffect, useMemo, useRef, useState } from "react";
 import { applyFix } from "../../lib/fixes";
 import { getStep, renameStepId, toIdent, updateSettings, updateStep } from "../../lib/spec";
-import type { FieldInfo, Issue } from "../../lib/types";
+import type { Issue } from "../../lib/types";
 import { cn, preview } from "../../lib/utils";
 import { useStepInfo } from "../../state/catalog";
 import { useCheck } from "../../state/check";
@@ -11,8 +11,9 @@ import { useRun } from "../../state/run";
 import { useUi } from "../../state/ui";
 import { colorsFor, iconFor } from "../canvas/stepMeta";
 import { CodeView } from "../CodeView";
-import { Badge, Button, Field, Input, Tabs, TabsContent, TabsList, TabsTrigger, Textarea } from "../ui";
+import { Button, Field, Input, Tabs, TabsContent, TabsList, TabsTrigger, Textarea } from "../ui";
 import { isVisible, renderControl } from "./fields";
+import { FlowDataEditor, FlowRunSettings, RunPolicySection } from "./FlowSettings";
 
 export function IssueList({ issues, compact, retry }: { issues: Issue[]; compact?: boolean; retry?: () => void }) {
   const steps = useFlow((s) => s.spec?.steps);
@@ -61,12 +62,8 @@ export function IssueList({ issues, compact, retry }: { issues: Issue[]; compact
 function FlowPanel() {
   const spec = useFlow((s) => s.spec)!;
   const apply = useFlow((s) => s.apply);
-  const analysis = useCheck((s) => s.analysis);
   const issues = useCheck((s) => s.issues);
-  const mode = useUi((s) => s.mode);
-  const select = useUi((s) => s.select);
   const flowIssues = issues.filter((i) => !i.step);
-  const stepName = (id: string) => spec.steps.find((s) => s.id === id)?.name || id;
   return (
     <div className="space-y-5 p-4">
       <div className="space-y-3">
@@ -84,48 +81,8 @@ function FlowPanel() {
         </Field>
       </div>
       {flowIssues.length > 0 && <IssueList issues={flowIssues} />}
-      <section>
-        <h3 className="mb-1 flex items-center gap-2 text-sm font-semibold">
-          Flow Data
-          {mode === "pro" && <span className="font-mono text-[10px] font-normal text-faint">state schema</span>}
-        </h3>
-        <p className="mb-2 text-xs text-muted">The named fields steps read and write. Use them in Instructions as {"{field}"}.</p>
-        {!analysis?.fields.length ? (
-          <p className="text-xs text-faint">No fields yet. Add fields to Input, or steps that save results.</p>
-        ) : (
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="text-left text-faint">
-                <th className="pb-1 font-medium">Field</th>
-                <th className="pb-1 font-medium">Type</th>
-                <th className="pb-1 font-medium">Set by</th>
-              </tr>
-            </thead>
-            <tbody>
-              {analysis.fields.map((f: FieldInfo) => (
-                <tr key={f.name} className="border-t border-border align-top">
-                  <td className="py-1.5 pr-2 font-mono">
-                    {f.name}
-                    {f.is_input && <Badge className="ml-1">in</Badge>}
-                    {f.is_output && <Badge tone="accent" className="ml-1">out</Badge>}
-                    {mode === "pro" && f.update !== "replace" && <span className="block text-[10px] text-faint">rule: {f.update}</span>}
-                  </td>
-                  <td className="py-1.5 pr-2 text-muted">{f.type}</td>
-                  <td className="py-1.5 text-muted">
-                    {f.written_by.length
-                      ? f.written_by.map((id) => (
-                          <button key={id} type="button" className="mr-1 underline-offset-2 hover:underline" onClick={() => select([id])}>
-                            {stepName(id)}
-                          </button>
-                        ))
-                      : "Input"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
+      <FlowDataEditor />
+      <FlowRunSettings />
     </div>
   );
 }
@@ -236,7 +193,7 @@ function StepPanel({ stepId }: { stepId: string }) {
         <TabsContent value="settings" className="scroll-thin min-h-0 flex-1 overflow-y-auto">
           <div ref={formRef} className="space-y-4 p-4">
             {basic.map(control)}
-            {(advanced.length > 0 || mode === "pro") && (
+            {(advanced.length > 0 || mode === "pro" || (step.type !== "input" && step.type !== "output")) && (
               <div className="border-t border-border pt-3">
                 <button
                   type="button"
@@ -249,6 +206,7 @@ function StepPanel({ stepId }: { stepId: string }) {
                 {moreOpen && (
                   <div className="mt-3 space-y-4">
                     {advanced.map(control)}
+                    <RunPolicySection stepId={stepId} />
                     {mode === "pro" && <StepIdField stepId={stepId} />}
                   </div>
                 )}

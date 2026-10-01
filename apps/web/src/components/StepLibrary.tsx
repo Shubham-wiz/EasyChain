@@ -1,6 +1,6 @@
 import { Search, StickyNote } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
-import { addStep, clone, createStep, exitLabels, getStep, nextFreePosition, NODE_WIDTH } from "../lib/spec";
+import { NODE_WIDTH, addStep, clone, createStep, exitLabels, getStep, hasExits, nextFreePosition } from "../lib/spec";
 import type { StepTypeInfo } from "../lib/types";
 import { cn } from "../lib/utils";
 import { useCatalog } from "../state/catalog";
@@ -24,7 +24,7 @@ export function addStepFromLibrary(info: StepTypeInfo) {
   if (after && after.type !== "output" && info.type !== "input") {
     const base = spec.canvas.steps[after.id] ?? { x: 0, y: 0 };
     position = { x: base.x + NODE_WIDTH + 70, y: base.y };
-    if (after.type === "decision") {
+    if (hasExits(after)) {
       const used = new Set(spec.connections.filter((c) => c.from === after.id).map((c) => c.exit));
       const free = exitLabels(after).find((l) => !used.has(l));
       if (free) from = { step: after.id, exit: free };
@@ -35,7 +35,7 @@ export function addStepFromLibrary(info: StepTypeInfo) {
   }
   apply((s) => {
     const next = addStep(s, step, position, from);
-    if (from && after && after.type !== "decision") {
+    if (from && after && !hasExits(after)) {
       const outgoing = next.connections.filter((c) => c.from === after.id && c.to !== step.id);
       if (outgoing.length === 1 && info.type !== "output") {
         const moved = clone(next);
