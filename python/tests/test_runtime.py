@@ -235,7 +235,9 @@ def test_http_status_hints(status, hint):
 
 
 def test_proxy_block_is_explained():
-    exc = httpx.ProxyError("403 Forbidden", request=httpx.Request("GET", "https://blocked.example/x"))
+    exc = httpx.ProxyError(
+        "403 Forbidden", request=httpx.Request("GET", "https://blocked.example/x")
+    )
     info = explain(exc)
     assert info["kind"] == "blocked"
     assert "blocked.example" in info["message"]

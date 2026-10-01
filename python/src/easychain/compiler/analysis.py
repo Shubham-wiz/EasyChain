@@ -62,6 +62,7 @@ class FlowAnalysis:
             else:
                 self.bad_connections.append(conn)
 
+        self.index = {step.id: i for i, step in enumerate(spec.steps)}
         self.input_steps = [s for s in spec.steps if s.type == "input"]
         self.output_steps = [s for s in spec.steps if s.type == "output"]
         self.input_step = self.input_steps[0] if self.input_steps else None
@@ -85,7 +86,7 @@ class FlowAnalysis:
     # ── graph ────────────────────────────────────────────────────────────────
 
     def _index(self, sid: str) -> int:
-        return next(i for i, s in enumerate(self.spec.steps) if s.id == sid)
+        return self.index[sid]
 
     def _bfs_depth(self) -> dict[str, int]:
         depth: dict[str, int] = {}

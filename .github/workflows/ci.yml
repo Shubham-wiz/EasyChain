@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python (compiler, runtime, server)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.8.17"
+          python-version: "3.12"
+      - run: uv sync --frozen
+      - name: Lint
+        run: |
+          uv run ruff check src tests
+          uv run ruff format --check src tests
+      - name: Published JSON Schema is up to date
+        run: |
+          uv run easychain schema -o ../spec/flow.schema.json
+          git diff --exit-code -- ../spec/flow.schema.json
+      - name: Tests
+        run: uv run pytest --cov=easychain --cov-report=term-missing:skip-covered --cov-report=xml
+      - name: Compiler coverage is at least 90%
+        run: uv run coverage report --include="src/easychain/compiler/*,src/easychain/steps/*" --fail-under=90
+
+  web:
+    name: Web (types, unit tests, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @easychain/web typecheck
+      - run: pnpm --filter @easychain/web test
+      - run: pnpm --filter @easychain/web build
+
+  e2e:
+    name: End-to-end (Playwright)
+    runs-on: ubuntu-latest
+    needs: [python, web]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.8.17"
+          python-version: "3.12"
+      - run: uv sync --frozen
+        working-directory: python
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @easychain/web exec playwright install --with-deps chromium
+      - run: pnpm --filter @easychain/web build
+      - run: pnpm --filter @easychain/web e2e
+        env:
+          CI: "true"
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+          retention-days: 7
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t easychain:ci .
+      - name: Smoke test
+        run: |
+          docker run -d --name ec -p 8000:8000 easychain:ci
+          for i in $(seq 1 30); do curl -sf localhost:8000/api/health && break; sleep 1; done
+          curl -sf localhost:8000/ | grep -q "<title>Easy Chain</title>"
+          docker rm -f ec

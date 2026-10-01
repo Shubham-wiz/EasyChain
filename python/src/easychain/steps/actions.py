@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import functools
 import re
 from typing import Any
 
@@ -204,6 +205,12 @@ class HttpRequestHandler(StepHandler):
 # ── Code ─────────────────────────────────────────────────────────────────────
 
 
+@functools.lru_cache(maxsize=4096)
+def analyse_code(code: str) -> CodeAnalysis:
+    """Parse once per distinct code text (checks call this many times per flow)."""
+    return CodeAnalysis(code)
+
+
 class CodeAnalysis:
     """What a Code step's Python does, worked out from its syntax tree."""
 
@@ -370,7 +377,7 @@ class CodeHandler(StepHandler):
     ]
 
     def analyse(self, step: Any) -> CodeAnalysis:
-        return CodeAnalysis(step.settings.code)
+        return analyse_code(step.settings.code)
 
     def primary_output(self, step: Any) -> str | None:
         writes = step.settings.writes or (self.analyse(step).writes or [])
@@ -438,28 +445,25 @@ class CodeHandler(StepHandler):
                     hint="Rename it.",
                 )
             )
-        others = [
-            s
-            for s in an.spec.steps
-            if s.type == "code"
-            and s.id != step.id
-            and an.spec.steps.index(s) < an.spec.steps.index(step)
-        ]
-        for other in others:
-            shared = (CodeAnalysis(other.settings.code).top_level_names & info.top_level_names) - {
-                "run"
-            }
-            shared = {n for n in shared if not n.startswith(("json", "re", "math", "datetime"))}
-            if shared:
-                issues.append(
-                    warning(
-                        "code_shared_names",
-                        f"This code and “{other.name or other.id}” both define {', '.join(sorted(shared))}.",
-                        step=step.id,
-                        setting="code",
-                        hint="Both end up in one Python file; rename one to avoid surprises.",
+        mine = info.top_level_names - {"run"}
+        if mine:
+            for other in an.spec.steps:
+                if other.type != "code" or an.index[other.id] >= an.index[step.id]:
+                    continue
+                shared = analyse_code(other.settings.code).top_level_names & mine
+                shared = {
+                    n for n in shared if n not in _SAFE_IMPORTS and n not in ("math", "datetime")
+                }
+                if shared:
+                    issues.append(
+                        warning(
+                            "code_shared_names",
+                            f"This code and “{other.name or other.id}” both define {', '.join(sorted(shared))}.",
+                            step=step.id,
+                            setting="code",
+                            hint="Both end up in one Python file; rename one to avoid surprises.",
+                        )
                     )
-                )
         available = an.available_fields(step.id)
         for name in sorted(info.reads):
             if name not in available and name in an.fields:

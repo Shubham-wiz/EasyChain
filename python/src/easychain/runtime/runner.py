@@ -16,10 +16,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import os
 import threading
 import time
 import uuid
+from collections import OrderedDict
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
@@ -171,6 +173,22 @@ def _now() -> float:
     return time.time() * 1000
 
 
+_compiled_cache: OrderedDict[str, CompiledFlow] = OrderedDict()
+
+
+def compile_cached(spec: FlowSpec) -> CompiledFlow:
+    """Compile once per distinct spec; repeated runs of the same flow skip the compiler."""
+    key = hashlib.sha256(spec.model_dump_json().encode()).hexdigest()
+    if key in _compiled_cache:
+        _compiled_cache.move_to_end(key)
+        return _compiled_cache[key]
+    compiled = compile_flow(spec)
+    _compiled_cache[key] = compiled
+    while len(_compiled_cache) > 64:
+        _compiled_cache.popitem(last=False)
+    return compiled
+
+
 async def stream_run(
     spec: FlowSpec,
     inputs: dict[str, Any] | None = None,
@@ -195,7 +213,7 @@ async def stream_run(
         )
 
     try:
-        compiled = compiled or compile_flow(spec)
+        compiled = compiled or compile_cached(spec)
     except CompileError as exc:
         yield event("run_started", thread_id=thread_id, flow=spec.name, stand_in=opts.stand_in)
         yield finished(

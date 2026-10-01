@@ -109,8 +109,14 @@ function Trace() {
                 ) : (
                   <CheckCircle2 size={13} className="text-ok" />
                 )}
-                <span className="min-w-0 flex-1 truncate font-medium">{step?.name || id}</span>
-                {run.exit && <Badge tone="accent">↳ {run.exit}</Badge>}
+                <span className="min-w-[6rem] flex-1 truncate font-medium" title={step?.name || id}>
+                  {step?.name || id}
+                </span>
+                {run.exit && (
+                  <Badge tone="accent" className="max-w-[7rem] truncate">
+                    ↳ {run.exit}
+                  </Badge>
+                )}
                 {run.usage && <span className="text-faint">{formatTokens(run.usage.input_tokens + run.usage.output_tokens)} tok</span>}
                 {run.cost != null && <span className="text-faint">{formatCost(run.cost)}</span>}
                 <span className="w-12 text-right text-faint">{formatMs(run.durationMs)}</span>

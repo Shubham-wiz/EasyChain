@@ -267,7 +267,7 @@ export function Canvas() {
         }}
         colorMode={theme}
         fitView
-        fitViewOptions={{ padding: 0.15, minZoom: 0.7, maxZoom: 1.1 }}
+        fitViewOptions={{ padding: 0.08, minZoom: 0.55, maxZoom: 1.1 }}
         minZoom={0.1}
         maxZoom={2}
         snapToGrid

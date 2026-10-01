@@ -99,14 +99,16 @@ export const StepNode = memo(function StepNode({ id, selected }: NodeProps) {
       data-testid={`step-${id}`}
       data-status={run?.status ?? "idle"}
     >
-      {step.type !== "input" && <Handle type="target" position={Position.Left} aria-label={`Into ${step.name}`} />}
+      {step.type !== "input" && <Handle type="target" position={Position.Left} title="Connect into this step" />}
       <div className="flex items-start gap-2.5 px-3 pt-2.5 pb-2">
         <div className={cn("mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg", colors.chip)}>
           <Icon size={15} />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-1">
-            <p className="truncate text-[13px] leading-tight font-semibold">{step.name || step.id}</p>
+            <p className="truncate text-[13px] leading-tight font-semibold" title={step.name || step.id}>
+              {step.name || step.id}
+            </p>
             <StatusBadges id={id} />
           </div>
           {(step.name !== info?.label || mode === "pro") && (
@@ -119,7 +121,7 @@ export const StepNode = memo(function StepNode({ id, selected }: NodeProps) {
         </div>
       </div>
       <RunFooter id={id} />
-      {step.type !== "output" && <Handle type="source" position={Position.Right} aria-label={`Out of ${step.name}`} />}
+      {step.type !== "output" && <Handle type="source" position={Position.Right} title="Drag to connect to the next step" />}
     </div>
   );
 });
@@ -141,7 +143,7 @@ export const DecisionNode = memo(function DecisionNode({ id, selected }: NodePro
       data-testid={`step-${id}`}
       data-status={run?.status ?? "idle"}
     >
-      <Handle type="target" position={Position.Left} aria-label={`Into ${step.name}`} />
+      <Handle type="target" position={Position.Left} title="Connect into this step" />
       <div className="flex items-center gap-3 px-3 pt-3 pb-2">
         <div className="relative flex h-10 w-10 shrink-0 items-center justify-center" aria-hidden>
           <div className="absolute inset-1 rotate-45 rounded-md bg-amber-500/15 ring-1 ring-amber-500/40" />
@@ -149,7 +151,9 @@ export const DecisionNode = memo(function DecisionNode({ id, selected }: NodePro
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-1">
-            <p className="truncate text-[13px] font-semibold">{step.name || step.id}</p>
+            <p className="truncate text-[13px] font-semibold" title={step.name || step.id}>
+              {step.name || step.id}
+            </p>
             <StatusBadges id={id} />
           </div>
           <p className="truncate text-[11px] text-muted">{stepSummary(step, upstream)}</p>
@@ -173,7 +177,7 @@ export const DecisionNode = memo(function DecisionNode({ id, selected }: NodePro
                 type="source"
                 position={Position.Right}
                 id={`exit:${label}`}
-                aria-label={`Exit ${label}`}
+                title={`Exit: ${label}. Drag to connect`}
                 className="!-right-1.5"
               />
             </div>

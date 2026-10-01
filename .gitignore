@@ -33,3 +33,4 @@ python/src/easychain/server/static/*
 .idea/
 .vscode/*
 !.vscode/extensions.json
+apps/web/.scratch/
