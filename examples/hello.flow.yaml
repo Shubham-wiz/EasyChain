@@ -1,0 +1,29 @@
+# The Phase 0 example: a 3-step flow written by hand.
+#   easychain run examples/hello.flow.yaml -i question="What is LangGraph?" --stand-in
+version: 1
+name: Hello
+description: Ask an AI model a question.
+steps:
+- id: input
+  type: input
+  name: Input
+  settings:
+    fields:
+    - name: question
+      description: What to ask
+- id: ask_ai
+  type: ai_model
+  name: Ask the AI
+  settings:
+    prompt: question
+- id: output
+  type: output
+  name: Output
+  settings:
+    fields:
+    - answer
+connections:
+- from: input
+  to: ask_ai
+- from: ask_ai
+  to: output

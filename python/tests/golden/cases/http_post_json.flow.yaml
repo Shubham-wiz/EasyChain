@@ -1,0 +1,42 @@
+version: 1
+name: Search an API
+steps:
+- id: input
+  type: input
+  settings:
+    fields:
+    - name: question
+      example: What is LangGraph?
+    - name: limit
+      type: number
+      default: 5
+      required: false
+- id: search
+  type: http_request
+  name: Search
+  settings:
+    method: POST
+    url: https://api.example.com/search?limit={limit}
+    headers:
+      Authorization: Bearer {secret:SEARCH_API_KEY}
+      X-Client: easychain
+    body: '{"query": "{question}", "filters": {"lang": "en"}}'
+    response: json
+    timeout: 10
+    save_as: results
+- id: raw
+  type: http_request
+  name: Raw text
+  settings:
+    url: https://example.com/robots.txt
+    response: text
+    max_chars: 500
+    save_as: robots
+- id: output
+  type: output
+  settings:
+    fields: [results, robots]
+connections:
+- {from: input, to: search}
+- {from: search, to: raw}
+- {from: raw, to: output}

@@ -1,0 +1,76 @@
+version: 1
+name: Route a ticket
+description: Every kind of Decision rule, plus a Pro expression.
+steps:
+- id: input
+  type: input
+  settings:
+    fields:
+    - name: subject
+    - name: priority
+      type: number
+    - name: urgent
+      type: yes_no
+      required: false
+    - name: tags
+      type: list
+      required: false
+- id: route
+  type: decision
+  name: Where should it go?
+  settings:
+    exits:
+    - label: Refund
+      when: {field: subject, op: contains, value: Refund}
+    - label: Exact
+      when: {field: subject, op: equals, value: Hello}
+    - label: Not hello
+      when: {field: subject, op: not_equals, value: hello}
+    - label: High
+      when: {field: priority, op: greater_than, value: "7"}
+    - label: Low
+      when: {field: priority, op: less_than, value: 2}
+    - label: Same priority
+      when: {field: priority, op: equals, value: 5}
+    - label: Urgent
+      when: {field: urgent, op: is_true}
+    - label: Calm
+      when: {field: urgent, op: is_false}
+    - label: VIP
+      when: {field: tags, op: contains, value: vip}
+    - label: No tags
+      when: {field: tags, op: is_empty}
+    - label: Some tags
+      when: {field: tags, op: is_not_empty}
+    - label: Re
+      when: {field: subject, op: starts_with, value: "RE:"}
+    - label: Question
+      when: {field: subject, op: ends_with, value: "?"}
+    - label: Order number
+      when: {field: subject, op: matches, value: '#\d+'}
+    - label: Long
+      when: {field: subject, op: longer_than, value: 80}
+    - label: Short
+      when: {field: subject, op: shorter_than, value: 3}
+    - label: No refund
+      when: {field: subject, op: not_contains, value: refund}
+    - label: Flag
+      when: {field: urgent, op: equals, value: "yes"}
+    - label: Expression
+      when: {expression: 'len(subject) > 10 and priority >= 3'}
+    otherwise: Everything else
+- id: handle
+  type: code
+  name: Handle it
+  settings:
+    code: |
+      def run(data):
+          return {"handled": True}
+- id: output
+  type: output
+  settings:
+    fields: [handled]
+connections:
+- {from: input, to: route}
+- {from: route, exit: Refund, to: handle}
+- {from: route, exit: Everything else, to: output}

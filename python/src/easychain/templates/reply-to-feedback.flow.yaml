@@ -1,0 +1,94 @@
+version: 1
+name: Reply to customer feedback
+description: Reads a piece of customer feedback, decides whether it is a complaint, praise or a question, and drafts the right kind of reply.
+steps:
+- id: input
+  type: input
+  name: Input
+  settings:
+    fields:
+    - name: feedback
+      description: What the customer wrote
+      example: The app keeps crashing when I upload a photo and I lost my work. Very frustrating.
+- id: what_kind
+  type: decision
+  name: What kind of feedback?
+  settings:
+    mode: ai
+    exits:
+    - label: Complaint
+      description: the customer is unhappy or angry, something is broken, slow or wrong (a bug, crash or bad experience), or they want a refund
+    - label: Praise
+      description: the customer is happy, says thanks or loves the product
+    otherwise: Question
+    instructions: Classify the customer's feedback.
+    save_as: kind
+- id: apologise
+  type: instructions
+  name: Apologise and help
+  settings:
+    system: You are a caring support agent. Apologise once, explain the next step, and keep it under 80 words.
+    user: |-
+      Write a reply to this complaint:
+
+      {feedback}
+- id: thank
+  type: instructions
+  name: Say thank you
+  settings:
+    system: You are a warm community manager. Thank the customer in two sentences.
+    user: |-
+      Write a reply to this praise:
+
+      {feedback}
+- id: answer
+  type: instructions
+  name: Answer the question
+  settings:
+    system: You are a helpful support agent. Answer briefly and suggest where to learn more.
+    user: |-
+      Write a reply to this question:
+
+      {feedback}
+- id: draft_reply
+  type: ai_model
+  name: Draft the reply
+  settings:
+    temperature: 0.4
+    save_as: reply
+- id: output
+  type: output
+  name: Output
+  settings:
+    fields:
+    - kind
+    - reply
+connections:
+- from: input
+  to: what_kind
+- from: what_kind
+  exit: Complaint
+  to: apologise
+- from: what_kind
+  exit: Praise
+  to: thank
+- from: what_kind
+  exit: Question
+  to: answer
+- from: apologise
+  to: draft_reply
+- from: thank
+  to: draft_reply
+- from: answer
+  to: draft_reply
+- from: draft_reply
+  to: output
+canvas:
+  steps:
+    input: {x: 0, y: 200}
+    what_kind: {x: 260, y: 170}
+    apologise: {x: 560, y: 40}
+    thank: {x: 560, y: 200}
+    answer: {x: 560, y: 360}
+    draft_reply: {x: 860, y: 200}
+    output: {x: 1140, y: 200}

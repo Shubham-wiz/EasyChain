@@ -1,0 +1,53 @@
+version: 1
+name: Extract JSON
+steps:
+- id: input
+  type: input
+  settings:
+    fields:
+    - name: text
+- id: prompt
+  type: instructions
+  name: Explain the format
+  settings:
+    system: |-
+      Extract the person's name and age as JSON like {"name": "Ada", "age": 36}.
+      Never add other keys.
+    examples:
+    - role: user
+      content: Bob is 40 years old.
+    - role: assistant
+      content: '{"name": "Bob", "age": 40}'
+    user: '{text}'
+    save_as: messages_for_ai
+- id: extract
+  type: ai_model
+  name: Extract
+  settings:
+    model: anthropic:claude-haiku-4-5
+    max_tokens: 200
+    save_as: json_text
+- id: parse
+  type: code
+  name: Parse JSON
+  settings:
+    code: |
+      import json
+
+
+      def run(data):
+          raw = data["json_text"]
+          try:
+              value = json.loads(raw)
+          except json.JSONDecodeError:
+              value = {}
+          return {"person": value}
+- id: output
+  type: output
+  settings:
+    fields: [person]
+connections:
+- {from: input, to: prompt}
+- {from: prompt, to: extract}
+- {from: extract, to: parse}
+- {from: parse, to: output}

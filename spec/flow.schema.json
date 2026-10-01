@@ -1,0 +1,1051 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://easychain.dev/schema/flow/v1.json",
+  "title": "Easy Chain flow",
+  "description": "An Easy Chain flow spec (*.flow.yaml). Each flow compiles to a LangGraph graph. Spec version 1.",
+  "$defs": {
+    "AIModelSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "default": "openai:gpt-4o-mini",
+          "description": "provider:model, for example openai:gpt-4o-mini, anthropic:claude-haiku-4-5 or ollama:llama3.2.",
+          "title": "Model",
+          "type": "string"
+        },
+        "prompt": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_]{0,62}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Flow Data field to send to the model (text or messages). Empty means: what the previous step saved.",
+          "title": "Prompt"
+        },
+        "save_as": {
+          "default": "answer",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Save As",
+          "type": "string"
+        },
+        "temperature": {
+          "anyOf": [
+            {
+              "maximum": 2,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Temperature"
+        },
+        "max_tokens": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Tokens"
+        },
+        "reasoning_effort": {
+          "anyOf": [
+            {
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reasoning Effort"
+        },
+        "stop": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Stop",
+          "type": "array"
+        },
+        "timeout": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timeout"
+        },
+        "max_retries": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Retries"
+        },
+        "base_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Custom endpoint, e.g. an OpenAI-compatible server.",
+          "title": "Base Url"
+        }
+      },
+      "title": "AIModelSettings",
+      "type": "object"
+    },
+    "AIModelStep": {
+      "additionalProperties": false,
+      "description": "Calls a chat model (LangChain chat model via init_chat_model).",
+      "properties": {
+        "id": {
+          "description": "Unique id; also the LangGraph node name.",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "description": "Label shown on the canvas.",
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "type": {
+          "const": "ai_model",
+          "title": "Type",
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/AIModelSettings"
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ],
+      "title": "AIModelStep",
+      "type": "object"
+    },
+    "Canvas": {
+      "additionalProperties": false,
+      "description": "Visual-only data. Kept in its own section so flow diffs stay clean.",
+      "properties": {
+        "steps": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Position"
+          },
+          "title": "Steps",
+          "type": "object"
+        },
+        "notes": {
+          "items": {
+            "$ref": "#/$defs/StickyNote"
+          },
+          "title": "Notes",
+          "type": "array"
+        },
+        "viewport": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "number"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Viewport"
+        }
+      },
+      "title": "Canvas",
+      "type": "object"
+    },
+    "CodeSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "default": "def run(data):\n    \"\"\"Return the Flow Data fields to update.\"\"\"\n    text = data.get(\"answer\", \"\")\n    return {\"word_count\": len(text.split())}\n",
+          "title": "Code",
+          "type": "string"
+        },
+        "writes": {
+          "description": "Fields this code sets. Empty means: worked out from the returned dict.",
+          "items": {
+            "pattern": "^[a-z][a-z0-9_]{0,62}$",
+            "type": "string"
+          },
+          "title": "Writes",
+          "type": "array"
+        },
+        "requirements": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Requirements",
+          "type": "array"
+        }
+      },
+      "title": "CodeSettings",
+      "type": "object"
+    },
+    "CodeStep": {
+      "additionalProperties": false,
+      "description": "Action: runs a Python function over Flow Data.",
+      "properties": {
+        "id": {
+          "description": "Unique id; also the LangGraph node name.",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "description": "Label shown on the canvas.",
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "type": {
+          "const": "code",
+          "title": "Type",
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/CodeSettings"
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ],
+      "title": "CodeStep",
+      "type": "object"
+    },
+    "Condition": {
+      "additionalProperties": false,
+      "properties": {
+        "field": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_]{0,62}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Field"
+        },
+        "op": {
+          "default": "equals",
+          "enum": [
+            "equals",
+            "not_equals",
+            "contains",
+            "not_contains",
+            "starts_with",
+            "ends_with",
+            "matches",
+            "is_empty",
+            "is_not_empty",
+            "greater_than",
+            "less_than",
+            "longer_than",
+            "shorter_than",
+            "is_true",
+            "is_false"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "value": {
+          "default": null,
+          "title": "Value"
+        },
+        "expression": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Pro: a safe Python expression over field names, e.g. len(page) > 5000.",
+          "title": "Expression"
+        }
+      },
+      "title": "Condition",
+      "type": "object"
+    },
+    "Connection": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "title": "From",
+          "type": "string"
+        },
+        "to": {
+          "title": "To",
+          "type": "string"
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Decision exit label this connection leaves from.",
+          "title": "Exit"
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ],
+      "title": "Connection",
+      "type": "object"
+    },
+    "DataField": {
+      "additionalProperties": false,
+      "description": "A named field of Flow Data (LangGraph state key).",
+      "properties": {
+        "name": {
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "type": {
+          "default": "text",
+          "enum": [
+            "text",
+            "number",
+            "yes_no",
+            "list",
+            "object",
+            "file",
+            "messages",
+            "any"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "update": {
+          "default": "replace",
+          "description": "How a new value combines with the old one: replace, append (lists and messages), merge (objects) or add (numbers).",
+          "enum": [
+            "replace",
+            "append",
+            "merge",
+            "add"
+          ],
+          "title": "Update",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "DataField",
+      "type": "object"
+    },
+    "DecisionExit": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "maxLength": 60,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "when": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Condition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "label"
+      ],
+      "title": "DecisionExit",
+      "type": "object"
+    },
+    "DecisionSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "default": "rules",
+          "enum": [
+            "rules",
+            "ai"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "exits": {
+          "items": {
+            "$ref": "#/$defs/DecisionExit"
+          },
+          "title": "Exits",
+          "type": "array"
+        },
+        "otherwise": {
+          "default": "Otherwise",
+          "maxLength": 60,
+          "minLength": 1,
+          "title": "Otherwise",
+          "type": "string"
+        },
+        "model": {
+          "default": "openai:gpt-4o-mini",
+          "title": "Model",
+          "type": "string"
+        },
+        "input": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_]{0,62}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Field the AI reads. Empty means: what the previous step saved.",
+          "title": "Input"
+        },
+        "instructions": {
+          "default": "",
+          "title": "Instructions",
+          "type": "string"
+        },
+        "save_as": {
+          "default": "choice",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Save As",
+          "type": "string"
+        }
+      },
+      "title": "DecisionSettings",
+      "type": "object"
+    },
+    "DecisionStep": {
+      "additionalProperties": false,
+      "description": "Picks the next step (LangGraph conditional edge).",
+      "properties": {
+        "id": {
+          "description": "Unique id; also the LangGraph node name.",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "description": "Label shown on the canvas.",
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "type": {
+          "const": "decision",
+          "title": "Type",
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/DecisionSettings"
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ],
+      "title": "DecisionStep",
+      "type": "object"
+    },
+    "ExampleMessage": {
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "enum": [
+            "user",
+            "assistant"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "content": {
+          "title": "Content",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "content"
+      ],
+      "title": "ExampleMessage",
+      "type": "object"
+    },
+    "HttpRequestSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "default": "GET",
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE"
+          ],
+          "title": "Method",
+          "type": "string"
+        },
+        "url": {
+          "default": "",
+          "title": "Url",
+          "type": "string"
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Headers",
+          "type": "object"
+        },
+        "body": {
+          "default": "",
+          "title": "Body",
+          "type": "string"
+        },
+        "response": {
+          "default": "readable_text",
+          "description": "readable_text strips HTML down to the words on the page.",
+          "enum": [
+            "readable_text",
+            "text",
+            "json"
+          ],
+          "title": "Response",
+          "type": "string"
+        },
+        "max_chars": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 20000,
+          "title": "Max Chars"
+        },
+        "timeout": {
+          "default": 30,
+          "exclusiveMinimum": 0,
+          "title": "Timeout",
+          "type": "number"
+        },
+        "save_as": {
+          "default": "response",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Save As",
+          "type": "string"
+        }
+      },
+      "title": "HttpRequestSettings",
+      "type": "object"
+    },
+    "HttpRequestStep": {
+      "additionalProperties": false,
+      "description": "Action: calls a URL over HTTP.",
+      "properties": {
+        "id": {
+          "description": "Unique id; also the LangGraph node name.",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "description": "Label shown on the canvas.",
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "type": {
+          "const": "http_request",
+          "title": "Type",
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/HttpRequestSettings"
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ],
+      "title": "HttpRequestStep",
+      "type": "object"
+    },
+    "InputField": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "type": {
+          "default": "text",
+          "enum": [
+            "text",
+            "number",
+            "yes_no",
+            "list",
+            "object",
+            "file"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "example": {
+          "default": null,
+          "title": "Example"
+        },
+        "default": {
+          "default": null,
+          "title": "Default"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "InputField",
+      "type": "object"
+    },
+    "InputSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "default": "form",
+          "description": "form: the flow takes named fields. chat: the flow takes chat messages, kept per conversation in the `messages` field.",
+          "enum": [
+            "form",
+            "chat"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "fields": {
+          "items": {
+            "$ref": "#/$defs/InputField"
+          },
+          "title": "Fields",
+          "type": "array"
+        }
+      },
+      "title": "InputSettings",
+      "type": "object"
+    },
+    "InputStep": {
+      "additionalProperties": false,
+      "description": "Where a run starts. Declares the fields a run takes (LangGraph START + input schema).",
+      "properties": {
+        "id": {
+          "description": "Unique id; also the LangGraph node name.",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "description": "Label shown on the canvas.",
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "type": {
+          "const": "input",
+          "title": "Type",
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/InputSettings"
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ],
+      "title": "InputStep",
+      "type": "object"
+    },
+    "InstructionsSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "system": {
+          "default": "You are a helpful assistant.",
+          "title": "System",
+          "type": "string"
+        },
+        "user": {
+          "default": "",
+          "title": "User",
+          "type": "string"
+        },
+        "examples": {
+          "description": "Few-shot example turns placed before the user message.",
+          "items": {
+            "$ref": "#/$defs/ExampleMessage"
+          },
+          "title": "Examples",
+          "type": "array"
+        },
+        "history": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_]{0,62}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Messages field to insert as chat history (e.g. messages).",
+          "title": "History"
+        },
+        "save_as": {
+          "default": "prompt",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Save As",
+          "type": "string"
+        }
+      },
+      "title": "InstructionsSettings",
+      "type": "object"
+    },
+    "InstructionsStep": {
+      "additionalProperties": false,
+      "description": "Fills a prompt template with Flow Data (LangChain ChatPromptTemplate).",
+      "properties": {
+        "id": {
+          "description": "Unique id; also the LangGraph node name.",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "description": "Label shown on the canvas.",
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "type": {
+          "const": "instructions",
+          "title": "Type",
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/InstructionsSettings"
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ],
+      "title": "InstructionsStep",
+      "type": "object"
+    },
+    "OutputSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "fields": {
+          "description": "Flow Data fields returned when the run finishes.",
+          "items": {
+            "pattern": "^[a-z][a-z0-9_]{0,62}$",
+            "type": "string"
+          },
+          "title": "Fields",
+          "type": "array"
+        }
+      },
+      "title": "OutputSettings",
+      "type": "object"
+    },
+    "OutputStep": {
+      "additionalProperties": false,
+      "description": "Where a run ends. Picks the fields to return (LangGraph END + output schema).",
+      "properties": {
+        "id": {
+          "description": "Unique id; also the LangGraph node name.",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "description": "Label shown on the canvas.",
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "type": {
+          "const": "output",
+          "title": "Type",
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/OutputSettings"
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ],
+      "title": "OutputStep",
+      "type": "object"
+    },
+    "Position": {
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "default": 0,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "default": 0,
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "title": "Position",
+      "type": "object"
+    },
+    "StickyNote": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "text": {
+          "default": "",
+          "title": "Text",
+          "type": "string"
+        },
+        "x": {
+          "default": 0,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "default": 0,
+          "title": "Y",
+          "type": "number"
+        },
+        "width": {
+          "default": 220,
+          "title": "Width",
+          "type": "number"
+        },
+        "height": {
+          "default": 120,
+          "title": "Height",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "StickyNote",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1,
+      "default": 1,
+      "title": "Version",
+      "type": "integer"
+    },
+    "name": {
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "description": {
+      "default": "",
+      "title": "Description",
+      "type": "string"
+    },
+    "data": {
+      "description": "Flow Data fields.",
+      "items": {
+        "$ref": "#/$defs/DataField"
+      },
+      "title": "Data",
+      "type": "array"
+    },
+    "steps": {
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "ai_model": "#/$defs/AIModelStep",
+            "code": "#/$defs/CodeStep",
+            "decision": "#/$defs/DecisionStep",
+            "http_request": "#/$defs/HttpRequestStep",
+            "input": "#/$defs/InputStep",
+            "instructions": "#/$defs/InstructionsStep",
+            "output": "#/$defs/OutputStep"
+          },
+          "propertyName": "type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/InputStep"
+          },
+          {
+            "$ref": "#/$defs/OutputStep"
+          },
+          {
+            "$ref": "#/$defs/AIModelStep"
+          },
+          {
+            "$ref": "#/$defs/InstructionsStep"
+          },
+          {
+            "$ref": "#/$defs/HttpRequestStep"
+          },
+          {
+            "$ref": "#/$defs/CodeStep"
+          },
+          {
+            "$ref": "#/$defs/DecisionStep"
+          }
+        ]
+      },
+      "title": "Steps",
+      "type": "array"
+    },
+    "connections": {
+      "items": {
+        "$ref": "#/$defs/Connection"
+      },
+      "title": "Connections",
+      "type": "array"
+    },
+    "canvas": {
+      "$ref": "#/$defs/Canvas"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+}

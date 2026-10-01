@@ -1,0 +1,64 @@
+# Test Set for Reply to customer feedback (uses the stand-in AI, no key needed).
+flow: reply-to-feedback.flow.yaml
+stand_in: true
+cases:
+- name: "Complaint: The app crashed and I lost my work, I wa"
+  inputs: {feedback: "The app crashed and I lost my work, I want a refund"}
+  expect:
+    output.kind: Complaint
+    route: {what_kind: Complaint}
+    output.reply: {not_empty: true}
+- name: "Complaint: Terrible experience, the upload is broke"
+  inputs: {feedback: "Terrible experience, the upload is broken again"}
+  expect:
+    output.kind: Complaint
+    route: {what_kind: Complaint}
+    output.reply: {not_empty: true}
+- name: "Complaint: Your product has a bug: the button does "
+  inputs: {feedback: "Your product has a bug: the button does nothing. Very unhappy."}
+  expect:
+    output.kind: Complaint
+    route: {what_kind: Complaint}
+    output.reply: {not_empty: true}
+- name: "Complaint: I was charged twice and want a refund"
+  inputs: {feedback: "I was charged twice and want a refund"}
+  expect:
+    output.kind: Complaint
+    route: {what_kind: Complaint}
+    output.reply: {not_empty: true}
+- name: "Praise: Thanks so much, I love the new design!"
+  inputs: {feedback: "Thanks so much, I love the new design!"}
+  expect:
+    output.kind: Praise
+    route: {what_kind: Praise}
+    output.reply: {not_empty: true}
+- name: "Praise: Happy customer here, the team was great,"
+  inputs: {feedback: "Happy customer here, the team was great, thanks"}
+  expect:
+    output.kind: Praise
+    route: {what_kind: Praise}
+    output.reply: {not_empty: true}
+- name: "Praise: I love this product, it saves me hours"
+  inputs: {feedback: "I love this product, it saves me hours"}
+  expect:
+    output.kind: Praise
+    route: {what_kind: Praise}
+    output.reply: {not_empty: true}
+- name: "Question: How do I export my data to CSV?"
+  inputs: {feedback: "How do I export my data to CSV?"}
+  expect:
+    output.kind: Question
+    route: {what_kind: Question}
+    output.reply: {not_empty: true}
+- name: "Question: Is there a dark mode?"
+  inputs: {feedback: "Is there a dark mode?"}
+  expect:
+    output.kind: Question
+    route: {what_kind: Question}
+    output.reply: {not_empty: true}
+- name: "Question: Can I invite my team?"
+  inputs: {feedback: "Can I invite my team?"}
+  expect:
+    output.kind: Question
+    route: {what_kind: Question}
+    output.reply: {not_empty: true}

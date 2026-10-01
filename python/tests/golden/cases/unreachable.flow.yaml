@@ -1,0 +1,23 @@
+version: 1
+name: Loose ends
+steps:
+- id: input
+  type: input
+  settings:
+    fields:
+    - name: topic
+- id: ask
+  type: ai_model
+  settings:
+    prompt: topic
+- id: orphan
+  type: instructions
+  settings:
+    user: Never runs
+- id: output
+  type: output
+  settings:
+    fields: [answer]
+connections:
+- {from: input, to: ask}
+- {from: ask, to: output}

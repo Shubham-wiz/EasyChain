@@ -1,0 +1,38 @@
+version: 1
+name: Chat assistant
+description: A friendly assistant that remembers the conversation. Change its role and rules to make it yours.
+steps:
+- id: input
+  type: input
+  name: Chat message
+  settings:
+    mode: chat
+- id: instructions
+  type: instructions
+  name: Role and rules
+  settings:
+    system: |-
+      You are a friendly, concise assistant.
+      Answer in plain language. If you don't know something, say so.
+    history: messages
+- id: reply
+  type: ai_model
+  name: Reply
+  settings:
+    save_as: messages
+- id: output
+  type: output
+  name: Output
+connections:
+- from: input
+  to: instructions
+- from: instructions
+  to: reply
+- from: reply
+  to: output
+canvas:
+  steps:
+    input: {x: 0, y: 120}
+    instructions: {x: 280, y: 120}
+    reply: {x: 560, y: 120}
+    output: {x: 840, y: 120}

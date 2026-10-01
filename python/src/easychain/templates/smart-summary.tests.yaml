@@ -1,0 +1,63 @@
+# Test Set for Smart summary length. Same setup as summarise-url.tests.yaml.
+flow: smart-summary.flow.yaml
+cases:
+- name: Short page (langchain) gets a one-sentence summary
+  inputs: {url: "${base_url}/pages/langchain"}
+  expect:
+    route: {is_long: Short}
+    steps: [brief]
+    output.summary: {not_empty: true}
+- name: Short page (pricing) gets a one-sentence summary
+  inputs: {url: "${base_url}/pages/pricing"}
+  expect:
+    route: {is_long: Short}
+    steps: [brief]
+    output.summary: {not_empty: true}
+- name: Short page (bees) gets a one-sentence summary
+  inputs: {url: "${base_url}/pages/bees"}
+  expect:
+    route: {is_long: Short}
+    steps: [brief]
+    output.summary: {not_empty: true}
+- name: Short page (volcano) gets a one-sentence summary
+  inputs: {url: "${base_url}/pages/volcano"}
+  expect:
+    route: {is_long: Short}
+    steps: [brief]
+    output.summary: {not_empty: true}
+- name: Short page (coffee) gets a one-sentence summary
+  inputs: {url: "${base_url}/pages/coffee"}
+  expect:
+    route: {is_long: Short}
+    steps: [brief]
+    output.summary: {not_empty: true}
+- name: Short page (chess) gets a one-sentence summary
+  inputs: {url: "${base_url}/pages/chess"}
+  expect:
+    route: {is_long: Short}
+    steps: [brief]
+    output.summary: {not_empty: true}
+- name: Short page (mars) gets a one-sentence summary
+  inputs: {url: "${base_url}/pages/mars"}
+  expect:
+    route: {is_long: Short}
+    steps: [brief]
+    output.summary: {not_empty: true}
+- name: Short page (bread) gets a one-sentence summary
+  inputs: {url: "${base_url}/pages/bread"}
+  expect:
+    route: {is_long: Short}
+    steps: [brief]
+    output.summary: {not_empty: true}
+- name: Short page (python) gets a one-sentence summary
+  inputs: {url: "${base_url}/pages/python"}
+  expect:
+    route: {is_long: Short}
+    steps: [brief]
+    output.summary: {not_empty: true}
+- name: Long page gets five bullets
+  inputs: {url: "${base_url}/pages/long"}
+  expect:
+    route: {is_long: Long}
+    steps: [detailed]
+    output.summary: {contains: Paragraph}

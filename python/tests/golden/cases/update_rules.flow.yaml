@@ -1,0 +1,55 @@
+version: 1
+name: Keep a tally
+description: Flow Data update rules and a guarded loop.
+data:
+- name: notes
+  type: list
+  update: append
+  description: One note per round
+- name: total
+  type: number
+  update: add
+- name: meta
+  type: object
+  update: merge
+- name: log
+  type: text
+  update: append
+steps:
+- id: input
+  type: input
+  settings:
+    fields:
+    - name: rounds
+      type: number
+      default: 3
+      required: false
+- id: tally
+  type: code
+  name: Add one
+  settings:
+    code: |
+      import math
+
+
+      def run(data):
+          """Add a note and one to the total."""
+          n = len(data.get("notes", []))
+          return {"notes": [f"round {n + 1}"], "total": 1, "meta": {f"r{n}": math.floor(n)}, "log": "."}
+- id: again
+  type: decision
+  name: Another round?
+  settings:
+    exits:
+    - label: Again
+      when: {expression: 'total < rounds'}
+    otherwise: Done
+- id: output
+  type: output
+  settings:
+    fields: [notes, total, meta, log]
+connections:
+- {from: input, to: tally}
+- {from: tally, to: again}
+- {from: again, exit: Again, to: tally}
+- {from: again, exit: Done, to: output}

@@ -1,0 +1,108 @@
+# Test Set for the Summarise a URL template.
+# Runs against the fake OpenAI server, which also serves the sample pages:
+#   easychain test summarise-url.tests.yaml --var base_url=http://127.0.0.1:8765
+# (start it with `python -m easychain.testing.fake_openai`, and set
+#  OPENAI_API_KEY=sk-test OPENAI_BASE_URL=http://127.0.0.1:8765/v1)
+flow: summarise-url.flow.yaml
+cases:
+- name: Summarises the langchain page
+  inputs: {url: "${base_url}/pages/langchain"}
+  expect:
+    status: ok
+    steps: [fetch_page, write_prompt, summarise]
+    output.summary:
+      not_empty: true
+      contains: LangChain
+      not_contains: "<p>"
+- name: Summarises the pricing page
+  inputs: {url: "${base_url}/pages/pricing"}
+  expect:
+    status: ok
+    steps: [fetch_page, write_prompt, summarise]
+    output.summary:
+      not_empty: true
+      contains: plan
+      not_contains: "<p>"
+- name: Summarises the bees page
+  inputs: {url: "${base_url}/pages/bees"}
+  expect:
+    status: ok
+    steps: [fetch_page, write_prompt, summarise]
+    output.summary:
+      not_empty: true
+      contains: colonies
+      not_contains: "<p>"
+- name: Summarises the volcano page
+  inputs: {url: "${base_url}/pages/volcano"}
+  expect:
+    status: ok
+    steps: [fetch_page, write_prompt, summarise]
+    output.summary:
+      not_empty: true
+      contains: magma
+      not_contains: "<p>"
+- name: Summarises the coffee page
+  inputs: {url: "${base_url}/pages/coffee"}
+  expect:
+    status: ok
+    steps: [fetch_page, write_prompt, summarise]
+    output.summary:
+      not_empty: true
+      contains: beans
+      not_contains: "<p>"
+- name: Summarises the chess page
+  inputs: {url: "${base_url}/pages/chess"}
+  expect:
+    status: ok
+    steps: [fetch_page, write_prompt, summarise]
+    output.summary:
+      not_empty: true
+      contains: board game
+      not_contains: "<p>"
+- name: Summarises the mars page
+  inputs: {url: "${base_url}/pages/mars"}
+  expect:
+    status: ok
+    steps: [fetch_page, write_prompt, summarise]
+    output.summary:
+      not_empty: true
+      contains: planet
+      not_contains: "<p>"
+- name: Summarises the bread page
+  inputs: {url: "${base_url}/pages/bread"}
+  expect:
+    status: ok
+    steps: [fetch_page, write_prompt, summarise]
+    output.summary:
+      not_empty: true
+      contains: yeast
+      not_contains: "<p>"
+- name: Summarises the python page
+  inputs: {url: "${base_url}/pages/python"}
+  expect:
+    status: ok
+    steps: [fetch_page, write_prompt, summarise]
+    output.summary:
+      not_empty: true
+      contains: programming language
+      not_contains: "<p>"
+- name: Summarises the ocean page
+  inputs: {url: "${base_url}/pages/ocean"}
+  expect:
+    status: ok
+    steps: [fetch_page, write_prompt, summarise]
+    output.summary:
+      not_empty: true
+      contains: Pacific
+      not_contains: "<p>"
+- name: A missing page fails on the web request with a clear message
+  inputs: {url: "${base_url}/pages/does-not-exist"}
+  expect:
+    status: error
+    error.kind: http_status
+    step: fetch_page
+- name: Asks for the URL when it is missing
+  inputs: {}
+  expect:
+    status: error
+    error.kind: bad_input

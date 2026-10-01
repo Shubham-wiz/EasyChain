@@ -1,0 +1,55 @@
+version: 1
+name: Summarise a URL
+description: Fetches a web page and summarises it in three bullet points.
+steps:
+- id: input
+  type: input
+  name: Input
+  settings:
+    fields:
+    - name: url
+      description: The web page to summarise
+      example: https://en.wikipedia.org/wiki/LangChain
+- id: fetch_page
+  type: http_request
+  name: Fetch the page
+  settings:
+    url: '{url}'
+    save_as: page
+- id: write_prompt
+  type: instructions
+  name: Write the prompt
+  settings:
+    system: You summarise web pages for busy people. Be accurate and brief.
+    user: |-
+      Summarise this page in three bullet points.
+
+      {page}
+- id: summarise
+  type: ai_model
+  name: Summarise
+  settings:
+    temperature: 0.2
+    save_as: summary
+- id: output
+  type: output
+  name: Output
+  settings:
+    fields:
+    - summary
+connections:
+- from: input
+  to: fetch_page
+- from: fetch_page
+  to: write_prompt
+- from: write_prompt
+  to: summarise
+- from: summarise
+  to: output
+canvas:
+  steps:
+    input: {x: 0, y: 120}
+    fetch_page: {x: 260, y: 120}
+    write_prompt: {x: 520, y: 120}
+    summarise: {x: 780, y: 120}
+    output: {x: 1040, y: 120}

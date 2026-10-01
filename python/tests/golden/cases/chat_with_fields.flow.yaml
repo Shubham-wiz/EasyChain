@@ -1,0 +1,51 @@
+version: 1
+name: Tutor
+steps:
+- id: input
+  type: input
+  settings:
+    mode: chat
+    fields:
+    - name: level
+      default: beginner
+      required: false
+      example: beginner
+- id: rules
+  type: instructions
+  settings:
+    system: You are a patient tutor. Pitch explanations at a {level} level.
+    history: messages
+- id: classify
+  type: decision
+  name: On topic?
+  settings:
+    mode: ai
+    input: messages
+    exits:
+    - label: On topic
+      description: about maths
+    otherwise: Off topic
+    save_as: topic
+- id: reply
+  type: ai_model
+  settings:
+    save_as: messages
+- id: refuse
+  type: code
+  name: Polite refusal
+  settings:
+    code: |
+      from langchain_core.messages import AIMessage
+
+
+      def run(data):
+          return {"messages": [AIMessage("Let's stick to maths!")]}
+- id: output
+  type: output
+connections:
+- {from: input, to: classify}
+- {from: classify, exit: On topic, to: rules}
+- {from: classify, exit: Off topic, to: refuse}
+- {from: rules, to: reply}
+- {from: reply, to: output}
+- {from: refuse, to: output}

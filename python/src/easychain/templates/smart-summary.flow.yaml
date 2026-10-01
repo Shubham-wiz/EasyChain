@@ -1,0 +1,97 @@
+version: 1
+name: Smart summary length
+description: Fetches a page, counts its words with a Code step, and asks for a longer summary only when the page is long.
+steps:
+- id: input
+  type: input
+  name: Input
+  settings:
+    fields:
+    - name: url
+      description: The page to read
+      example: https://en.wikipedia.org/wiki/Large_language_model
+- id: fetch_page
+  type: http_request
+  name: Fetch the page
+  settings:
+    url: '{url}'
+    save_as: page
+- id: count_words
+  type: code
+  name: Count the words
+  settings:
+    code: |
+      def run(data):
+          """Count the words on the page."""
+          words = data.get("page", "").split()
+          return {"word_count": len(words)}
+- id: is_long
+  type: decision
+  name: Is the page long?
+  settings:
+    exits:
+    - label: Long
+      when:
+        field: word_count
+        op: greater_than
+        value: 800
+    otherwise: Short
+- id: detailed
+  type: instructions
+  name: Ask for five bullets
+  settings:
+    system: You summarise long articles for busy readers.
+    user: |-
+      Summarise this article in five bullet points.
+
+      {page}
+- id: brief
+  type: instructions
+  name: Ask for one sentence
+  settings:
+    system: You summarise short pages.
+    user: |-
+      Summarise this page in one sentence.
+
+      {page}
+- id: summarise
+  type: ai_model
+  name: Summarise
+  settings:
+    save_as: summary
+- id: output
+  type: output
+  name: Output
+  settings:
+    fields:
+    - word_count
+    - summary
+connections:
+- from: input
+  to: fetch_page
+- from: fetch_page
+  to: count_words
+- from: count_words
+  to: is_long
+- from: is_long
+  exit: Long
+  to: detailed
+- from: is_long
+  exit: Short
+  to: brief
+- from: detailed
+  to: summarise
+- from: brief
+  to: summarise
+- from: summarise
+  to: output
+canvas:
+  steps:
+    input: {x: 0, y: 160}
+    fetch_page: {x: 240, y: 160}
+    count_words: {x: 480, y: 160}
+    is_long: {x: 720, y: 130}
+    detailed: {x: 1000, y: 60}
+    brief: {x: 1000, y: 260}
+    summarise: {x: 1260, y: 160}
+    output: {x: 1500, y: 160}

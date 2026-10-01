@@ -1,0 +1,73 @@
+# Test Set for Chat assistant (uses the stand-in AI, no key needed).
+flow: chat-assistant.flow.yaml
+stand_in: true
+cases:
+- name: "Replies to: Hello!"
+  inputs: {message: "Hello!"}
+  expect:
+    status: ok
+    reply: {not_empty: true}
+    output.messages: {min_length: 10}
+- name: "Replies to: What can you do?"
+  inputs: {message: "What can you do?"}
+  expect:
+    status: ok
+    reply: {not_empty: true}
+    output.messages: {min_length: 10}
+- name: "Replies to: Tell me a joke"
+  inputs: {message: "Tell me a joke"}
+  expect:
+    status: ok
+    reply: {not_empty: true}
+    output.messages: {min_length: 10}
+- name: "Replies to: Summarise: the sky is blue. Grass is green."
+  inputs: {message: "Summarise: the sky is blue. Grass is green."}
+  expect:
+    status: ok
+    reply: {not_empty: true}
+    output.messages: {min_length: 10}
+- name: "Replies to: Translate hello to French"
+  inputs: {message: "Translate hello to French"}
+  expect:
+    status: ok
+    reply: {not_empty: true}
+    output.messages: {min_length: 10}
+- name: "Replies to: Write a haiku about rain"
+  inputs: {message: "Write a haiku about rain"}
+  expect:
+    status: ok
+    reply: {not_empty: true}
+    output.messages: {min_length: 10}
+- name: "Replies to: What is 2 + 2?"
+  inputs: {message: "What is 2 + 2?"}
+  expect:
+    status: ok
+    reply: {not_empty: true}
+    output.messages: {min_length: 10}
+- name: "Replies to: Give me a tip for focus"
+  inputs: {message: "Give me a tip for focus"}
+  expect:
+    status: ok
+    reply: {not_empty: true}
+    output.messages: {min_length: 10}
+- name: "Replies to: Explain LangGraph in one line"
+  inputs: {message: "Explain LangGraph in one line"}
+  expect:
+    status: ok
+    reply: {not_empty: true}
+    output.messages: {min_length: 10}
+- name: "Replies to: Goodbye"
+  inputs: {message: "Goodbye"}
+  expect:
+    status: ok
+    reply: {not_empty: true}
+    output.messages: {min_length: 10}
+- name: Remembers the conversation in a thread (turn 1)
+  thread: memory-test
+  inputs: {message: "My name is Ada"}
+  expect: {status: ok}
+- name: Remembers the conversation in a thread (turn 2)
+  thread: memory-test
+  inputs: {message: "What is my name?"}
+  expect:
+    output.messages: {contains: Ada}
