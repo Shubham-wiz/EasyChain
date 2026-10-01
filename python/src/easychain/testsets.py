@@ -12,12 +12,19 @@ trajectory checks, Test Runs and baselines). File format::
           output.summary:
             contains: LangChain
             not_empty: true
+      - name: A person approves the draft
+        inputs: {email: "Where is my order?"}
+        answers:                         # given in order to Ask a Human steps
+          - {action: approve, comment: "Fine"}
+        expect:
+          output.decision: Approved
 """
 
 from __future__ import annotations
 
 import os
 import re
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -27,7 +34,16 @@ import yaml
 from .runtime import RunOptions, run_flow
 from .spec import FlowSpec, load_spec
 
-CHECKS = ("equals", "contains", "not_contains", "matches", "not_empty", "max_length", "min_length")
+CHECKS = (
+    "equals",
+    "contains",
+    "not_contains",
+    "matches",
+    "not_empty",
+    "max_length",
+    "min_length",
+    "count",
+)
 
 
 @dataclass
@@ -89,6 +105,9 @@ def check_value(value: Any, rules: Any) -> list[str]:
             failures.append(f"expected at most {expected} characters, got {len(text)}")
         elif rule == "min_length" and len(text) < int(expected):
             failures.append(f"expected at least {expected} characters, got {len(text)}")
+        elif rule == "count" and (not isinstance(value, list) or len(value) != int(expected)):
+            got = len(value) if isinstance(value, list) else "no list"
+            failures.append(f"expected {expected} items, got {got}")
         elif rule not in CHECKS:
             failures.append(f"unknown check {rule!r}")
     return failures
@@ -96,9 +115,18 @@ def check_value(value: Any, rules: Any) -> list[str]:
 
 async def run_case(spec: FlowSpec, case: dict[str, Any], stand_in: bool) -> CaseResult:
     name = case.get("name") or "case"
-    options = RunOptions(stand_in=stand_in, thread_id=case.get("thread"))
+    options = RunOptions(stand_in=stand_in, thread_id=case.get("thread") or uuid.uuid4().hex)
     final, events = await run_flow(spec, case.get("inputs") or {}, options)
     failures: list[str] = []
+    # Answers for Ask a Human steps, in the order the run asks.
+    answers = list(case.get("answers") or [])
+    while final.get("status") == "paused" and final.get("reason") == "ask_human" and answers:
+        waiting = final.get("interrupts") or []
+        answer = answers.pop(0)
+        resume = {waiting[0]["id"]: answer} if len(waiting) == 1 else answer
+        options.action, options.resume = "resume", resume
+        final, more = await run_flow(spec, None, options)
+        events += more
     expect = dict(case.get("expect") or {})
     expected_status = expect.pop("status", "ok")
     if final.get("status") != expected_status:

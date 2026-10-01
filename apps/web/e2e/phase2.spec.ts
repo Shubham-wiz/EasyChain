@@ -263,3 +263,56 @@ test("Sub-flows: run another flow as a step and open it by double-clicking", asy
   await expect(page).toHaveURL(new RegExp(`#/flows/${child}$`));
   await expect(step(page, "tidy")).toBeVisible();
 });
+
+test("step over: from a breakpoint, run one step at a time", async ({ page, request }) => {
+  const id = await createFlow(request, {
+    name: "Step by step",
+    steps: [
+      input("x"),
+      code("one", "    return {'a': 1}"),
+      code("two", "    return {'b': 2}"),
+      code("three", "    return {'c': data['a'] + data['b']}"),
+      output("c"),
+    ],
+    connections: [
+      { from: "input", to: "one" },
+      { from: "one", to: "two" },
+      { from: "two", to: "three" },
+      { from: "three", to: "output" },
+    ],
+  });
+  await openFlow(page, id);
+  await inspect(page, "one");
+  await page.getByRole("button", { name: "More options" }).click();
+  await page.getByRole("switch", { name: "Pause before this step" }).click();
+  await page.getByTestId("open-run").click();
+  await page.getByLabel("x").fill("go");
+  await page.getByTestId("run-submit").click();
+  await expect(page.getByTestId("run-breakpoint")).toContainText("before one");
+  await page.getByTestId("step-over").click();
+  await expect(page.getByTestId("run-breakpoint")).toContainText("before two");
+  await expect(step(page, "one")).toHaveAttribute("data-status", "done");
+  await expect(step(page, "two")).toHaveAttribute("data-status", "idle");
+  await page.getByTestId("step-over").click();
+  await expect(page.getByTestId("run-breakpoint")).toContainText("before three");
+  await page.getByTestId("continue-run").click();
+  await expect(page.getByTestId("run-output")).toContainText("3");
+});
+
+test("the Inbox works on a phone", async ({ browser, request }) => {
+  const id = await createFlow(request, { ...APPROVAL, name: "Phone approval" });
+  const res = await request.post("/api/runs", { data: { flow_id: id, inputs: { draft: "Sent from a phone" }, background: true } });
+  const { run_id } = await res.json();
+  await waitForRun(request, run_id, ["paused"]);
+  const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const page = await phone.newPage();
+  await page.goto("/#/inbox");
+  const item = page.getByTestId("inbox-item").filter({ hasText: "Phone approval" });
+  await expect(item).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+  await item.getByRole("button", { name: "Approve" }).tap();
+  await expect(page.getByRole("status")).toContainText("The run carries on");
+  await waitForRun(request, run_id, ["ok"]);
+  await phone.close();
+});

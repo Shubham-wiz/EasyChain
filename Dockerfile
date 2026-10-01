@@ -1,11 +1,14 @@
-# One image with everything: the built web app served by the Python API server.
-#   docker compose up        (or: docker build -t easychain . && docker run -p 8000:8000 easychain)
+# One image with everything: the built web app served by the Python API server, and the
+# worker (`easychain worker`).
+#   docker compose up        (Postgres + API + worker)
+#   docker build -t easychain . && docker run -p 8000:8000 easychain   (one container, SQLite)
 
 FROM node:22-slim AS web
 WORKDIR /src
 RUN corepack enable
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/web/package.json apps/web/package.json
+COPY packages/client/package.json packages/client/package.json
 RUN pnpm install --frozen-lockfile --filter @easychain/web
 COPY apps/web apps/web
 RUN pnpm --filter @easychain/web build
@@ -27,5 +30,5 @@ VOLUME ["/data"]
 EXPOSE 8000
 RUN useradd --create-home --uid 1000 easychain && mkdir -p /data && chown easychain /data
 USER easychain
-HEALTHCHECK --interval=10s --timeout=3s --retries=5 CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"
+HEALTHCHECK --interval=10s --timeout=3s --retries=5 CMD python -c "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/api/health' % os.environ.get('EASYCHAIN_PORT', '8000'))"
 CMD ["easychain", "dev"]

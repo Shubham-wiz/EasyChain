@@ -61,8 +61,24 @@ def route_is_long(data: FlowData) -> str:
 builder.add_conditional_edges("is_long", route_is_long, {"Long": "detailed", "Short": "brief"})
 ```
 
-## Loops
+## Loops and round limits
 
-An exit may lead back to an earlier step to make a loop. A loop needs a Decision with an exit
-that leaves it. A run stops with a clear error after 25 steps if it never leaves. Configurable
-loop limits come in Phase 2.
+An exit may lead back to an earlier step to make a loop. A loop needs a step with an exit that
+leaves it (a Decision, a Jump or an Ask a Human).
+
+Give the Decision a **round limit** (*More options → Leave the loop after*): it counts its
+visits in a private field (`<id>_rounds`, reset at the start of every run) and, once the limit
+is reached, takes the **Then take** exit (default: the otherwise exit) whatever the rules say.
+The check before a run offers to add a limit of 10 to any loop without one.
+
+```yaml
+settings:
+  exits:
+  - {label: Again, when: {field: draft_ok, op: is_false}}
+  otherwise: Done
+  max_rounds: 3
+  when_max: Done
+```
+
+Without a limit, a run stops with a plain error after **Most rounds of steps** (flow settings,
+default 25).

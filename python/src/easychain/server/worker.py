@@ -212,6 +212,12 @@ class Worker:
         if job["attempts"] > 1:
             action, payload = await self._recover(run, spec, children, action, payload)
         checkpoint_id = payload.get("checkpoint_id")
+        pause_after = list(options.get("pause_after") or [])
+        if action == "continue" and payload.get("step"):
+            # Step over: run what comes next, then pause again.
+            graph = await self._graph(spec, children, run["flow_id"])
+            snapshot = await graph.aget_state({"configurable": {"thread_id": run["thread_id"]}})
+            pause_after += [n for n in snapshot.next if n not in pause_after]
         if action == "start" and payload.get("rollback"):
             checkpoint_id = await self._rollback_point(run, spec, children, payload["rollback"])
         opts = RunOptions(
@@ -224,7 +230,7 @@ class Worker:
             checkpoint_id=checkpoint_id,
             update=payload.get("update"),
             pause_before=list(options.get("pause_before") or []),
-            pause_after=list(options.get("pause_after") or []),
+            pause_after=pause_after,
             resources=hub.resources,
             resolve=children.get,
             flow_id=run["flow_id"],
@@ -239,14 +245,15 @@ class Worker:
         async for ev in stream_run(spec, inputs, opts):
             if lost.is_set():
                 return
+            if ev["type"] == "run_finished":
+                final = ev  # written once the run's status and Inbox items are saved
+                continue
             await writer.add(ev)
             if ev["type"] == "run_started":
                 values: dict[str, Any] = {"status": "running"}
                 if first_start:
                     values["started_at"] = time.time()
                 await db.update_run(run["id"], **values)
-            elif ev["type"] == "run_finished":
-                final = ev
         await writer.flush()
         if lost.is_set() or final is None:
             return
@@ -255,6 +262,10 @@ class Worker:
             await self._release(job, run)
             return
         await self._finish(job, run, spec, final)
+        # Anyone watching sees the end only after the run's status, the Inbox and any
+        # notifications are in place.
+        await writer.add(final)
+        await writer.flush()
 
     async def _release(self, job: dict[str, Any], run: dict[str, Any]) -> None:
         await self.db.finish_job(job["id"], self.name, "released")
@@ -288,10 +299,16 @@ class Worker:
                 "interrupts": final.get("interrupts") or [],
                 "next": final.get("next") or [],
             }
+        asking = status == "paused" and final.get("reason") == "ask_human"
+        items: list[str] = []
+        if asking:
+            # Inbox items exist before the run shows as paused.
+            named = [{**i, "step_name": _step_name(spec, i)} for i in final.get("interrupts") or []]
+            items = await db.open_inbox_items(run, named)
         await db.update_run(run["id"], **values)
         await db.finish_job(job["id"], self.name, "done")
-        if status == "paused" and final.get("reason") == "ask_human":
-            await self._open_inbox(run, spec, final.get("interrupts") or [])
+        if asking:
+            await self._notify(run, spec, items, final.get("interrupts") or [])
         if status in FINISHED and run.get("flow_id"):
             await self._after_flow(run, status, final.get("output") or {})
 
@@ -347,10 +364,13 @@ class Worker:
 
     # ── the Inbox and notifications ──────────────────────────────────────────
 
-    async def _open_inbox(
-        self, run: dict[str, Any], spec: FlowSpec, interrupts: list[dict[str, Any]]
+    async def _notify(
+        self,
+        run: dict[str, Any],
+        spec: FlowSpec,
+        item_ids: list[str],
+        interrupts: list[dict[str, Any]],
     ) -> None:
-        item_ids = await self.db.open_inbox_items(run, interrupts)
         config = await self.db.get_setting("notifications", {})
         writer = EventWriter(self.hub, run["id"])
         for item_id, intr in zip(item_ids, interrupts, strict=False):
@@ -385,6 +405,9 @@ class Worker:
             except Exception:
                 log.exception("After-flow trigger %s failed", trig["id"])
 
+    async def _poll_mailbox(self, trig: dict[str, Any]) -> list[str]:
+        return await _poll_mailbox_for(self.hub, trig)
+
     async def _schedule_loop(self, stop: asyncio.Event) -> None:
         last_cleanup = 0.0
         while not stop.is_set():
@@ -398,10 +421,16 @@ class Worker:
             await self._wait(stop, 5)
 
     async def check_schedules(self, now: float | None = None) -> list[str]:
+        """Fire due schedules and poll due mailboxes; returns the runs started."""
         now = now or time.time()
         started = []
         for trig in await self.db.due_schedules(now):
             cfg = trig.get("config") or {}
+            if trig["kind"] == "email":
+                following = now + max(15, float(cfg.get("poll_seconds") or 60))
+                if await self.db.claim_schedule(trig["id"], trig["next_fire_at"], following):
+                    started += await self._poll_mailbox(trig)
+                continue
             try:
                 following = next_fire(cfg.get("cron", ""), cfg.get("timezone"), now)
             except CronError:
@@ -413,6 +442,39 @@ class Worker:
             except Exception:
                 log.exception("Scheduled trigger %s failed", trig["id"])
         return started
+
+
+async def _poll_mailbox_for(hub: Hub, trig: dict[str, Any]) -> list[str]:
+    from . import mail
+
+    cfg = trig.get("config") or {}
+    try:
+        messages = await asyncio.to_thread(mail.fetch_unseen, cfg)
+    except Exception:
+        log.exception("Couldn't read the mailbox for trigger %s", trig["id"])
+        return []
+    started, done = [], []
+    for message in messages:
+        try:
+            started.append(await fire(hub, trig, {k: v for k, v in message.items() if k != "uid"}))
+            done.append(message["uid"])
+        except Exception:
+            log.exception("Email trigger %s couldn't start a run", trig["id"])
+    try:
+        await asyncio.to_thread(mail.mark_seen, cfg, done)
+    except Exception:
+        log.exception("Couldn't mark messages as seen for trigger %s", trig["id"])
+    return started
+
+
+def _step_name(spec: FlowSpec, interrupt: dict[str, Any]) -> str:
+    """The name of the waiting step as people see it on the canvas."""
+    step_id = interrupt.get("step") or ""
+    if not interrupt.get("path"):
+        for step in spec.steps:
+            if step.id == step_id:
+                return step.name or step_id
+    return step_id
 
 
 def _wants_notify(spec: FlowSpec, interrupt: dict[str, Any]) -> bool:

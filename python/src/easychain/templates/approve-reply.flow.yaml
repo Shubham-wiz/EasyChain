@@ -1,0 +1,77 @@
+version: 1
+name: Approval workflow
+description: Drafts a reply to a customer email, waits for a person to edit and approve it (for as long as it takes), then sends it.
+steps:
+- id: input
+  type: input
+  name: Input
+  settings:
+    fields:
+    - name: email
+      description: The customer's email
+      example: Hi, my order 1234 hasn't arrived yet. Can you check where it is?
+- id: write_prompt
+  type: instructions
+  name: Write the prompt
+  settings:
+    system: You write short, warm and accurate replies for a customer support team.
+    user: |-
+      Write a reply to this customer email. Keep it under 80 words.
+
+      {email}
+- id: draft_reply
+  type: ai_model
+  name: Draft the reply
+  settings:
+    save_as: draft
+- id: review
+  type: ask_human
+  name: Check the reply
+  settings:
+    kind: edit
+    question: Send this reply to the customer?
+    show:
+    - email
+    field: draft
+    save_as: decision
+- id: send
+  type: code
+  name: Send it
+  settings:
+    code: |
+      def run(data):
+          """Send the reply (here it is only recorded; connect a Web request to really send it)."""
+          return {"sent": True, "sent_reply": data["draft"]}
+    side_effect: true
+- id: output
+  type: output
+  name: Output
+  settings:
+    fields:
+    - sent
+    - sent_reply
+    - decision
+    - decision_comment
+connections:
+- from: input
+  to: write_prompt
+- from: write_prompt
+  to: draft_reply
+- from: draft_reply
+  to: review
+- from: review
+  to: send
+  exit: Approved
+- from: review
+  to: output
+  exit: Rejected
+- from: send
+  to: output
+canvas:
+  steps:
+    input: {x: 0, y: 120}
+    write_prompt: {x: 260, y: 120}
+    draft_reply: {x: 520, y: 120}
+    review: {x: 780, y: 100}
+    send: {x: 1080, y: 60}
+    output: {x: 1340, y: 120}

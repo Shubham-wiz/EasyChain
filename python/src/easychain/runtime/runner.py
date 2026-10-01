@@ -9,6 +9,7 @@ the CLI output:
 - step_finished {step, output, duration_ms, usage, cost, model, item?}
 - route         {step, exit}           (a Decision, Jump, Ask a Human or For Each took an exit)
 - progress      {step, done, total}    (For Each)
+- custom        {data, step?}          (a step called get_stream_writer()(...))
 - step_paused   {step, interrupt_id, request}  (Ask a Human is waiting)
 - save_point    {checkpoint_id, next, step_number}
 - step_failed   {step, error}
@@ -443,7 +444,7 @@ async def stream_run(
         label = flow.jumps.get(jump, {}).get(next_node)
         return event("route", **where(path, step=jump, exit=label)) if label else None
 
-    stream_modes = ["tasks", "messages", "values", "checkpoints"]
+    stream_modes = ["tasks", "messages", "values", "checkpoints", "custom"]
     stream_kwargs: dict[str, Any] = {
         "stream_mode": stream_modes,
         "subgraphs": True,
@@ -515,6 +516,15 @@ async def stream_run(
                         next=list(payload.get("next") or []),
                         step_number=(payload.get("metadata") or {}).get("step"),
                     )
+                continue
+            if mode == "custom":
+                # A step reported progress with get_stream_writer(); credit the step when
+                # it is the only one running at that level.
+                here = [info for info in running.values() if info[2] == path]
+                data = {"path": list(path)} if path else {}
+                if len(here) == 1:
+                    data["step"] = here[0][1]
+                yield event("custom", data=to_jsonable(payload), **data)
                 continue
             if mode == "messages":
                 chunk, meta = payload

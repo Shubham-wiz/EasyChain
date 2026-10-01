@@ -26,6 +26,8 @@ from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 SCHEMA_VERSION = 1
+# Advisory lock ids (Postgres) that keep processes starting together from racing.
+SCHEMA_LOCK = 0x45415359  # "EASY"
 
 metadata = sa.MetaData()
 
@@ -120,6 +122,7 @@ inbox = sa.Table(
     sa.Column("flow_id", sa.String(100), nullable=True),
     sa.Column("flow_name", sa.String(200)),
     sa.Column("step", sa.String(100)),
+    sa.Column("step_name", sa.String(200), default=""),
     sa.Column("path", sa.JSON),
     sa.Column("interrupt_id", sa.String(80)),
     sa.Column("request", sa.JSON),
@@ -183,7 +186,14 @@ def async_url(url: str) -> str:
 
 
 def checkpoint_url(url: str) -> str:
-    """Where LangGraph keeps Save Points: a sibling SQLite file, or the same Postgres database."""
+    """Where LangGraph keeps Save Points: a sibling SQLite file, or the same Postgres database.
+
+    EASYCHAIN_SAVEPOINTS overrides it, e.g. ``python:my_package.backends:resources``.
+    """
+    import os
+
+    if os.environ.get("EASYCHAIN_SAVEPOINTS"):
+        return os.environ["EASYCHAIN_SAVEPOINTS"]
     if url.startswith("sqlite"):
         path = url.split(":///", 1)[1] if ":///" in url else url.split("://", 1)[1]
         file = Path(path)
@@ -224,6 +234,11 @@ class Database:
 
     async def create(self) -> None:
         async with self.engine.begin() as conn:
+            if self.dialect == "postgresql":
+                # Several processes (the API and workers) may start at once; one creates the tables.
+                await conn.execute(
+                    sa.text("SELECT pg_advisory_xact_lock(:key)"), {"key": SCHEMA_LOCK}
+                )
             await conn.run_sync(metadata.create_all)
             found = (
                 await conn.execute(sa.select(meta.c.value).where(meta.c.key == "schema"))
@@ -657,6 +672,7 @@ class Database:
                         flow_id=run["flow_id"],
                         flow_name=run["flow_name"],
                         step=intr.get("step") or "",
+                        step_name=intr.get("step_name") or intr.get("step") or "",
                         path=intr.get("path") or [],
                         interrupt_id=intr["id"],
                         request=intr.get("request") or {},
@@ -757,7 +773,7 @@ class Database:
         async with self.reader.connect() as conn:
             rows = await conn.execute(
                 sa.select(triggers).where(
-                    triggers.c.kind == "schedule",
+                    triggers.c.kind.in_(("schedule", "email")),
                     triggers.c.enabled.is_(True),
                     triggers.c.next_fire_at.is_not(None),
                     triggers.c.next_fire_at <= now,

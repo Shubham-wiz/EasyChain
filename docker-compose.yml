@@ -1,27 +1,78 @@
-# One command starts the app:  docker compose up
+# One command starts Easy Chain with Postgres and a worker:  docker compose up
 # Then open http://localhost:8000
 #
-# Keys can be added in the app (Settings → API keys; stored encrypted in the volume)
+# - db:        Postgres 16 (runs, events, the job queue, the Inbox, Save Points).
+# - easychain: the API and the web app.
+# - worker:    runs the flows. Add more with `docker compose up --scale worker=3`;
+#              stopping or killing one is safe, another carries its runs on.
+#
+# Keys can be added in the app (Settings → API keys; stored encrypted in the data volume)
 # or passed in from your shell / a .env file next to this file.
+x-easychain-env: &easychain-env
+  EASYCHAIN_DATABASE_URL: postgresql://easychain:${POSTGRES_PASSWORD:-easychain}@db:5432/easychain
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  # A model server on your machine, e.g. Ollama (works on Docker Desktop):
+  OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
+  # Set this to keep the secrets vault readable if the volume moves between machines.
+  EASYCHAIN_SECRET_KEY: ${EASYCHAIN_SECRET_KEY:-}
+  # Links in notifications point here.
+  EASYCHAIN_PUBLIC_URL: ${EASYCHAIN_PUBLIC_URL:-http://localhost:8000}
+
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: easychain
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-easychain}
+      POSTGRES_DB: easychain
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U easychain -d easychain"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
   easychain:
     build: .
-    image: easychain:0.1.0
+    image: easychain:0.2.0
     ports:
-      # Localhost only: Phase 1 has no login, so do not publish it on a public interface.
+      # Localhost only: there is no login yet (Phase 5), so do not publish it on a public interface.
       - "127.0.0.1:${EASYCHAIN_PORT:-8000}:8000"
     environment:
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      # A model server on your machine, e.g. Ollama (works on Docker Desktop):
-      OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
-      # Set this to keep the secrets vault readable if the volume moves between machines.
-      EASYCHAIN_SECRET_KEY: ${EASYCHAIN_SECRET_KEY:-}
+      <<: *easychain-env
+      # The workers below run the flows; the API only queues them.
+      EASYCHAIN_WORKER: "off"
     volumes:
       - easychain-data:/data
+    depends_on:
+      db:
+        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
+  worker:
+    image: easychain:0.2.0
+    command: ["easychain", "worker", "--verbose"]
+    environment:
+      <<: *easychain-env
+    volumes:
+      # Shared with the API: flows (for Sub-flows and triggers), the secrets vault and uploads.
+      - easychain-data:/data
+    depends_on:
+      db:
+        condition: service_healthy
+      easychain:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+
 volumes:
+  postgres-data:
   easychain-data:

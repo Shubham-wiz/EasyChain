@@ -242,9 +242,16 @@ function PausedCard() {
       <div className="space-y-2 rounded-lg border border-warn/40 bg-warn-soft p-3 text-sm" data-testid="run-breakpoint">
         <p className="font-medium">Paused at a breakpoint{next.length ? `, before ${next.map(name).join(", ")}` : ""}.</p>
         <p className="text-xs text-muted">Look at the Flow Data under Save Points below, then carry on.</p>
-        <Button size="sm" variant="primary" onClick={() => void continueRun()} data-testid="continue-run">
-          <Play size={13} /> Continue
-        </Button>
+        <div className="flex gap-1.5">
+          <Button size="sm" variant="primary" onClick={() => void continueRun()} data-testid="continue-run">
+            <Play size={13} /> Continue
+          </Button>
+          <Tooltip content="Run the next step, then pause again">
+            <Button size="sm" variant="outline" onClick={() => void continueRun(true)} data-testid="step-over">
+              <SkipForward size={13} /> Step over
+            </Button>
+          </Tooltip>
+        </div>
       </div>
     );
   }

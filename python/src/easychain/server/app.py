@@ -97,7 +97,7 @@ class AnswerRequest(BaseModel):
 
 class TriggerRequest(BaseModel):
     flow_id: str
-    kind: str = Field(pattern="^(webhook|schedule|upload|after_flow)$")
+    kind: str = Field(pattern="^(webhook|schedule|upload|after_flow|email)$")
     name: str | None = None
     config: dict[str, Any] = Field(default_factory=dict)
 
@@ -650,11 +650,12 @@ def create_app(
         return stream(run_id, after)
 
     @app.post("/api/runs/{run_id}/continue")
-    async def continue_run(run_id: str, background: bool = False) -> Response:
+    async def continue_run(run_id: str, background: bool = False, step: bool = False) -> Response:
+        """Carry on; ``step=true`` runs only the next step, then pauses again (step over)."""
         await _run_or_404(run_id)
         after = await last_event_id(run_id)
         try:
-            await hub().continue_run(run_id)
+            await hub().continue_run(run_id, step=step)
         except (Busy, NotFound, Invalid) as exc:
             raise hub_errors(exc) from exc
         if background:
@@ -722,6 +723,9 @@ def create_app(
             out["url"] = f"/api/hooks/{trig['id']}{suffix}"
         if trig["kind"] == "schedule":
             out["describe"] = describe_cron(cfg.get("cron", ""))
+        if trig["kind"] == "email":
+            out["config"] = {**cfg, "password": "••••••" if cfg.get("password") else ""}
+            out["describe"] = f"New mail for {cfg.get('username')} on {cfg.get('host')}"
         return out
 
     async def _validated_trigger(
@@ -746,6 +750,12 @@ def create_app(
                 )
         elif req.kind == "upload" and not cfg.get("field"):
             raise HTTPException(422, detail={"message": "Pick the input field that gets the file."})
+        elif req.kind == "email":
+            if not cfg.get("host") or not cfg.get("username"):
+                raise HTTPException(
+                    422, detail={"message": "Give the mail server and the user name."}
+                )
+            next_at = time.time()
         return cfg, next_at
 
     @app.get("/api/triggers")

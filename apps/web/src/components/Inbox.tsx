@@ -50,7 +50,7 @@ function Item({ item, highlight, onDone }: { item: InboxItem; highlight: boolean
         <Hand size={14} className="text-warn" />
         <span className="font-semibold text-text">{item.flow_name}</span>
         <span>·</span>
-        <span className="font-mono">{[...item.path, item.step].join(" › ")}</span>
+        <span>{[...item.path, item.step_name || item.step].join(" › ")}</span>
         <span className="ml-auto">{timeAgo(item.created_at)}</span>
       </div>
       <AnswerForm request={item.request} onAnswer={answer} busy={busy} testId={`inbox-answer-${item.id}`} />

@@ -176,14 +176,14 @@ class Hub:
         await self.db.enqueue(run_id, "resume", {"resume": answers})
         self.bus.job_added()
 
-    async def continue_run(self, run_id: str) -> None:
-        """Carry on after a breakpoint, an error or a cancel."""
+    async def continue_run(self, run_id: str, step: bool = False) -> None:
+        """Carry on after a breakpoint, an error or a cancel (``step``: run the next step, then pause)."""
         run = await self._run(run_id)
         if run["status"] in ("queued", "running"):
             raise Invalid("This run is already going.")
         if run["status"] == "paused" and (run.get("pending") or {}).get("reason") == "ask_human":
             raise Invalid("This run is waiting for an answer in the Inbox.")
-        await self.db.enqueue(run_id, "continue", {})
+        await self.db.enqueue(run_id, "continue", {"step": step} if step else {})
         self.bus.job_added()
 
     async def fork(

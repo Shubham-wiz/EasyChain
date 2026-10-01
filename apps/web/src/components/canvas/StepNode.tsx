@@ -126,6 +126,11 @@ function RunFooter({ id }: { id: string }) {
           {items.filter((i) => i.status === "done").length} of {items.length} item(s)
         </p>
       )}
+      {run.status === "running" && run.note && (
+        <p className="truncate text-[10.5px] text-muted italic" data-testid={`note-${id}`}>
+          {run.note}
+        </p>
+      )}
       {run.status === "running" && tail && (
         <p className="line-clamp-3 font-mono text-[10.5px] leading-snug whitespace-pre-wrap text-muted" aria-live="polite">
           {tail}

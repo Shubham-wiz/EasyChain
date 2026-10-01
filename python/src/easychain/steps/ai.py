@@ -417,7 +417,13 @@ class InstructionsHandler(StepHandler):
             ]
         )
 
-        values = [f'{py_str(v)}: data.get({py_str(v)}, "")' for v in self.template_vars(step)]
+        values = []
+        for v in self.template_vars(step):
+            if ctx.field_type(v) in ("list", "object"):
+                # Lists and objects read better in a prompt as text than as Python reprs.
+                values.append(f"{py_str(v)}: {ctx.helper('as_text')}(data.get({py_str(v)}))")
+            else:
+                values.append(f'{py_str(v)}: data.get({py_str(v)}, "")')
         if s.history:
             values.append(f"{py_str(s.history)}: data.get({py_str(s.history)}, [])")
         values_src = "{" + ", ".join(values) + "}"

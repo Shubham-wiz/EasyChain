@@ -494,3 +494,57 @@ async def test_resources_are_used_for_save_points():
 def test_exported_code_needs_no_easychain(name: str):
     compiled = compile_flow(case(name), resolve=resolve, flow_id=name)
     assert "easychain" not in compiled.source.split('"""', 2)[2]
+
+
+async def test_steps_can_report_custom_progress():
+    spec = make_spec(
+        [
+            input_step({"name": "n", "type": "number"}),
+            {
+                "id": "work",
+                "type": "code",
+                "settings": {
+                    "code": "from langgraph.config import get_stream_writer\n\n"
+                    "def run(data):\n"
+                    "    write = get_stream_writer()\n"
+                    "    for i in range(int(data['n'])):\n"
+                    "        write({'message': f'item {i + 1}'})\n"
+                    "    return {'total': data['n']}\n"
+                },
+            },
+            output_step("total"),
+        ],
+        [("input", "work"), ("work", "output")],
+    )
+    final, events = await run(spec, {"n": 2})
+    assert final["status"] == "ok"
+    assert [(e.get("step"), e["data"]) for e in of(events, "custom")] == [
+        ("work", {"message": "item 1"}),
+        ("work", {"message": "item 2"}),
+    ]
+
+
+async def test_save_points_backend_plugin(monkeypatch):
+    import sys
+    import types
+
+    from langgraph.cache.memory import InMemoryCache
+    from langgraph.checkpoint.memory import InMemorySaver
+    from langgraph.store.memory import InMemoryStore
+
+    from easychain.runtime.resources import open_resources
+
+    made: list[str] = []
+    plugin = types.ModuleType("my_backends")
+
+    def resources(url: str) -> Resources:
+        made.append(url)
+        return Resources(InMemorySaver(), InMemoryStore(), InMemoryCache(), "custom")
+
+    plugin.resources = resources  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "my_backends", plugin)
+    res = await open_resources("python:my_backends:resources")
+    assert res.kind == "custom" and made == ["python:my_backends:resources"]
+    final, _ = await run(case("for_each"), {"topics": ["a"]}, resources=res, thread_id="plug")
+    assert final["status"] == "ok"
+    assert list(res.checkpointer.list({"configurable": {"thread_id": "plug"}}))

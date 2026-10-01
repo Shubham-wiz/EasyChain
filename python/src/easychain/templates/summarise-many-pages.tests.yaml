@@ -1,0 +1,127 @@
+# Test Set for Summarise several pages (runs against the fake OpenAI server, which serves the pages).
+flow: summarise-many-pages.flow.yaml
+cases:
+- name: '1 page(s): langchain'
+  inputs:
+    urls:
+    - ${base_url}/pages/langchain
+  expect:
+    status: ok
+    output.pages:
+      count: 1
+    output.summary:
+      not_empty: true
+      contains: LangChain
+- name: '2 page(s): bees, volcano'
+  inputs:
+    urls:
+    - ${base_url}/pages/bees
+    - ${base_url}/pages/volcano
+  expect:
+    status: ok
+    output.pages:
+      count: 2
+    output.summary:
+      not_empty: true
+      contains: bees
+- name: '3 page(s): coffee, chess, bees'
+  inputs:
+    urls:
+    - ${base_url}/pages/coffee
+    - ${base_url}/pages/chess
+    - ${base_url}/pages/bees
+  expect:
+    status: ok
+    output.pages:
+      count: 3
+    output.summary:
+      not_empty: true
+      contains: Coffee
+- name: '1 page(s): pricing'
+  inputs:
+    urls:
+    - ${base_url}/pages/pricing
+  expect:
+    status: ok
+    output.pages:
+      count: 1
+    output.summary:
+      not_empty: true
+      contains: plan
+- name: '1 page(s): volcano'
+  inputs:
+    urls:
+    - ${base_url}/pages/volcano
+  expect:
+    status: ok
+    output.pages:
+      count: 1
+    output.summary:
+      not_empty: true
+      contains: volcano
+- name: '2 page(s): chess, coffee'
+  inputs:
+    urls:
+    - ${base_url}/pages/chess
+    - ${base_url}/pages/coffee
+  expect:
+    status: ok
+    output.pages:
+      count: 2
+    output.summary:
+      not_empty: true
+      contains: Chess
+- name: '4 page(s): langchain, pricing, bees, volcano'
+  inputs:
+    urls:
+    - ${base_url}/pages/langchain
+    - ${base_url}/pages/pricing
+    - ${base_url}/pages/bees
+    - ${base_url}/pages/volcano
+  expect:
+    status: ok
+    output.pages:
+      count: 4
+    output.summary:
+      not_empty: true
+      contains: LangChain
+- name: '1 page(s): bees'
+  inputs:
+    urls:
+    - ${base_url}/pages/bees
+  expect:
+    status: ok
+    output.pages:
+      count: 1
+    output.summary:
+      not_empty: true
+      contains: bees
+- name: '1 page(s): coffee'
+  inputs:
+    urls:
+    - ${base_url}/pages/coffee
+  expect:
+    status: ok
+    output.pages:
+      count: 1
+    output.summary:
+      not_empty: true
+      contains: Coffee
+- name: '1 page(s): chess'
+  inputs:
+    urls:
+    - ${base_url}/pages/chess
+  expect:
+    status: ok
+    output.pages:
+      count: 1
+    output.summary:
+      not_empty: true
+      contains: Chess
+- name: An empty list still finishes
+  inputs:
+    urls: []
+  expect:
+    status: ok
+    output.pages:
+      count: 0

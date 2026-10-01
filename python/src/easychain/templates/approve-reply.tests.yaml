@@ -1,0 +1,148 @@
+# Test Set for the Approval workflow (stand-in AI; answers play the person in the Inbox).
+flow: approve-reply.flow.yaml
+stand_in: true
+cases:
+- name: 'Approve: Hi, my order 1234 hasn''t arrived yet. Ca'
+  inputs:
+    email: Hi, my order 1234 hasn't arrived yet. Can you check where it is?
+  answers:
+  - action: approve
+    comment: Looks good
+  expect:
+    route:
+      review: Approved
+    output.sent: true
+    output.decision: Approved
+    output.sent_reply:
+      not_empty: true
+    output.decision_comment: Looks good
+- name: 'Edit: I was charged twice for my subscription '
+  inputs:
+    email: I was charged twice for my subscription this month.
+  answers:
+  - action: approve
+    value: Thanks for writing! We are on it (ticket 1).
+  expect:
+    route:
+      review: Approved
+    output.sent_reply: Thanks for writing! We are on it (ticket 1).
+    output.decision: Approved
+- name: 'Reject: How do I change the email address on my '
+  inputs:
+    email: How do I change the email address on my account?
+  answers:
+  - action: reject
+    comment: Too vague
+  expect:
+    route:
+      review: Rejected
+    output.decision: Rejected
+    output.decision_comment: Too vague
+    output.sent:
+      equals: null
+- name: 'Approve: The app logs me out every few minutes on'
+  inputs:
+    email: The app logs me out every few minutes on my phone.
+  answers:
+  - action: approve
+    comment: Looks good
+  expect:
+    route:
+      review: Approved
+    output.sent: true
+    output.decision: Approved
+    output.sent_reply:
+      not_empty: true
+    output.decision_comment: Looks good
+- name: 'Edit: Can I get an invoice with my company''s V'
+  inputs:
+    email: Can I get an invoice with my company's VAT number?
+  answers:
+  - action: approve
+    value: Thanks for writing! We are on it (ticket 4).
+  expect:
+    route:
+      review: Approved
+    output.sent_reply: Thanks for writing! We are on it (ticket 4).
+    output.decision: Approved
+- name: 'Reject: Your new dashboard is great, thanks!'
+  inputs:
+    email: Your new dashboard is great, thanks!
+  answers:
+  - action: reject
+    comment: Too vague
+  expect:
+    route:
+      review: Rejected
+    output.decision: Rejected
+    output.decision_comment: Too vague
+    output.sent:
+      equals: null
+- name: 'Approve: I want to cancel my plan at the end of t'
+  inputs:
+    email: I want to cancel my plan at the end of the month.
+  answers:
+  - action: approve
+    comment: Looks good
+  expect:
+    route:
+      review: Approved
+    output.sent: true
+    output.decision: Approved
+    output.sent_reply:
+      not_empty: true
+    output.decision_comment: Looks good
+- name: 'Edit: The export button gives me an empty file'
+  inputs:
+    email: The export button gives me an empty file.
+  answers:
+  - action: approve
+    value: Thanks for writing! We are on it (ticket 7).
+  expect:
+    route:
+      review: Approved
+    output.sent_reply: Thanks for writing! We are on it (ticket 7).
+    output.decision: Approved
+- name: 'Reject: Do you offer a discount for charities?'
+  inputs:
+    email: Do you offer a discount for charities?
+  answers:
+  - action: reject
+    comment: Too vague
+  expect:
+    route:
+      review: Rejected
+    output.decision: Rejected
+    output.decision_comment: Too vague
+    output.sent:
+      equals: null
+- name: 'Approve: My password reset email never arrives.'
+  inputs:
+    email: My password reset email never arrives.
+  answers:
+  - action: approve
+    comment: Looks good
+  expect:
+    route:
+      review: Approved
+    output.sent: true
+    output.decision: Approved
+    output.sent_reply:
+      not_empty: true
+    output.decision_comment: Looks good
+- name: 'Edit: Is there a way to share a workspace with'
+  inputs:
+    email: Is there a way to share a workspace with a contractor?
+  answers:
+  - action: approve
+    value: Thanks for writing! We are on it (ticket 10).
+  expect:
+    route:
+      review: Approved
+    output.sent_reply: Thanks for writing! We are on it (ticket 10).
+    output.decision: Approved
+- name: Waits for a person when nobody answers
+  inputs:
+    email: Hello?
+  expect:
+    status: paused

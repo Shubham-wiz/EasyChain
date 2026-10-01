@@ -1,6 +1,6 @@
 [project]
 name = "easychain"
-version = "0.1.0"
+version = "0.2.0"
 description = "Draw your AI app, press Run, watch it think, ship it with one click. A visual builder on top of LangChain and LangGraph."
 readme = "README.md"
 license = "Apache-2.0"

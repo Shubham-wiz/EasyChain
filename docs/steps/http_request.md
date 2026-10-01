@@ -14,6 +14,7 @@ LangChain term: an HTTP request tool.
 | Headers *(More options)* | Extra headers. Put API keys in as `{secret:MY_API_KEY}` so they never appear in the flow. |
 | Body *(More options)* | Data to send. If it looks like JSON, values are inserted as properly escaped JSON, so quotes and newlines can't break it. |
 | Keep at most, Time limit *(More options)* | Cut long pages (default 20,000 characters) and set the timeout (default 30 s). |
+| Send it at most once *(More options)* | For requests that change something. On by default for POST, PUT, PATCH and DELETE. A retry or a resume after a crash reuses the first answer instead of sending again, and the request carries an `Idempotency-Key` header that stays the same, so services that honour it never act twice. |
 
 ## Example
 

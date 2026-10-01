@@ -266,6 +266,7 @@ export type RunEvent = EventBase &
     | { type: "step_failed"; step: string; error: RunError }
     | { type: "paused"; reason: "ask_human" | "breakpoint"; interrupts: Waiting[]; next: string[] }
     | { type: "notified"; inbox_id: string; results: { channel: string; ok: boolean; error?: string }[] }
+    | { type: "custom"; data: unknown; step?: string }
     | {
         type: "run_finished";
         status: Exclude<RunStatus, "queued" | "running">;
@@ -324,6 +325,7 @@ export interface InboxItem {
   flow_id: string | null;
   flow_name: string;
   step: string;
+  step_name?: string;
   path: string[];
   interrupt_id: string;
   request: AskRequest;
@@ -334,7 +336,7 @@ export interface InboxItem {
   answered_at?: number | null;
 }
 
-export type TriggerKind = "webhook" | "schedule" | "upload" | "after_flow";
+export type TriggerKind = "webhook" | "schedule" | "upload" | "after_flow" | "email";
 
 export interface Trigger {
   id: string;

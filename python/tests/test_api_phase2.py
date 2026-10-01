@@ -170,8 +170,11 @@ def test_inbox_answer_resumes_the_run_and_notifies_people(client, fake_server, s
     assert item["request"]["question"] == "Send hello?"
     assert item["request"]["show"] == {"draft": "hello"}
 
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline and len(_SMTP.messages) < 1:
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        events = client.get(f"/api/runs/{run_id}").json()["events"]
+        if any(e["type"] == "notified" for e in events):
+            break
         time.sleep(0.05)
     calls = httpx.get(f"{fake_server.url}/effects").json()["calls"]
     hook = next(c["body"] for c in calls if c["body"].get("event") == "ask_human")
@@ -567,3 +570,132 @@ def test_sub_flows_resolve_from_the_workspace(client):
     run = wait(client, start(client, parent_id, {"text": "  padded  "}))
     assert run["output"] == {"tidied": "padded"}
     assert client.get(f"/api/flows/{parent_id}/export").status_code == 200
+
+
+class _IMAP(socketserver.StreamRequestHandler):
+    """Just enough IMAP4rev1 for imaplib: login, select, search, fetch, store, logout."""
+
+    mailbox: list[dict[str, Any]] = []
+
+    def reply(self, line: str) -> None:
+        self.wfile.write(line.encode() + b"\r\n")
+
+    def handle(self) -> None:
+        self.reply("* OK test IMAP ready")
+        while line := self.rfile.readline():
+            parts = line.decode().strip().split(" ")
+            tag, command, args = parts[0], parts[1].upper(), parts[2:]
+            if command == "CAPABILITY":
+                self.reply("* CAPABILITY IMAP4rev1")
+            elif command == "SELECT":
+                self.reply(f"* {len(self.mailbox)} EXISTS")
+            elif command == "SEARCH":
+                unseen = [str(i + 1) for i, m in enumerate(self.mailbox) if not m["seen"]]
+                self.reply("* SEARCH " + " ".join(unseen))
+            elif command == "FETCH":
+                raw = self.mailbox[int(args[0]) - 1]["raw"]
+                self.wfile.write(
+                    f"* {args[0]} FETCH (BODY[] {{{len(raw)}}}\r\n".encode() + raw + b")\r\n"
+                )
+            elif command == "STORE":
+                self.mailbox[int(args[0]) - 1]["seen"] = True
+                self.reply(f"* {args[0]} FETCH (FLAGS (\\Seen))")
+            elif command == "LOGOUT":
+                self.reply("* BYE")
+                self.reply(f"{tag} OK LOGOUT completed")
+                return
+            self.reply(f"{tag} OK {command} completed")
+
+
+@pytest.fixture
+def imap() -> Iterator[int]:
+    def message(subject: str, body: str) -> bytes:
+        return (
+            f"From: Ann <ann@example.com>\r\nTo: help@example.com\r\nSubject: {subject}\r\n"
+            f"Message-ID: <{subject.replace(' ', '')}@example.com>\r\n\r\n{body}\r\n"
+        ).encode()
+
+    _IMAP.mailbox = [
+        {"raw": message("Order late", "Where is order 12?"), "seen": False},
+        {"raw": message("Old", "Already read"), "seen": True},
+        {"raw": message("Refund", "Please refund me."), "seen": False},
+    ]
+    server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), _IMAP)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield server.server_address[1]
+    server.shutdown()
+    server.server_close()
+
+
+def test_email_trigger_starts_a_run_per_new_message(client, imap):
+    spec = {
+        "name": "Mail desk",
+        "steps": [
+            input_step("subject", "text"),
+            code(
+                "make_label", "    return {'label': data['subject'].upper() + ': ' + data['text']}"
+            ),
+            output_step("label"),
+        ],
+        "connections": [
+            {"from": "input", "to": "make_label"},
+            {"from": "make_label", "to": "output"},
+        ],
+    }
+    flow_id = create(client, spec)
+    bad = client.post("/api/triggers", json={"flow_id": flow_id, "kind": "email", "config": {}})
+    assert bad.status_code == 422
+    trig = client.post(
+        "/api/triggers",
+        json={
+            "flow_id": flow_id,
+            "kind": "email",
+            "config": {
+                "host": "127.0.0.1",
+                "port": imap,
+                "ssl": False,
+                "username": "help@example.com",
+                "password": "secret-pass",
+                "inputs": {"subject": "{subject}", "text": "{body}"},
+            },
+        },
+    ).json()
+    assert trig["config"]["password"] == "••••••"
+    worker = client.app.state.worker
+    started = client.portal.call(worker.check_schedules, time.time() + 1)
+    assert len(started) == 2
+    labels = sorted(wait(client, run_id)["output"]["label"] for run_id in started)
+    assert labels == ["ORDER LATE: Where is order 12?", "REFUND: Please refund me."]
+    assert all(m["seen"] for m in _IMAP.mailbox)
+    # The next poll is a minute later, and finds nothing new.
+    assert client.portal.call(worker.check_schedules, time.time() + 120) == []
+
+
+def test_step_over_runs_one_step_at_a_time(client):
+    spec = {
+        "name": "Three steps",
+        "steps": [
+            input_step("x"),
+            code("one", "    return {'a': 1}"),
+            code("two", "    return {'b': 2}"),
+            code("three", "    return {'c': 3}"),
+            output_step("a", "b", "c"),
+        ],
+        "connections": [
+            {"from": "input", "to": "one"},
+            {"from": "one", "to": "two"},
+            {"from": "two", "to": "three"},
+            {"from": "three", "to": "output"},
+        ],
+    }
+    flow_id = create(client, spec)
+    run_id = start(client, flow_id, {"x": "go"}, pause_before=["one"])
+    assert wait(client, run_id, "paused")["pending"]["next"] == ["one"]
+    for expected_next in (["two"], ["three"]):
+        assert (
+            client.post(f"/api/runs/{run_id}/continue?step=true&background=true").status_code == 202
+        )
+        run = wait(client, run_id, "paused", "ok")
+        assert run["status"] == "paused" and run["pending"]["next"] == expected_next
+    client.post(f"/api/runs/{run_id}/continue?background=true")
+    assert wait(client, run_id)["output"] == {"a": 1, "b": 2, "c": 3}

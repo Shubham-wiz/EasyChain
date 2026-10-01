@@ -11,11 +11,26 @@ concurrency:
 
 jobs:
   python:
-    name: Python (compiler, runtime, server)
+    name: Python (compiler, runtime, server, workers)
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: python
+    services:
+      # The queue, worker crash and day-later approval tests run on SQLite and on Postgres.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      EASYCHAIN_TEST_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -50,6 +65,11 @@ jobs:
       - run: pnpm --filter @easychain/web typecheck
       - run: pnpm --filter @easychain/web test
       - run: pnpm --filter @easychain/web build
+      - name: Client package (@easychain/client)
+        run: |
+          pnpm --filter @easychain/client typecheck
+          pnpm --filter @easychain/client test
+          pnpm --filter @easychain/client build
 
   e2e:
     name: End-to-end (Playwright)
@@ -84,14 +104,21 @@ jobs:
           retention-days: 7
 
   docker:
-    name: Docker image
+    name: Docker image and Compose (Postgres + worker)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t easychain:ci .
-      - name: Smoke test
+      - name: Smoke test (one container, SQLite)
         run: |
           docker run -d --name ec -p 8000:8000 easychain:ci
           for i in $(seq 1 30); do curl -sf localhost:8000/api/health && break; sleep 1; done
           curl -sf localhost:8000/ | grep -q "<title>Easy Chain</title>"
           docker rm -f ec
+      - name: Compose with Postgres and a worker runs a flow
+        run: |
+          docker compose up -d --build
+          for i in $(seq 1 60); do curl -sf localhost:8000/api/health && break; sleep 2; done
+          curl -sf localhost:8000/api/health | grep -q '"database":"postgresql"'
+          ./scripts/compose-smoke.sh
+          docker compose down -v

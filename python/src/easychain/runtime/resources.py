@@ -9,6 +9,7 @@ Three backends, chosen by the database URL:
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -53,9 +54,22 @@ def memory_resources() -> Resources:
 
 
 async def open_resources(url: str | None) -> Resources:
-    """Open resources for a database URL (None or "memory" for in memory)."""
+    """Open resources for a database URL (None or "memory" for in memory).
+
+    ``python:package.module:factory`` plugs in another backend: ``factory(url)`` returns (or
+    awaits to) a ``Resources`` with any LangGraph checkpointer, store and cache.
+    """
     if not url or url == "memory":
         return memory_resources()
+    if url.startswith("python:"):
+        import importlib
+        import inspect
+
+        target = url.removeprefix("python:")
+        module_name, _, attr = target.partition(":")
+        factory = getattr(importlib.import_module(module_name), attr or "resources")
+        made = factory(url)
+        return await made if inspect.isawaitable(made) else made
     stack = contextlib.AsyncExitStack()
     try:
         if url.startswith("sqlite"):
@@ -75,9 +89,10 @@ async def open_resources(url: str | None) -> Resources:
 
             conn = libpq_url(url)
             saver = await stack.enter_async_context(AsyncPostgresSaver.from_conn_string(conn))
-            await saver.setup()
             store = await stack.enter_async_context(AsyncPostgresStore.from_conn_string(conn))
-            await store.setup()
+            async with _setup_lock(conn):
+                await _setup_with_retries(saver.setup)
+                await _setup_with_retries(store.setup)
             return Resources(saver, store, InMemoryCache(), "postgres", stack)
     except BaseException:
         await stack.aclose()
@@ -109,3 +124,45 @@ def libpq_url(url: str) -> str:
     return url.replace("postgresql+psycopg://", "postgresql://", 1).replace(
         "postgres://", "postgresql://", 1
     )
+
+
+@contextlib.asynccontextmanager
+async def _setup_lock(conn_str: str, key: int = 0x45415360) -> AsyncIterator[None]:
+    """Let one process at a time create LangGraph's tables.
+
+    Waiting polls pg_try_advisory_lock instead of blocking in pg_advisory_lock: the store
+    builds an index CONCURRENTLY, which waits for every open transaction, so a waiter
+    blocked inside one would deadlock with it.
+    """
+    import psycopg
+
+    async with await psycopg.AsyncConnection.connect(conn_str, autocommit=True) as conn:
+        for _ in range(600):
+            row = await (await conn.execute("SELECT pg_try_advisory_lock(%s)", (key,))).fetchone()
+            if row and row[0]:
+                break
+            await asyncio.sleep(0.1)
+        try:
+            yield
+        finally:
+            await conn.execute("SELECT pg_advisory_unlock(%s)", (key,))
+
+
+async def _setup_with_retries(setup: Any, attempts: int = 8) -> None:
+    """Create LangGraph's tables (idempotent), trying again if another process collides."""
+    import psycopg
+
+    races = (
+        psycopg.errors.UniqueViolation,
+        psycopg.errors.DuplicateTable,
+        psycopg.errors.DuplicateObject,
+        psycopg.errors.DeadlockDetected,
+    )
+    for attempt in range(attempts):
+        try:
+            await setup()
+            return
+        except races:
+            if attempt == attempts - 1:
+                raise
+            await asyncio.sleep(0.2 * (attempt + 1))

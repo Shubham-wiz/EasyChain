@@ -1,0 +1,75 @@
+version: 1
+name: Summarise several pages
+description: Fetches every page in a list side by side, then writes one combined summary with a bullet per page.
+steps:
+- id: input
+  type: input
+  name: Input
+  settings:
+    fields:
+    - name: urls
+      type: list
+      description: The pages to read, one per line
+      example:
+      - https://en.wikipedia.org/wiki/LangChain
+      - https://en.wikipedia.org/wiki/Honey_bee
+- id: each_page
+  type: for_each
+  name: For each page
+  settings:
+    items: urls
+    item_name: url
+    save_as: pages
+    concurrency: 4
+- id: fetch_page
+  type: http_request
+  name: Fetch the page
+  run:
+    retries: 1
+  settings:
+    url: '{url}'
+    max_chars: 4000
+    save_as: page
+- id: write_prompt
+  type: instructions
+  name: Write the prompt
+  settings:
+    system: You summarise web pages for busy people. Be accurate and brief.
+    user: |-
+      Write one bullet point per page, in order.
+
+      {pages}
+- id: summarise
+  type: ai_model
+  name: Summarise
+  settings:
+    temperature: 0.2
+    save_as: summary
+- id: output
+  type: output
+  name: Output
+  settings:
+    fields:
+    - summary
+    - pages
+connections:
+- from: input
+  to: each_page
+- from: each_page
+  to: fetch_page
+  exit: Each item
+- from: each_page
+  to: write_prompt
+  exit: When done
+- from: write_prompt
+  to: summarise
+- from: summarise
+  to: output
+canvas:
+  steps:
+    input: {x: 0, y: 120}
+    each_page: {x: 260, y: 100}
+    fetch_page: {x: 560, y: 300}
+    write_prompt: {x: 560, y: 60}
+    summarise: {x: 820, y: 60}
+    output: {x: 1080, y: 120}

@@ -139,8 +139,8 @@ export const api = {
     streamEvents(`/api/runs/${runId}/resume`, { method: "POST", ...json({ answers }) }, onEvent, signal),
 
   /** Carry on after a breakpoint or an error. */
-  continueStream: (runId: string, onEvent: (event: RunEvent) => void, signal?: AbortSignal) =>
-    streamEvents(`/api/runs/${runId}/continue`, { method: "POST" }, onEvent, signal),
+  continueStream: (runId: string, onEvent: (event: RunEvent) => void, signal?: AbortSignal, step = false) =>
+    streamEvents(`/api/runs/${runId}/continue${step ? "?step=true" : ""}`, { method: "POST" }, onEvent, signal),
 
   /** Re-run from a Save Point, optionally with changed Flow Data. */
   forkStream: (

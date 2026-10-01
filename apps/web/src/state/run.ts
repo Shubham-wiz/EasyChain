@@ -35,6 +35,8 @@ export interface StepRun {
   items?: Record<number, { status: StepStatus; output?: Record<string, unknown> }>;
   /** Ask a Human: what it is asking. */
   request?: AskRequest;
+  /** The latest progress the step reported itself (get_stream_writer). */
+  note?: string;
   inner?: InnerEvent[];
 }
 
@@ -248,6 +250,16 @@ export const useRun = create<RunState>()((set, get) => ({
       case "step_paused":
         set({ ...withStep(state, event.step, (prev) => ({ ...prev, status: "waiting", request: event.request })), events, lastEventId });
         return;
+      case "custom": {
+        if (!event.step) {
+          set({ events, lastEventId });
+          return;
+        }
+        const data = event.data as { message?: unknown } | null;
+        const note = data && typeof data === "object" && "message" in data ? String(data.message) : JSON.stringify(event.data);
+        set({ ...withStep(state, event.step, (prev) => ({ ...prev, note })), events, lastEventId });
+        return;
+      }
       case "save_point":
         set({
           savePoints: [...state.savePoints, { checkpoint_id: event.checkpoint_id, next: event.next, step_number: event.step_number }],
@@ -389,12 +401,12 @@ export async function answerWaiting(answers: Record<string, unknown>) {
   await follow((signal) => api.resumeStream(runId, answers, handler, signal));
 }
 
-/** Carry on after a breakpoint, an error or a stop. */
-export async function continueRun() {
+/** Carry on after a breakpoint, an error or a stop; `step` runs only the next step, then pauses. */
+export async function continueRun(step = false) {
   const { runId } = useRun.getState();
   if (!runId) return;
   useRun.setState({ status: "queued", waiting: [], pauseReason: null, error: null });
-  await follow((signal) => api.continueStream(runId, handler, signal));
+  await follow((signal) => api.continueStream(runId, handler, signal, step));
 }
 
 /** Re-run from a Save Point of the current run, with changed Flow Data. */

@@ -271,10 +271,28 @@ def ask_in_terminal(request: dict[str, Any]) -> dict[str, Any]:
     from_imports=(("typing", "Any"),),
 )
 
+AS_TEXT = Helper(
+    "as_text",
+    '''
+def as_text(value: Any) -> str:
+    """Put a list or object into a prompt as readable text (one list item per paragraph)."""
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        return "\\n\\n".join(as_text(item) for item in value)
+    if isinstance(value, dict):
+        return json.dumps(value, indent=2, ensure_ascii=False, default=str)
+    return str(value)
+''',
+    imports=("json",),
+    from_imports=(("typing", "Any"),),
+)
+
 HELPERS = {
     h.name: h
     for h in (
         MERGE_DICTS,
+        AS_TEXT,
         COLLECT_ITEMS,
         FILL,
         FILL_URL,

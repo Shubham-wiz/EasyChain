@@ -15,6 +15,7 @@ when that's quicker.
 version: 1                 # spec version (required)
 name: Summarise a URL      # required
 description: …             # optional, goes into the exported code's docstring
+settings: {}               # optional: how runs behave (see below)
 data: []                   # optional: declared Flow Data fields
 steps: []                  # the boxes
 connections: []            # the arrows
@@ -23,6 +24,23 @@ canvas: {}                 # positions and notes: visual only, always last
 
 Settings that equal their default are left out when Easy Chain writes a file. Defaults are part
 of the spec version, so they never change under a saved flow.
+
+## How runs behave (`settings`)
+
+```yaml
+settings:
+  max_steps: 25              # a run stops with an error after this many rounds of steps (recursion_limit)
+  max_parallel: 4            # most steps at the same time across a run (max_concurrency); default: no limit
+  max_concurrent_runs: 2     # most runs of this flow at once; more wait in the queue; default: no limit
+  double_texting: queue      # chat flows, a new message while busy: queue | reject | interrupt | rollback
+```
+
+| `double_texting` | When a second message arrives on a conversation that is still running |
+|---|---|
+| `queue` (default) | It runs after the current one. |
+| `reject` | It is refused (HTTP 409) until the current one finishes. |
+| `interrupt` | The current run stops where it is (its work so far is kept) and the new one starts. |
+| `rollback` | The current run stops and is undone; the new one starts from before it. |
 
 ## Flow Data (`data`)
 
@@ -34,8 +52,14 @@ Declare a field only to give it a type, a description or an update rule:
 data:
 - name: notes
   type: list          # text | number | yes_no | list | object | file | messages | any
-  update: append      # replace (default) | append | merge | add
+  update: append      # replace (default) | append | merge | add | custom
   description: One note per round
+- name: tags
+  type: list
+  update: custom      # Pro: your own rule
+  combine: |
+    def combine(old, new):
+        return list(dict.fromkeys((old or []) + (new or [])))
 ```
 
 | Update rule | What happens when a step sets the field | LangGraph |
@@ -44,6 +68,10 @@ data:
 | `append` | Lists are joined and text is concatenated; messages are added to the conversation | `operator.add` / `add_messages` |
 | `merge` | Object keys are merged | `merge_dicts` reducer |
 | `add` | Numbers are added | `operator.add` |
+| `custom` | `combine(old, new)` returns the new value | the function, as the field's reducer |
+
+Easy Chain adds a few private fields of its own (loop round counters, For Each bookkeeping).
+They are hidden in the Flow Data panel and reset at the start of every run.
 
 Names use lowercase letters, digits and underscores, and start with a letter. A step id can't be
 the same as a field name.
@@ -56,7 +84,16 @@ the same as a field name.
   name: Fetch the page    # label on the canvas
   description: ""         # optional
   settings: {…}           # depends on the type
+  run:                    # optional: how the step runs (any step but Input and Output)
+    retries: 2            # try again this many times if it fails (RetryPolicy)
+    retry_wait: 1.0       # seconds before the first retry; doubles each time
+    timeout: 30           # seconds before the step is stopped
+    cache: true           # reuse the result for the same inputs (CachePolicy)
+    cache_ttl: 3600       # seconds a cached result stays valid
+    wait_for_all: true    # wait until every parallel branch leading here is done (defer)
 ```
+
+Step ids can't contain two underscores in a row (`__`); Easy Chain keeps those for its own nodes.
 
 | `type` | Docs |
 |---|---|
@@ -67,6 +104,10 @@ the same as a field name.
 | `http_request` | [Web request](steps/http_request.md) |
 | `code` | [Code](steps/code.md) |
 | `decision` | [Decision](steps/decision.md) |
+| `ask_human` | [Ask a Human](steps/ask_human.md) |
+| `for_each` | [For Each](steps/for_each.md) |
+| `subflow` | [Sub-flow](steps/subflow.md) |
+| `jump` | [Jump](steps/jump.md) |
 
 ## Connections
 
@@ -74,15 +115,18 @@ the same as a field name.
 connections:
 - from: input
   to: fetch_page
-- from: is_long        # connections out of a Decision name the exit they leave from
+- from: is_long        # connections out of a step with exits name the exit they leave from
   exit: Long
   to: detailed
 ```
 
+Steps with exits: Decision (its exits and *otherwise*), Jump (the same), Ask a Human (*Approved*
+and *Rejected*, or its options) and For Each (*Each item* and *When done*).
+
 - A step with several outgoing connections runs the next steps in parallel.
 - A step with no outgoing connection ends the run there.
 - A connection into an Output step ends the run, and the Output picks what to return.
-- Each Decision exit leads to at most one step. An unconnected exit ends the run.
+- Each exit leads to at most one step. An unconnected exit ends the run.
 
 ## Placeholders
 

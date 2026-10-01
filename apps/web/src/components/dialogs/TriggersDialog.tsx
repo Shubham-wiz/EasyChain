@@ -1,4 +1,4 @@
-import { CalendarClock, Check, Copy, FileUp, Link2, Plus, Trash2, Workflow } from "lucide-react";
+import { CalendarClock, Check, Copy, FileUp, Link2, Mail, Plus, Trash2, Workflow } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../../lib/api";
 import type { FlowListItem, Trigger, TriggerKind } from "../../lib/types";
@@ -12,6 +12,7 @@ const KINDS: { kind: TriggerKind; label: string; help: string; icon: typeof Link
   { kind: "schedule", label: "Schedule", help: "Runs on a timetable, like every weekday at 9:00.", icon: CalendarClock },
   { kind: "upload", label: "File upload", help: "Someone uploads a file to a private URL; the flow gets the file.", icon: FileUp },
   { kind: "after_flow", label: "After another flow", help: "Runs when another flow finishes, with its results as inputs.", icon: Workflow },
+  { kind: "email", label: "Email", help: "Each new message in a mailbox (IMAP) starts a run: subject, sender and body.", icon: Mail },
 ];
 
 function CopyButton({ text, label }: { text: string; label: string }) {
@@ -40,6 +41,7 @@ function describe(t: Trigger, flows: FlowListItem[]): string {
     return `After “${source}” ${((cfg.on as string[]) ?? ["ok"]).includes("error") ? "finishes or fails" : "finishes"}`;
   }
   if (t.kind === "upload") return `Puts the file in \`${cfg.field}\``;
+  if (t.kind === "email") return t.describe ?? "New mail";
   return "POST JSON to the URL";
 }
 
@@ -112,6 +114,7 @@ function NewTrigger({ flowId, flows, onCreated }: { flowId: string; flows: FlowL
   const [field, setField] = useState("");
   const [source, setSource] = useState("");
   const [onError, setOnError] = useState(false);
+  const [mail, setMail] = useState({ host: "", port: "993", ssl: true, username: "", password: "", folder: "INBOX" });
   const [error, setError] = useState<string | null>(null);
   const inputFields = ((spec?.steps.find((s) => s.type === "input")?.settings.fields ?? []) as { name: string; type: string }[]).map((f) => f.name);
 
@@ -132,6 +135,7 @@ function NewTrigger({ flowId, flows, onCreated }: { flowId: string; flows: FlowL
       config.source_flow_id = source;
       config.on = onError ? ["ok", "error"] : ["ok"];
     }
+    if (kind === "email") Object.assign(config, { ...mail, port: Number(mail.port) || undefined });
     try {
       await api.createTrigger({ flow_id: flowId, kind, config });
       onCreated();
@@ -203,6 +207,29 @@ function NewTrigger({ flowId, flows, onCreated }: { flowId: string; flows: FlowL
             <Switch checked={onError} onCheckedChange={setOnError} label="Also when it fails" /> Also when it fails
           </label>
           <p className="text-[11px] text-muted">Its results go in as inputs with the same names.</p>
+        </div>
+      )}
+      {kind === "email" && (
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Mail server (IMAP)" htmlFor="mail-host">
+            <Input id="mail-host" placeholder="imap.example.com" value={mail.host} onChange={(e) => setMail({ ...mail, host: e.target.value })} />
+          </Field>
+          <Field label="Port" htmlFor="mail-port">
+            <Input id="mail-port" value={mail.port} onChange={(e) => setMail({ ...mail, port: e.target.value })} />
+          </Field>
+          <Field label="User name" htmlFor="mail-user">
+            <Input id="mail-user" value={mail.username} onChange={(e) => setMail({ ...mail, username: e.target.value })} />
+          </Field>
+          <Field label="Password" help="Best as {secret:NAME}, a secret from Settings." htmlFor="mail-password">
+            <Input id="mail-password" placeholder="{secret:MAIL_PASSWORD}" value={mail.password} onChange={(e) => setMail({ ...mail, password: e.target.value })} />
+          </Field>
+          <Field label="Folder" htmlFor="mail-folder">
+            <Input id="mail-folder" value={mail.folder} onChange={(e) => setMail({ ...mail, folder: e.target.value })} />
+          </Field>
+          <label className="flex items-center gap-2 self-end pb-2 text-xs">
+            <Switch checked={mail.ssl} onCheckedChange={(v) => setMail({ ...mail, ssl: v, port: v ? "993" : "143" })} label="Use SSL" /> Use SSL
+          </label>
+          <p className="col-span-2 text-[11px] text-muted">Checked every minute. The run gets subject, sender, to, date and body as inputs with those names.</p>
         </div>
       )}
       {error && <p className="text-xs text-danger">{error}</p>}

@@ -71,6 +71,7 @@ async def send_all(config: dict[str, Any], item: dict[str, Any]) -> list[dict[st
             "flow_id": item.get("flow_id"),
             "flow": item.get("flow_name"),
             "step": item.get("step"),
+            "step_name": item.get("step_name") or item.get("step"),
             "question": msg["question"],
             "request": item.get("request"),
             "url": msg["link"],

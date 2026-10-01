@@ -10,18 +10,19 @@ with no Easy Chain runtime required.
 
 ![The Easy Chain editor running a flow with a Decision](docs/images/editor-run.png)
 
-> **Status: Phase 1 (Visual MVP) of the [build plan](docs/phases/phase-0-1.md).** You can build,
-> run, debug and export flows made of Input, Instructions, AI Model, Web request, Code, Decision
-> and Output steps, using OpenAI, Anthropic or local Ollama models. Agents, knowledge bases,
-> durable runs, evaluation and one-click publishing come in later phases (see the
-> [roadmap](#roadmap)).
+> **Status: Phase 2 (Real runtime) of the build plan** ([Phase 2 report](docs/phases/phase-2.md),
+> [Phases 0 and 1](docs/phases/phase-0-1.md)). Runs are durable: they survive restarts and
+> crashed workers, wait for people for as long as it takes, and can be replayed from any Save
+> Point. Agents, knowledge bases, evaluation and one-click publishing come in later phases (see
+> the [roadmap](#roadmap)).
 
 ## Quick start
 
 **With Docker (one command):**
 
 ```bash
-docker compose up        # then open http://localhost:8000
+docker compose up        # Postgres + API + a worker; open http://localhost:8000
+docker compose up --scale worker=3   # more workers; stopping or killing one is safe
 ```
 
 **From source** (needs [uv](https://docs.astral.sh/uv/) and [pnpm](https://pnpm.io/), Node 20+):
@@ -41,9 +42,28 @@ keys** (it is stored encrypted on your machine and never saved in flows or expor
 cd python
 uv run easychain run ../examples/hello.flow.yaml -i question="What is LangGraph?" --stand-in
 uv run easychain export ../examples/hello.flow.yaml -o hello/   # a standalone LangGraph project
+uv run easychain worker --database-url postgresql://…           # a worker for a shared database
 ```
 
-## What you get in Phase 1
+## What you get
+
+### Phase 2: a real runtime
+
+| | |
+|---|---|
+| **Durable runs** | Runs, their events and Save Points live in SQLite (local) or Postgres. A queue hands runs to workers; if a worker dies, another carries the run on from its last Save Point. Finished steps never run again, and side effects (POST requests, Code marked *run at most once*) are remembered and carry an `Idempotency-Key`, so nothing is sent twice. |
+| **Ask a Human and the Inbox** | A step that pauses the run until a person approves, edits, answers or picks an option, in the run panel or the **Inbox**, a minute or a week later. Notifications by webhook, Slack or email. |
+| **Loops, branches and lists** | Round limits on Decisions, **Jump** (set data and pick the next step), parallel branches that **wait for all**, **For Each** with a concurrency limit, and **Sub-flows** (a flow as a step; double-click to open it). |
+| **Per-step run policy** | Retries with backoff, time limits, a cache for repeated inputs. Flow settings for max rounds, parallelism, runs at once, and what happens when a chat gets a second message while busy. |
+| **Flow Data panel** | Declare fields with types and update rules: replace, add to the list, add up, merge, or a custom Python `combine(old, new)`. |
+| **Debugging** | Breakpoints before or after any step, **Save Points** with the Flow Data at each one, and **run again from here** with edited values (time travel). Stop a run and carry it on later. Runs keep going if you reload the page. |
+| **Triggers and the API** | Start flows from a webhook, a schedule (cron with time zones), a file upload, or when another flow finishes. Follow any run over SSE (`Last-Event-ID` resumes) or a WebSocket, and use [`@easychain/client`](packages/client) with its React hook in your own app. |
+
+See [docs/runs.md](docs/runs.md) for how runs, workers, the Inbox, triggers and the API work.
+
+![A run waiting at an Ask a Human step](docs/images/ask-a-human.png)
+
+### Phase 1: the visual builder
 
 | | |
 |---|---|
@@ -65,7 +85,11 @@ uv run easychain export ../examples/hello.flow.yaml -o hello/   # a standalone L
 | AI Model | chat model via `init_chat_model` | Sends text or a prompt to OpenAI, Anthropic or Ollama |
 | Web request | HTTP request tool | Fetches a page (as readable text) or calls an API |
 | Code | Python function | `run(data)` returns the Flow Data fields to update |
-| Decision | conditional edge | Picks an exit by rules, a safe expression, or by asking an AI |
+| Decision | conditional edge | Picks an exit by rules, a safe expression, or by asking an AI; round limits for loops |
+| For Each | `Send` (map-reduce) | Runs a step for every item of a list, side by side, and collects the results in order |
+| Sub-flow | subgraph | Runs another flow as one step, with shared or mapped Flow Data |
+| Jump | `Command(update, goto)` | Sets Flow Data and picks the next step in one move (Pro) |
+| Ask a Human | `interrupt()` | Pauses until a person approves, edits, answers or chooses |
 | Output | `END` + output schema | Chooses what a run returns |
 
 Each has a docs page in [`docs/steps/`](docs/steps).
@@ -81,8 +105,9 @@ Each has a docs page in [`docs/steps/`](docs/steps).
    [JSON Schema](spec/flow.schema.json)), kept in a folder you can put in git.
 2. The **compiler** turns it into a LangGraph module: Flow Data becomes a `TypedDict` state
    with reducers, steps become nodes, Decisions become conditional edges.
-3. **Run** executes exactly that module, streams per-step events to the canvas, and records the
-   trace. **Export** writes the same module to a zip.
+3. **Run** queues the run; a **worker** executes exactly that module with a Postgres or SQLite
+   checkpointer, writing per-step events that the canvas (or your app) streams. **Export** writes
+   the same module to a zip.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the details and the decisions behind them.
 
@@ -90,7 +115,8 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the details and the decisions behind 
 
 ```
 apps/web/            React + TypeScript web app (React Flow, Tailwind, Zustand, Monaco)
-python/              the `easychain` Python package: spec, compiler, runtime, API server, CLI
+packages/client/     @easychain/client: TypeScript client and React hook for the runs API
+python/              the `easychain` Python package: spec, compiler, runtime, API server, workers, CLI
   src/easychain/templates/   starter flows and their Test Sets
   tests/                     unit, golden, behaviour, server and export tests
 spec/flow.schema.json        published JSON Schema for flow files
@@ -101,14 +127,17 @@ docs/                        flow spec, step pages, phase reports
 ## Development
 
 ```bash
-make test        # Python tests (170) + web unit tests
-make e2e         # Playwright: build → run → debug → export, templates, a11y, 300-step canvas
+make test        # Python tests + web and client unit tests
+make e2e         # Playwright: build, run, debug, export, Ask a Human, Inbox, Save Points, triggers, a11y
+make worker      # a separate worker process (run the server with EASYCHAIN_WORKER=off)
 make lint        # ruff + TypeScript
 make golden      # regenerate compiler golden files after an intended change
 ```
 
 The end-to-end and template tests use a small fake OpenAI-compatible server
-(`python -m easychain.testing.fake_openai`), so nothing calls a paid API. See
+(`python -m easychain.testing.fake_openai`), so nothing calls a paid API. The queue and crash
+tests run on SQLite and, when Postgres is installed (or `EASYCHAIN_TEST_POSTGRES_URL` is set),
+on Postgres too. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for adding a step type.
 
 ## Roadmap
@@ -117,8 +146,8 @@ The end-to-end and template tests use a small fake OpenAI-compatible server
 |---|---|---|
 | 0. Foundations | Monorepo, CI, Docker Compose, flow spec, compiler, CLI | ✅ Done |
 | 1. Visual MVP | Canvas, Step library, inspector, Input / AI Model / Instructions / Action / Decision / Output, three providers, streaming chat, run trace, Python export | ✅ Done |
-| 2. Real runtime | Flow Data panel and update rules, loops with guards, parallel branches, For Each, Sub-flows, Postgres Save Points, crash recovery, Ask a Human and Inbox, time travel, background runs, triggers | Next |
-| 3. Agents and knowledge | Agent step and add-ons, MCP, OpenAPI import, structured output, Knowledge Base, memory, all providers | |
+| 2. Real runtime | Flow Data panel and update rules, loops with guards, parallel branches, For Each, Sub-flows, Postgres Save Points, crash recovery, Ask a Human and Inbox, time travel, background runs, triggers | ✅ Done |
+| 3. Agents and knowledge | Agent step and add-ons, MCP, OpenAPI import, structured output, Knowledge Base, memory, all providers | Next |
 | 4. Autopilot and teams | Deep Agents, Helpers, Skills, sandboxes, multi-agent patterns, describe-it copilot | |
 | 5. Platform | Test Sets and Checks, Test Runs, CI gate, dashboards, model gateway, Publish, environments, roles, SSO | |
 | 6. Ecosystem | LangGraph.js export, custom module registry, import, collaboration, prompt optimisation, Helm | |
