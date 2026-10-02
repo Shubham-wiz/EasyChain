@@ -138,7 +138,7 @@ export function TopBar({ onHome }: { onHome: () => void }) {
             {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
           </Button>
         </Tooltip>
-        <Tooltip content="API keys and secrets">
+        <Tooltip content="Settings: keys, MCP servers, notifications">
           <Button variant="ghost" size="icon-sm" aria-label="Settings" onClick={() => openSettings()}>
             <KeyRound size={15} />
           </Button>

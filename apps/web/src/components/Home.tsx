@@ -1,4 +1,4 @@
-import { ArrowRight, CheckCircle2, FilePlus2, KeyRound, Loader2, Moon, Play, Sun, Trash2, Upload, Workflow } from "lucide-react";
+import { ArrowRight, CheckCircle2, FilePlus2, KeyRound, Loader2, Moon, Play, Settings, Sun, Trash2, Upload, Workflow } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../lib/api";
 import type { FlowListItem, TemplateInfo } from "../lib/types";
@@ -45,7 +45,7 @@ export function Home({ open }: { open: (flowId: string, opts?: { tryIt?: boolean
             <KnowledgeLink />
             <InboxLink />
             <Button variant="ghost" size="sm" onClick={() => openSettings()}>
-              <KeyRound size={14} /> API keys
+              <Settings size={14} /> Settings
             </Button>
             <Button variant="ghost" size="icon-sm" aria-label="Toggle theme" onClick={toggleTheme}>
               {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}

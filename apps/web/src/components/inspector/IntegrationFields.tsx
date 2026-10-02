@@ -49,7 +49,7 @@ export function KnowledgeBasePicker({ value, id, stepId }: FieldProps) {
   );
 }
 
-/** Pick a secret (Settings → API keys) by name. */
+/** Pick a secret (Settings → Keys and providers) by name. */
 export function SecretPicker({ value, onChange, id }: FieldProps) {
   const [secrets, setSecrets] = useState<SecretInfo[]>([]);
   useEffect(() => {

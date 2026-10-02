@@ -66,7 +66,7 @@ test("copy and paste steps, quick-add from a dangling connection", async ({ page
   await expect(step(page, "code_2")).toBeVisible();
 
   // Drop a connection on empty canvas and pick what to add.
-  const handle = step(page, "code_2").locator(".react-flow__handle.source");
+  const handle = step(page, "code_2").locator(".react-flow__handle.source:not(.tool-handle)");
   const box = (await handle.boundingBox())!;
   await page.mouse.move(box.x + 6, box.y + 6);
   await page.mouse.down();

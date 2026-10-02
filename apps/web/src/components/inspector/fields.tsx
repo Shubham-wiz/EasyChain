@@ -298,11 +298,11 @@ export function OutputFieldsPicker({ value, onChange, fields }: FieldProps) {
   );
 }
 
-const KEY_VALUE_LABELS: Record<string, { key: string; value: string; add: string; first: () => string }> = {
+const KEY_VALUE_LABELS: Record<string, { key: string; value: string; add: string; first: () => string; placeholder?: string }> = {
   headers: { key: "Header name", value: "Header value", add: "Add a header", first: () => "X-Header" },
   inputs: { key: "Its input", value: "Value", add: "Give it a value", first: () => "input" },
   outputs: { key: "Field here", value: "Its result", add: "Save a result", first: () => "result" },
-  arguments: { key: "Argument", value: "Value ({field} works)", add: "Add an argument", first: () => "argument" },
+  arguments: { key: "Argument", value: "Value", add: "Add an argument", first: () => "argument", placeholder: "{field} or text" },
 };
 
 export function KeyValueEditor({ value, onChange, field }: FieldProps) {
@@ -321,8 +321,9 @@ export function KeyValueEditor({ value, onChange, field }: FieldProps) {
             onBlur={(e) => write(entries.map((p, j) => (j === i ? [clean(e.target.value), p[1]] : p)))}
           />
           <Input
-            aria-label={labels.value}
+            aria-label={`${labels.value} (${k})`}
             className="font-mono text-[12px]"
+            placeholder={labels.placeholder}
             value={v}
             onChange={(e) => write(entries.map((p, j) => (j === i ? [p[0], e.target.value] : p)))}
           />

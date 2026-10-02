@@ -45,3 +45,30 @@ test("Phase 2 screenshots", async ({ page, request }) => {
   await expect(page.getByTestId("inbox-item").first()).toBeVisible();
   await page.screenshot({ path: out("inbox.png") });
 });
+
+test("Phase 3 screenshots", async ({ page, request }) => {
+  const analyst = await (await request.post("/api/flows", { data: { template: "sql-analyst" } })).json();
+  await page.goto(`/#/flows/${analyst.id}`);
+  const agent = page.locator('[data-testid^="step-"]').filter({ has: page.locator(".tools-handle") }).first();
+  await expect(agent).toBeVisible();
+  await agent.click({ position: { x: 60, y: 14 } });
+  await page.getByRole("tab", { name: "Inspect" }).click();
+  await expect(page.getByTestId("agent-tools")).toBeVisible();
+  await page.screenshot({ path: out("agent.png") });
+
+  const bot = await (await request.post("/api/flows", { data: { template: "support-bot" } })).json();
+  await page.goto(`/#/flows/${bot.id}`);
+  await expect(step(page, "search")).toBeVisible();
+  await page.getByTestId("open-run").click();
+  await page.getByTestId("chat-input").fill("How long do refunds take?");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("chat-log").getByRole("link", { name: "Source 1" }).first()).toBeVisible();
+  await page.screenshot({ path: out("support-bot.png") });
+
+  await page.goto("/#/knowledge/help_centre");
+  const search = page.getByRole("region", { name: "Try a search" });
+  await search.getByLabel("Question").fill("Can I cancel my subscription?");
+  await search.getByRole("button", { name: "Search" }).click();
+  await expect(search.locator("li").first()).toBeVisible();
+  await page.screenshot({ path: out("knowledge.png"), fullPage: true });
+});

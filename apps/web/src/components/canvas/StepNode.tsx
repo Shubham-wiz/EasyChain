@@ -208,15 +208,6 @@ export const StepNode = memo(function StepNode({ id, selected }: NodeProps) {
     >
       <Breakpoints id={id} />
       {step.type !== "input" && !agentName && <Handle type="target" position={Position.Left} title="Connect into this step" />}
-      {TOOL_TYPES.has(step.type) && (
-        <Handle
-          type="source"
-          id="as-tool"
-          position={Position.Top}
-          title="Drag to an Agent's Tools handle to make this step one of its tools"
-          className="tool-handle"
-        />
-      )}
       <div className="overflow-hidden rounded-[11px]">
         <div className="flex items-start gap-2.5 px-3 pt-2.5 pb-2">
           <div className={cn("mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg", colors.chip)}>
@@ -247,6 +238,16 @@ export const StepNode = memo(function StepNode({ id, selected }: NodeProps) {
         <RunFooter id={id} />
       </div>
       {step.type !== "output" && !agentName && <Handle type="source" position={Position.Right} title="Drag to connect to the next step" />}
+      {/* After the right handle: React Flow puts an edge without a handle id on the first source handle. */}
+      {TOOL_TYPES.has(step.type) && (
+        <Handle
+          type="source"
+          id="as-tool"
+          position={Position.Top}
+          title="Drag to an Agent's Tools handle to make this step one of its tools"
+          className="tool-handle"
+        />
+      )}
       {step.type === "agent" && (
         <>
           <Handle

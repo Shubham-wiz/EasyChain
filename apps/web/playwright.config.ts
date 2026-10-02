@@ -7,6 +7,7 @@ import { join } from "node:path";
 // with model calls going to the fake OpenAI-compatible server (no real key needed).
 const port = Number(process.env.E2E_PORT ?? 8123);
 const fakePort = Number(process.env.E2E_FAKE_PORT ?? 8124);
+const mcpPort = Number(process.env.E2E_MCP_PORT ?? 8125);
 const home = mkdtempSync(join(tmpdir(), "easychain-e2e-"));
 const python = "uv run --project ../../python";
 
@@ -31,6 +32,13 @@ export default defineConfig({
     {
       command: `${python} python -m easychain.testing.fake_openai --port ${fakePort}`,
       url: `${FAKE_URL}/health`,
+      reuseExistingServer: false,
+      timeout: 120_000,
+    },
+    {
+      // A small MCP server (arithmetic and city facts) over streamable HTTP at /mcp.
+      command: `${python} python -m easychain.testing.mcp_server --http ${mcpPort}`,
+      port: mcpPort,
       reuseExistingServer: false,
       timeout: 120_000,
     },

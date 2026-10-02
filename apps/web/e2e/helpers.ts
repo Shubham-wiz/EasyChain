@@ -1,6 +1,7 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
 export const FAKE_URL = `http://127.0.0.1:${process.env.E2E_FAKE_PORT ?? 8124}`;
+export const MCP_URL = `http://127.0.0.1:${process.env.E2E_MCP_PORT ?? 8125}/mcp`;
 
 export function step(page: Page, id: string): Locator {
   return page.getByTestId(`step-${id}`);
@@ -16,8 +17,8 @@ export async function dragFromLibrary(page: Page, type: string, x: number, y: nu
 export async function connect(page: Page, from: string, to: string, exit?: string) {
   const source = exit
     ? step(page, from).locator(`.react-flow__handle[data-handleid="exit:${exit}"]`)
-    : step(page, from).locator(".react-flow__handle.source");
-  const target = step(page, to).locator(".react-flow__handle.target");
+    : step(page, from).locator(".react-flow__handle.source:not(.tool-handle)");
+  const target = step(page, to).locator(".react-flow__handle.target:not(.tools-handle)");
   const a = await source.boundingBox();
   const b = await target.boundingBox();
   if (!a || !b) throw new Error(`Handles not visible for ${from} -> ${to}`);

@@ -225,7 +225,12 @@ export function removeSteps(spec: FlowSpec, ids: string[]): FlowSpec {
   next.connections = next.connections.filter((c) => !drop.has(c.from) && !drop.has(c.to));
   for (const step of next.steps) {
     if (step.type === "agent" && ((step.settings.tools ?? []) as string[]).some((t) => drop.has(t))) {
-      step.settings = { ...step.settings, tools: (step.settings.tools as string[]).filter((t) => !drop.has(t)) };
+      const keep = (list: string[] | undefined) => (list ?? []).filter((t) => !drop.has(t));
+      step.settings = {
+        ...step.settings,
+        tools: keep(step.settings.tools),
+        addons: { ...(step.settings.addons ?? {}), approve_tools: keep(step.settings.addons?.approve_tools) },
+      };
     }
   }
   for (const id of ids) delete next.canvas.steps[id];
