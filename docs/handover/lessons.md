@@ -30,6 +30,13 @@ whenever something takes more than a few minutes to understand.
 | Duplicate dict key in generated code | A spread field had the same name as `save_as` | Check `schema_field_is_save_as`, with a fix |
 | Code steps importing `AIMessage` were refused | New names were reserved for generated code | Importing the same object is allowed (`_SAFE_IMPORTS` in `steps/actions.py`) |
 | YAML Test Set failed to parse | `?` or `:` inside a flow mapping (`{content: How?}`) | Quote chat texts in Test Sets |
+| A connection out of a Web request or Code step looped over the card | The step got a second source handle ("use as a tool", on top); React Flow attaches an edge without a handle id to the first source handle in the DOM | Render the right-hand handle first (`StepNode.tsx`); the e2e MCP journey checks the edge leaves from the right |
+| e2e `boundingBox` strict-mode error on `.react-flow__handle.source` | Same cause: two source handles | Scope selectors: `.source:not(.tool-handle)`, `.target:not(.tools-handle)` |
+| Deleting a tool step left `approve_tools` pointing at it | `removeSteps` cleaned `tools` only | It now cleans `addons.approve_tools` too (unit tested) |
+| Passage snippets showed `## Refunds` | Markdown heading lines are kept in chunk text for the model | `passageText()` in `Citations.tsx` drops heading lines when showing passages |
+| A document stayed "processing" for ever | The API server restarted while reading it (ingestion runs in-process) | On startup, unfinished documents are marked failed with "The server restarted while reading this…" |
+| `easychain test sql-analyst.tests.yaml` gave 9/10 by hand | One case posts to `${base_url}/effects`; without `--var base_url` and the fake server the request fails | Start `python -m easychain.testing.fake_openai --port N` and pass `--var base_url=http://127.0.0.1:N` |
+| The "Tools" label sat on top of the tool lines | It was centred under the Agent's bottom handle, where the lines leave | It sits beside the handle now |
 
 ## Database, queue and workers
 

@@ -36,17 +36,22 @@ python/                    the product: compiler, runtime, API server, workers, 
   src/easychain/steps/     one handler per step type: form, reads/writes, checks, code emitter
   src/easychain/compiler/  analysis → validate → codegen, producing LangGraph Python source
   src/easychain/runtime/   load compiled modules, checkpointer/store resources, model gateway,
-                           stand-in AI, stream_run (start, resume, continue, fork, breakpoints)
+                           stand-in AI (tool calls, JSON replies, scripts), stream_run
+  src/easychain/knowledge/ Knowledge Bases: loaders, splitting, embeddings, storage, hybrid
+                           search, citations; long-term memory helpers
+  src/easychain/integrations/ read-only SQL, MCP client, OpenAPI import
   src/easychain/server/    FastAPI app, run database, Hub, worker (queue, leases, Inbox,
-                           triggers, notifications), cron, secrets vault
-  src/easychain/templates/ template flows (*.flow.yaml) and their Test Sets (*.tests.yaml)
-  src/easychain/testing/   fake OpenAI-compatible server used by tests and e2e
+                           triggers, notifications), cron, secrets vault, Knowledge/MCP/OpenAPI API
+  src/easychain/templates/ template flows (*.flow.yaml) and their Test Sets (*.tests.yaml);
+                           samples/ holds the sample shop database and help centre they use
+  src/easychain/testing/   fake OpenAI-compatible server and a small MCP server, for tests and e2e
   tests/                   pytest; golden compiler cases in tests/golden/{cases,expected}
 apps/web/                  React 19 + TypeScript + Vite + Zustand + React Flow editor
   e2e/                     Playwright journeys (run against the real app + fake model server)
 packages/client/           @easychain/client: TypeScript client and React hook for the runs API
 spec/flow.schema.json      published JSON Schema (generated: `make schema`)
-docs/                      user docs (flow spec, steps, runs), phase reports, handover notes
+docs/                      user docs (flow spec, steps, runs, agents, knowledge), phase reports,
+                           handover notes
 examples/                  example flows
 ```
 
@@ -94,7 +99,8 @@ including Postgres for the tests, the Playwright browser, and Docker notes.
 - **Pinned versions.** LangGraph, LangChain and the provider packages are pinned exactly in
   `python/pyproject.toml` and locked in `uv.lock`. Upgrade them deliberately (ARCHITECTURE §9).
 - **Tests never call a paid API.** Use the stand-in AI, or the fake OpenAI-compatible server
-  (`python -m easychain.testing.fake_openai`).
+  (`python -m easychain.testing.fake_openai`). Agent Test Set cases can `script:` the model's
+  turns; tool results, limits and approvals stay real.
 - **Adding a step type** follows a checklist in [CONTRIBUTING.md](CONTRIBUTING.md): the model,
   the handler, a golden case, behaviour tests, checks, an icon, and a docs page.
 - **Side effects run at most once.** Anything that changes the outside world goes through
@@ -117,3 +123,9 @@ most likely to bite:
   (the `easychain_read` execution option).
 - Playwright locators must be exact (`{ exact: true }`). Several labels repeat ("Add",
   "Triggers", "email").
+- Tool-capable steps have two source handles (right, and the purple "as-tool" one on top), and
+  the Agent has two target handles. React Flow puts an edge with no handle id on the **first**
+  source handle in the DOM, so the right-hand handle must come first in `StepNode.tsx`; e2e
+  selectors use `.source:not(.tool-handle)` / `.target:not(.tools-handle)`.
+- `easychain test` on a Test Set that uses `${base_url}` needs the fake server running and
+  `--var base_url=http://127.0.0.1:PORT`; without it those cases fail for the wrong reason.

@@ -39,10 +39,11 @@ disagree, the original wins.
 | 0. Foundations | Monorepo, CI, Docker Compose, flow spec, compiler, CLI | (see [phase-0-1.md](../phases/phase-0-1.md)) |
 | 1. Visual MVP | Canvas, step library, inspector; Input, AI Model, Instructions, Action, Decision and Output steps; three providers; streaming chat; run trace; Python export | (see [phase-0-1.md](../phases/phase-0-1.md)) |
 | 2. Real runtime | Flow Data panel and update rules, loops with guards, parallel branches, For Each, Sub-flows, Postgres Save Points, crash recovery, Ask a Human and Inbox, time travel, background runs, triggers | Killing a worker mid-run and restarting resumes from the last step with no duplicate side effects, and a paused approval can be resumed a day later. **Met.** |
-| 3. Agents and knowledge | Agent step and add-ons, MCP, OpenAPI import, structured output, Knowledge Base, memory, all providers | The **Support bot over docs** and **SQL analyst** templates pass their Test Sets |
-| 4. Autopilot and teams | Deep Agents, Helpers, Skills, **sandboxes** (Code steps), multi-agent patterns, describe-it copilot | (from the original) |
+| 3. Agents and knowledge | Agent step and add-ons, MCP, OpenAPI import, structured output, Knowledge Base, memory, all providers | The **Support bot over docs** and **SQL analyst** templates pass their Test Sets. **Met.** |
+| 4. Autopilot and teams | Deep Agents, Helpers, Skills, **sandboxes** (Code steps), multi-agent patterns, describe-it copilot | (from the original; a proposal is in [phase-3.md](../phases/phase-3.md#phase-4-plan-autopilot-and-teams), waiting for the owner) |
 | 5. Platform | Test Sets and Checks, Test Runs, CI gate, dashboards, model gateway, Publish, environments, roles, SSO, audit log, OTel/LangSmith, CLI `eval` and `deploy` | (from the original) |
 | 6. Ecosystem | LangGraph.js export, custom module registry, import, real-time collaboration, prompt optimisation, Helm | (from the original) |
 
 The detailed Phase 3 plan, derived from the prompt, is in
-[phase-2.md](../phases/phase-2.md#phase-3-plan-agents-and-knowledge).
+[phase-2.md](../phases/phase-2.md#phase-3-plan-agents-and-knowledge); the Phase 4 plan is in
+[phase-3.md](../phases/phase-3.md#phase-4-plan-autopilot-and-teams).

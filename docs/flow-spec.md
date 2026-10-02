@@ -108,6 +108,13 @@ Step ids can't contain two underscores in a row (`__`); Easy Chain keeps those f
 | `for_each` | [For Each](steps/for_each.md) |
 | `subflow` | [Sub-flow](steps/subflow.md) |
 | `jump` | [Jump](steps/jump.md) |
+| `agent` | [Agent](steps/agent.md) |
+| `knowledge_search` | [Knowledge Base search](steps/knowledge_search.md) |
+| `memory` | [Memory](steps/memory.md) |
+| `sql_query` | [Database query](steps/sql_query.md) |
+| `mcp_tool` | [MCP tool](steps/mcp_tool.md) |
+
+An Agent's tools are listed in its `settings.tools` by step id; tool steps have no connections.
 
 ## Connections
 

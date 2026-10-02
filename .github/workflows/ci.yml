@@ -17,9 +17,10 @@ jobs:
       run:
         working-directory: python
     services:
-      # The queue, worker crash and day-later approval tests run on SQLite and on Postgres.
+      # The queue, worker crash, day-later approval and Knowledge Base tests run on SQLite and
+      # on Postgres (with pgvector).
       postgres:
-        image: postgres:16
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_PASSWORD: postgres
         ports:

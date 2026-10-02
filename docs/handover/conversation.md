@@ -41,3 +41,7 @@ Read as three requests:
 - **"push them in github":** everything is committed on `claude/tender-fermat-4kj4k6`. The push
   is still blocked by the 403 until GitHub access is granted. The original build prompt file and
   raw session transcripts were not copied into the repo (see [README.md](README.md#what-is-not-here)).
+
+Phase 3 was completed under this instruction. Report: [phase-3.md](../phases/phase-3.md). It
+ends with three questions for Phase 4: its "Done when" (the original brief isn't in the repo),
+the sandbox backend, and the copilot's model. Work stopped there for review.

@@ -1,6 +1,6 @@
 {
   "name": "@easychain/client",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Start, follow and answer Easy Chain runs from your own app (TypeScript client and React hook).",
   "license": "Apache-2.0",
   "type": "module",

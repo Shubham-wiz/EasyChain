@@ -2,7 +2,7 @@
 project: Easy Chain
 repo: Shubham-wiz/EasyChain
 branch: claude/tender-fermat-4kj4k6
-version: 0.2.0
+version: 0.3.0
 updated: 2026-10-02
 
 push:
@@ -27,16 +27,15 @@ phases:
     evidence: python/tests/test_durability.py
   - id: 3
     name: Agents and knowledge
-    state: in_progress
+    state: done
+    report: docs/phases/phase-3.md
     done_when: "The Support bot over docs and SQL analyst templates pass their Test Sets"
-    done_when_met: true   # offline, stand-in AI; support-bot 12/12, sql-analyst 10/10
-    plan: docs/phases/phase-2.md#phase-3-plan-agents-and-knowledge
-    backend: done
-    web_ui: next
-    docs_and_report: after the web UI
+    evidence: "python/tests/test_templates.py; support-bot 12/12, sql-analyst 10/10 (stand-in AI, scripted model turns, no key)"
   - id: 4
     name: Autopilot and teams
-    state: not_started
+    state: next_after_review
+    plan: docs/phases/phase-3.md#phase-4-plan-autopilot-and-teams
+    done_when_proposed: "A Research assistant template (Deep Agent + Helpers) passes a 10-case Test Set, and Code steps can't escape their sandbox"
   - id: 5
     name: Platform
     state: not_started
@@ -45,15 +44,20 @@ phases:
     state: not_started
 
 decisions: docs/handover/decisions.md
-open_questions: []
+waiting_for_review: true
+open_questions:
+  - "Phase 4 Done when: confirm the proposal in docs/phases/phase-3.md, or provide the original brief"
+  - "Sandbox backend for Code steps: Docker/gVisor locally (recommended), or a hosted sandbox such as E2B"
+  - "Describe-it copilot model: any model the user has a key for (recommended), or require a capable one"
 
 tests:
-  python: {passed: 317, floor: 0.90, measured_at: phase 3 backend}
-  python_end_of_phase_2: {passed: 259, compiler_coverage: 0.94}
-  web_unit: {passed: 19}
+  measured_at: end of phase 3
+  python: {passed: 320, skipped: 0}
+  web_unit: {passed: 32}
   client: {passed: 4}
-  e2e: {passed: 23, skipped: 1}
-  measured_at: end of phase 2
+  e2e: {passed: 31, skipped_unless_SCREENSHOTS: 1}
+  template_test_sets: {support-bot: "12/12", sql-analyst: "10/10", others: all pass}
+  python_end_of_phase_2: {passed: 259, compiler_coverage: 0.94}
 
 commands:
   install: make install
@@ -70,3 +74,5 @@ pins:
   langchain-openai: 1.6.7
   langchain-anthropic: 1.7.5
   langchain-ollama: 1.1.0
+  langchain-text-splitters: 1.1.2
+  langchain-mcp-adapters: 0.3.2

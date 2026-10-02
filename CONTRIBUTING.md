@@ -45,6 +45,8 @@ will export.
    and checks in `test_validate.py`.
 4. **Web**: usually nothing, because forms come from the catalog. Add an icon in
    `apps/web/src/components/canvas/stepMeta.ts` and a one-line summary in `stepSummary`.
+   If agents may use the step as a tool, add its type to `TOOL_TYPES` in `steps/agent.py` and
+   in `apps/web/src/lib/spec.ts`, and test it as a tool in `test_agent.py`.
 5. **Docs**: `docs/steps/<type>.md` (what it does, settings, an example, the generated code, and
    errors you might see).
 

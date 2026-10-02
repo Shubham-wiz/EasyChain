@@ -36,6 +36,7 @@ from ..compiler import CompileError, FlowAnalysis, compile_flow, validate
 from ..compiler.issues import Fix, warning
 from ..compiler.templates import secrets as template_secrets
 from ..export import export_zip
+from ..knowledge.store import KnowledgeStore
 from ..providers import EMBEDDING_MODELS, PROVIDERS, split_model
 from ..runtime import key_status
 from ..runtime.resources import open_resources
@@ -177,6 +178,14 @@ def create_app(
 
     def prepare_samples() -> None:
         """The sample shop database and help-centre Knowledge Base the templates use."""
+        try:
+            # Documents are read inside the API server: any it was still reading when it
+            # stopped won't finish, so say so instead of showing them as busy for ever.
+            KnowledgeStore().setup().fail_unfinished(
+                "The server restarted while reading this. Remove it and add it again."
+            )
+        except Exception as exc:
+            log.warning("Couldn't check the Knowledge Base documents: %s", exc)
         try:
             ensure_samples(home_path)
             ensure_sample_knowledge()
@@ -406,7 +415,6 @@ def create_app(
         ]
         if not steps:
             return []
-        from ..knowledge.store import KnowledgeStore
 
         try:
             store = KnowledgeStore().setup()

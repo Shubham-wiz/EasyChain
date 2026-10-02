@@ -14,12 +14,14 @@ import pytest
 from fastapi.testclient import TestClient
 
 from easychain.compiler import compile_flow
+from easychain.compiler.validate import validate
 from easychain.knowledge import search as search_module
 from easychain.knowledge.ingest import build_embeddings, ingest
 from easychain.knowledge.loaders import LoadError, load_bytes, split
 from easychain.knowledge.search import cite_passages, search_knowledge
 from easychain.knowledge.store import KnowledgeStore
 from easychain.runtime import RunOptions, run_flow
+from easychain.runtime.standin import Script
 from easychain.server.app import create_app
 
 from . import pg
@@ -291,6 +293,30 @@ def test_knowledge_api(client, fake_server):
     assert client.get(f"/api/knowledge/{second['id']}").status_code == 404
 
 
+def test_documents_cut_off_by_a_restart_say_so(tmp_path, monkeypatch):
+    monkeypatch.delenv("EASYCHAIN_KNOWLEDGE_URL", raising=False)
+
+    def app():
+        return create_app(
+            workspace=tmp_path / "flows",
+            home=tmp_path / "home",
+            static_dir=tmp_path / "web",
+            database_url=f"sqlite:///{tmp_path / 'app.db'}",
+            worker=False,
+        )
+
+    with TestClient(app()) as client:
+        kb = client.post("/api/knowledge", json={"name": "Notes", "embedding_model": "keywords"})
+        store = KnowledgeStore().setup()
+        doc = store.add_document(kb.json()["id"], "Half read", "half.md", "file")
+        store.set_document(doc["id"], status="processing")
+    with TestClient(app()) as client:
+        docs = client.get(f"/api/knowledge/{kb.json()['id']}").json()["documents"]
+    assert [(d["title"], d["status"]) for d in docs] == [("Half read", "error")]
+    assert "restarted" in docs[0]["error"]
+    assert KnowledgeStore().setup().get_base("help_centre") is not None  # samples untouched
+
+
 def test_checks_warn_about_a_missing_base_or_another_model(client):
     kb = client.post("/api/knowledge", json={"name": "Docs"}).json()
     spec = make_spec(
@@ -363,6 +389,51 @@ async def test_search_step_in_a_run_gives_passages_and_sources(knowledge_url):
     assert sources[0]["heading"] == "Billing" and sources[0]["n"] == 1
     searched = next(e for e in events if e["type"] == "step_finished" and e["step"] == "search")
     assert searched["output"]["context"].startswith("[1] Help centre › Billing")
+
+
+def _agent_rag_flow(kb_id: str):
+    return make_spec(
+        [
+            input_step("question"),
+            {
+                "id": "helper",
+                "type": "agent",
+                "settings": {"input": "question", "tools": ["search"]},
+            },
+            {
+                "id": "search",
+                "type": "knowledge_search",
+                "description": "Searches the help centre. Returns numbered passages to cite.",
+                "settings": {"knowledge_base": kb_id, "query": "search_query", "top_k": 2},
+            },
+            output_step("answer"),
+        ],
+        [("input", "helper"), ("helper", "output")],
+        data=[{"name": "search_query", "description": "What to look for in the help centre."}],
+    )
+
+
+async def test_an_agent_searches_with_its_own_query_and_cites(knowledge_url):
+    store = KnowledgeStore().setup()
+    spec = _agent_rag_flow(_filled(store))
+    assert [i for i in validate(spec) if i.level == "error"] == []
+    script = Script([{"call": "search", "args": {"search_query": "refund"}}, "Five days [1]."])
+    final, events = await run_flow(
+        spec, {"question": "Money back?"}, RunOptions(stand_in=True, script=script)
+    )
+    assert final["status"] == "ok", final
+    started = [e for e in events if e["type"] == "tool_started"]
+    assert [(e["tool"], e["args"]) for e in started] == [("search", {"search_query": "refund"})]
+    result = next(e for e in events if e["type"] == "tool_finished")["result"]
+    assert result.startswith("[1] Help centre › Billing") and "five working days" in result
+
+    # Unscripted, the stand-in picks the search tool itself and answers with a citation.
+    final, events = await run_flow(
+        spec, {"question": "How long do refunds take?"}, RunOptions(stand_in=True)
+    )
+    assert final["status"] == "ok", final
+    assert [e["tool"] for e in events if e["type"] == "tool_started"] == ["search"]
+    assert "[1]" in final["output"]["answer"]
 
 
 def test_exported_code_searches_on_its_own(tmp_path, monkeypatch):

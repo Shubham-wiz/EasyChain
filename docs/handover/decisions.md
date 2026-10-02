@@ -9,7 +9,7 @@ asked again.
 | # | Question | Decision | Who |
 |---|---|---|---|
 | 3.1 | Default vector store | **pgvector** in the Phase 2 Postgres; a built-in local index for SQLite installs; Qdrant/Chroma adapters later | owner said "continue" to the recommendation |
-| 3.2 | Default embeddings | OpenAI `text-embedding-3-small` when an OpenAI key is set, otherwise a local model through Ollama; tests use a deterministic offline embedder | owner said "continue" to the recommendation |
+| 3.2 | Default embeddings | OpenAI `text-embedding-3-small` when an OpenAI key is set, else Ollama `nomic-embed-text` when `OLLAMA_HOST` is set, else the key-free **Keywords** embedder (also used by tests and the sample help centre) | owner said "continue" to the recommendation; Keywords added so a fresh install works with no key or Ollama |
 | 3.3 | MCP servers over stdio (they start local processes) | Allowed only in **Pro mode**, and only commands on an allow-list approved in Settings; streamable-HTTP MCP servers are allowed normally | owner said "continue" to the recommendation |
 | 3.4 | How agents get tools | Other steps on the canvas are an Agent's tools (`settings.tools` lists their ids). Each becomes a `@tool` that runs the step's own function. Its arguments are the fields the step reads that Flow Data doesn't have when the agent runs. | build: reuses every step type as a tool, with no second implementation |
 | 3.5 | Agent Add-ons | LangChain's own middleware classes, emitted into the code | build: exported code stays plain LangChain |
@@ -17,6 +17,10 @@ asked again.
 | 3.7 | Knowledge Base storage | Easy Chain's own tables (`kb_bases`, `kb_documents`, `kb_chunks`) in its database, not a LangChain vector store class. Search is one function, copied into exported code. | build: one design for SQLite and Postgres, hybrid search and citations, and exported code that searches the same data |
 | 3.8 | Test Sets without a key | The stand-in AI answers from cited passages by itself; agent cases may script the model's tool calls (`script:`), while tool results, limits and approvals are real | build: CI has no keys; a real model ignores scripts |
 | 3.9 | SQL safety | Read-only queries run in a read-only transaction (SQLite `query_only`, Postgres `READ ONLY`), plus a statement check | build |
+| 3.10 | Where documents are ingested | In the API server's background tasks, not on the job queue; a restart marks unfinished documents failed with a clear message | build: the upload is in the API process and ingestion isn't a run; moving it to the queue is a Phase 5 item |
+| 3.11 | Postgres image | Docker Compose and CI use `pgvector/pgvector:pg16` instead of `postgres:16-alpine` | build: Knowledge Bases use pgvector when present; existing Compose volumes should be reindexed after the switch (musl vs glibc collation) |
+| 3.12 | Version | 0.3.0 at the end of Phase 3 (Python package, web app, client, Compose image tags) | build |
+| 3.13 | Phase 4 "Done when" | **Proposed, not decided:** a Research assistant template (Deep Agent + Helpers + to-do list + files) passes a 10-case Test Set, and Code steps can't escape their sandbox (escape tests) | the original brief isn't in the repo; asked in the Phase 3 report |
 
 ## Phase 2
 

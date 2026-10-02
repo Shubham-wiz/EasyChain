@@ -5,22 +5,26 @@ agent or graph engine. It turns a diagram into a **flow spec**, compiles that sp
 **standard LangGraph Python**, and runs it. Easy Chain's own code is the canvas, the step
 catalog, the compiler, and the platform around them.
 
-This document describes what exists now (Phases 0 to 2), how it is meant to grow, and where it
+This document describes what exists now (Phases 0 to 3), how it is meant to grow, and where it
 deliberately differs from the build prompt, with the reason for each difference. How runs,
-workers, the Inbox and triggers behave is described for users in [docs/runs.md](docs/runs.md).
+workers, the Inbox and triggers behave is described for users in [docs/runs.md](docs/runs.md);
+agents and tools in [docs/agents.md](docs/agents.md); Knowledge Bases in
+[docs/knowledge.md](docs/knowledge.md).
 
 ## 1. The big picture
 
 ```
 ┌──────────────────────── apps/web (React + TypeScript) ─────────────────────────┐
-│ Step library │ Canvas (React Flow) │ Inspector │ Run panel, Save Points │ Inbox  │
+│ Step library │ Canvas │ Inspector │ Run panel, Save Points │ Inbox │ Knowledge  │
 │        Zustand stores: flow (+ undo/redo), checks, run, ui, catalog            │
 └───────────────────────────────┬─────────────────────────────────────────────────┘
                                 │ REST · Server-Sent Events · WebSocket (/api/…)
 ┌───────────────────────────────▼──────────── python/src/easychain ──────────────┐
 │ server/   FastAPI app, run database (db.py), Hub (start/resume/watch runs),     │
 │           worker (queue, leases, crash recovery, Inbox, triggers, notify),      │
-│           cron, secrets vault, flow files                                       │
+│           cron, secrets vault, flow files, Knowledge/MCP/OpenAPI endpoints      │
+│ knowledge/ loaders, splitting, embeddings, storage, hybrid search, memory       │
+│ integrations/ SQL (read-only), MCP client, OpenAPI → Web request steps         │
 │ spec/     Pydantic models of the flow spec, YAML I/O, JSON Schema               │
 │ steps/    one handler per step type: form, reads/writes, checks, code emitter   │
 │ compiler/ analysis → validate → codegen  ⇒  LangGraph Python source             │
@@ -30,7 +34,8 @@ workers, the Inbox and triggers behave is described for users in [docs/runs.md](
 └──────────────┬────────────────────────────────────────┬────────────────────────┘
                │ the generated module imports only:     │ SQLite or Postgres
    langgraph · langchain · langchain-core ·              │ runs, events, jobs, Inbox, triggers,
-   provider packages · httpx                             │ versions, settings + LangGraph Save Points
+   provider packages · httpx (+ sqlalchemy, numpy,       │ versions, settings + LangGraph Save Points
+   langchain-mcp-adapters when a flow uses them)         │ + Knowledge Bases (pgvector when present)
 
 packages/client: @easychain/client, a TypeScript client and React hook for the runs API.
 ```
@@ -160,10 +165,13 @@ what exports:
    builds the graph with the run's **resources**: a checkpointer (Save Points), a store (side
    effects) and a cache. Resources are in memory for `easychain run` and tests, or LangGraph's
    SQLite/Postgres savers and stores for the server.
-2. The only change to the loaded module: its `init_chat_model` name points at the **model
-   gateway**. The gateway checks for the provider's API key and raises `MissingAPIKey`, which
-   becomes "Add your API key" on the step, or returns the **stand-in AI** when the run asks for it.
-   Exported code keeps LangChain's own `init_chat_model`.
+2. The only change to the loaded module: its `init_chat_model`, `init_embeddings` and
+   `mcp_tools` names point at the **gateway**. The gateway checks for the provider's API key
+   (raising `MissingAPIKey`, which becomes "Add your API key" on the step) and its package
+   (`MissingPackage`: "… isn't installed, run `pip install 'easychain[providers]'`"), returns the
+   **stand-in AI** (which can call tools and fill structured replies) when the run asks for it,
+   and hands MCP tool loading the server connections from Settings. Exported code keeps
+   LangChain's own functions and reads MCP servers from `EASYCHAIN_MCP_SERVERS`.
 3. `stream_run()` starts, **resumes** (`Command(resume=…)`), **continues** (`None` input) or
    **forks** (`update_state` at a checkpoint, then continue) a run, with breakpoints
    (`interrupt_before` / `interrupt_after`), `durability="sync"` on durable resources, and
@@ -209,6 +217,41 @@ Performance (from `tests/test_performance.py` and `e2e/quality.spec.ts`): Easy C
 **1 ms per step** on top of LangGraph (budget: 10 ms). Checking and compiling a 300-step flow takes
 about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at about 60 fps.
 
+## 5b. Agents, tools and Knowledge Bases (Phase 3)
+
+- **Agent step.** The node builds `create_agent(model, tools, system_prompt, middleware,
+  response_format=ToolStrategy(Answer))` and invokes it inside the step. LangGraph runs it as a
+  subgraph of the step's node, so it shares the flow's checkpointer and store: an approval
+  (`HumanInTheLoopMiddleware`) is an ordinary interrupt, becomes an Inbox item of kind
+  `approve_tool`, and an answer resumes it with `{"decisions": [...]}`. Add-ons map one-to-one
+  onto LangChain middleware.
+- **Steps as tools.** A step listed in an agent's `tools` is not wired into the graph. The
+  compiler emits a factory that wraps the step's own node function in `@tool(step_id,
+  description=…)`; its arguments are the fields the step reads that the agent can't see, typed
+  from Flow Data. Each call is its own `Send` task, so per-call idempotency keys stay unique and
+  the step's run policy still applies.
+- **Tool events.** The runner turns the agent subgraph's stream (`agent:<task>` namespaces,
+  `model` and `tools` nodes) into `tool_started` / `tool_finished` events with arguments,
+  results and timing, and attributes all model usage to the Agent step.
+- **Structured output.** Fixed fields compile to Pydantic models (`schema_code.py`), used with
+  `with_structured_output` plus a retry on validation errors (AI Model) or `ToolStrategy`
+  (Agent). "Also save each field on its own" spreads the fields into Flow Data.
+- **Knowledge Bases.** Own tables (`kb_bases`, `kb_documents`, `kb_chunks`) in the run database
+  or `EASYCHAIN_KNOWLEDGE_URL`: pgvector with a per-Knowledge-Base partial HNSW index on Postgres
+  when the extension is available, float32 blobs plus numpy otherwise; full-text search with
+  `tsvector` (Postgres) or FTS5 (SQLite); hybrid results merged by reciprocal rank fusion.
+  Documents are loaded (pypdf, python-docx, an HTML text extractor, Markdown by headings, CSV),
+  split with `RecursiveCharacterTextSplitter`, embedded with `init_embeddings` and written in the
+  API server's background tasks. The search functions are copied into exported code with
+  `inspect.getsource`, so the export searches exactly as Easy Chain does.
+- **Memory** uses the LangGraph store (namespace per user); trim and summarise operate on a
+  messages field.
+- **MCP** uses `langchain-mcp-adapters` (`MultiServerMCPClient`): streamable HTTP and SSE, and
+  stdio for commands on an allow-list.
+- **The stand-in AI** (`runtime/standin.py`) picks tools by keyword overlap with their
+  descriptions, fills arguments from the question, answers from tool results with `[n]`
+  citations, and fills JSON schemas. Test Sets can **script** its turns instead.
+
 ## 6. The web app
 
 - **React 19 + TypeScript + Vite**, **React Flow (xyflow) 12** for the canvas, **Tailwind 4**
@@ -230,7 +273,7 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
   mutation: add, connect (with a reason when refused), rename, insert before, renaming variables
   for fixes, copy and paste, auto-layout. They are unit tested.
 
-## 7. Security in Phases 0 to 2
+## 7. Security in Phases 0 to 3
 
 - **Secrets** are referenced by name (`{secret:NAME}`, provider `*_API_KEY`). Values are stored
   encrypted with Fernet in `~/.easychain/secrets.enc` (the key is in `secret.key` with mode 0600,
@@ -246,6 +289,18 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
   fresh folder per upload.
 - **Ask a Human questions** can't contain `{secret:…}` placeholders, so reviewers never see secrets.
 - **Code steps run in the worker process with no sandbox** in this phase. See the deviations below.
+- **Agents** can only call the tools you gave them. Steps that change things keep "send at most
+  once", and **Ask a person before …** makes a person approve each call. The check before a run
+  warns when an agent's Database query can write.
+- **Database queries** are read-only by default: a read-only transaction (`SET TRANSACTION READ
+  ONLY` on Postgres, `PRAGMA query_only` on SQLite) plus a statement check. Flow Data goes in as
+  bound parameters, never into the SQL text. Passwords in connection URLs are flagged; use
+  `{secret:NAME}`.
+- **MCP servers** started as local commands (stdio) run only if the command is on an
+  allow-list that can be edited in Pro mode. Tokens go in headers as `{secret:NAME}`.
+- **Fetching on the server.** Adding a web page to a Knowledge Base and reading an OpenAPI
+  address make the server fetch that URL. That is fine for a single-user local install; a
+  shared deployment needs an egress allow-list (Phase 5).
 
 ## 8. Testing
 
@@ -265,17 +320,25 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
 | `test_durability.py` | **The Phase 2 Done-when**, on SQLite and Postgres: a worker killed with SIGKILL mid-run resumes from the last step without repeating finished steps or side effects; a paused approval is answered a day later through a fresh server and worker |
 | `test_db_startup.py` | Several processes starting at once set up the Postgres tables without racing |
 | `apps/web/src/**/*.test.ts` | Editing helpers, undo grouping, SSE parsing, formatting |
-| `apps/web/e2e/*.spec.ts` | Playwright: build → run → debug → export (and run the export), templates and chat, fixes, undo, copy/paste, Pro mode, settings, Ask a Human in the run panel and the Inbox, For Each, breakpoints and Save Points, stop and carry on, reload during a run, triggers, the Flow Data panel, Sub-flows, axe WCAG 2.2 AA scans, 300-step canvas |
+| `apps/web/e2e/*.spec.ts` | Playwright: build → run → debug → export (and run the export), templates and chat, fixes, undo, copy/paste, Pro mode, settings, Ask a Human in the run panel and the Inbox, For Each, breakpoints and Save Points, stop and carry on, reload during a run, triggers, the Flow Data panel, Sub-flows, agent tools and live tool calls, tool approval, the reply format builder, Knowledge Bases, cited answers, MCP servers, API import, axe WCAG 2.2 AA scans, 300-step canvas |
+| `test_standin_tools.py` | The stand-in AI calls tools, fills arguments and JSON schemas, cites sources, and plays scripts |
+| `test_agent.py` | Agent tool calls and their events, approvals (approve, edit, reject) through the Inbox shape, structured answers, add-ons, limits, MCP tools |
+| `test_knowledge.py` | Every file format, chunk provenance, hybrid search and citations on SQLite and on Postgres with pgvector, the API, an agent searching with its own queries, documents cut off by a restart, exported code searching on its own |
+| `test_integrations.py` | Memory (remember, recall, trim, summarise), read-only SQL, MCP over stdio and HTTP and its allow-list, OpenAPI import |
 | `packages/client/src/*.test.ts(x)` | The client's SSE handling, errors, reconnecting `wait()`, and the React hook through a pause and an answer |
 
 Tests never call a paid API. `easychain.testing.fake_openai` is a small OpenAI-compatible server
-that the real `langchain-openai` package talks to unchanged. It also serves sample pages.
+that the real `langchain-openai` package talks to unchanged: chat (with tool calls and JSON
+schema replies, scriptable through `POST /__script`) and embeddings. It also serves sample pages
+and records side effects. `easychain.testing.mcp_server` is a small MCP server (stdio or HTTP).
 
 ## 9. Version policy
 
 LangChain, LangGraph and provider packages are pinned exactly in `python/pyproject.toml`
 (`langgraph==1.2.12`, `langchain==1.4.3`, `langchain-core==1.6.6`, `langchain-openai==1.6.7`,
-`langchain-anthropic==1.7.5`, `langchain-ollama==1.1.0`) and locked in `uv.lock`. Exported
+`langchain-anthropic==1.7.5`, `langchain-ollama==1.1.0`, `langchain-text-splitters==1.1.2`,
+`langchain-mcp-adapters==0.3.2`, and the provider packages in the `providers` and `vertex`
+extras) and locked in `uv.lock`. Exported
 `requirements.txt` files use the same pins. To upgrade: bump the pins, run `make test`
 (golden + template Test Sets), review golden diffs, then ship.
 
@@ -287,7 +350,7 @@ LangChain, LangGraph and provider packages are pinned exactly in `python/pyproje
 | SQLAlchemy + Alembic | SQLAlchemy Core with `create_all` and a schema version check | There is one schema version so far; Alembic migrations arrive with the first schema change. Startup takes an advisory lock so several processes can start together. |
 | Code modules run in a sandbox | Code steps run in the worker process | Sandboxing (gVisor or microVMs) is Phase 4. Mitigations: localhost-only by default, a single-user local vault, and workers can run in their own containers (Docker Compose does this), which separates them from the API but not from each other's runs. Do not expose the server to untrusted users. |
 | Cancel stops a run | Cancel stops the run at once and keeps its Save Points, but a Code step already running in a thread finishes in the background (its result is dropped) | Python can't kill a thread. Time limits on steps bound this. |
-| Show ARCHITECTURE.md, schema and plan before writing feature code; one phase at a time | Phases 0 and 1 were built in one go and reported together ([report](docs/phases/phase-0-1.md)); Phase 2 followed after review ([report](docs/phases/phase-2.md)) | The request was "take this and build, do testing and all", and the Phase 2 questions were answered with "whatever you think is right". |
+| Show ARCHITECTURE.md, schema and plan before writing feature code; one phase at a time | Phases 0 and 1 were built in one go and reported together ([report](docs/phases/phase-0-1.md)); Phases 2 and 3 followed, each after its report ([Phase 2](docs/phases/phase-2.md), [Phase 3](docs/phases/phase-3.md)) | The request was "take this and build, do testing and all", and each phase's questions were answered with "whatever you think is right" or "continue". |
 | Decision = conditional edge | Decision = a node (no-op for rules; the classifier for AI mode) plus a conditional edge | Keeps one node per step, so the trace, glow and errors map 1:1 to canvas boxes, and AI classification tokens are attributed to the Decision. The routing itself is still a standard conditional edge. |
 | Models defined once | `init_chat_model(...)` is called inside each AI step function | A missing key then surfaces as that step's error rather than an import failure, and the runtime can swap in the gateway by replacing one module-level name. The overhead is negligible next to a model call. |
 | (not in prompt) | A clearly labelled **stand-in AI** | Lets people, templates ("Try it") and tests run any flow with no key. It answers from the prompt itself and never pretends to be a real model. |
@@ -297,7 +360,12 @@ LangChain, LangGraph and provider packages are pinned exactly in `python/pyproje
 | CLI: new, dev, run, test, eval, deploy, export | new, dev, run (answers Ask a Human in the terminal), test (Test Sets, with scripted human answers), export, plus validate, compile, schema, templates and worker | `eval` and `deploy` belong to Phase 5. `test` exists now so templates can ship with their Test Sets. |
 | Python 3.12+ | Python 3.12 (CI and Docker) | As specified. |
 | Latest framework majors | TypeScript 5.9, Vite 7, Vitest 3 (not TS 7 or Vite 8) | "Prefer well-known, boring libraries." Those newer majors were brand new at build time. |
-| Templates with 10-case Test Sets (section 14) | Six templates ship with Test Sets of 10 to 12 cases (Phase 2 adds *Approve a reply* and *Summarise several pages*; Test Sets can script human answers); section 14's templates arrive with the phases that provide their features | The section 14 templates need Knowledge Base, Agents, Autopilot and so on. |
+| Templates with 10-case Test Sets (section 14) | Eight templates ship with Test Sets of 10 to 12 cases (Phase 3 adds *Support bot over docs* and *SQL analyst*); section 14's other templates arrive with the phases that provide their features | They need Autopilot, Helpers, publishing and so on. |
 | For Each runs "a step or sub-flow" per item | One step per item; several steps per item go in a Sub-flow | Keeps the canvas honest about what runs per item and maps to one `Send` target. |
 | Breakpoints | Set per flow in the browser, not saved in the flow file | Breakpoints are a debugging aid for test runs, not part of the flow's behaviour, so they don't belong in reviewed YAML. |
 | Event streaming | The API tails the run's events from the database (poll plus an in-process wake-up), not Postgres LISTEN/NOTIFY | Works the same on SQLite and Postgres and survives API restarts; latency is about 50–250 ms. |
+| Knowledge Base on pgvector (via LangChain's vector stores) | Easy Chain's own three tables, using pgvector directly when present, numpy otherwise, and Postgres/SQLite full-text search | One schema for SQLite and Postgres, hybrid search (LangChain's PGVector store has no full-text side), per-document status and provenance, and search code small enough to copy into exports. The tables are plain SQL, so moving to another store later is a migration, not a rewrite. |
+| Documents ingested by workers | Documents are read and embedded in the API server's background tasks | Ingestion needs the uploaded file, which the API process has; it is not part of a run. A restart marks unfinished documents as failed with a clear message. Moving ingestion onto the job queue is listed for Phase 5. |
+| OCR for scanned PDFs | Not supported; such PDFs fail with a message saying so | OCR needs a heavy system dependency (Tesseract) or a paid API. |
+| Agent = graph of its own | The agent is built and invoked inside the step's node (a subgraph at run time) | One node per canvas box keeps the trace, glow, errors and token counts 1:1 with the canvas, and the agent still checkpoints and pauses with the flow. |
+| Test Sets judge agents | Test Sets check tools called, not called and call counts, and can script the model's turns | Deterministic, key-free tests of a flow's logic. LLM-as-judge and trajectory checks are Phase 5. |

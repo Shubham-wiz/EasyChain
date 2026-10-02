@@ -10,11 +10,12 @@ with no Easy Chain runtime required.
 
 ![The Easy Chain editor running a flow with a Decision](docs/images/editor-run.png)
 
-> **Status: Phase 2 (Real runtime) of the build plan** ([Phase 2 report](docs/phases/phase-2.md),
-> [Phases 0 and 1](docs/phases/phase-0-1.md)). Runs are durable: they survive restarts and
-> crashed workers, wait for people for as long as it takes, and can be replayed from any Save
-> Point. Agents, knowledge bases, evaluation and one-click publishing come in later phases (see
-> the [roadmap](#roadmap)).
+> **Status: Phase 3 (Agents and knowledge) of the build plan** ([Phase 3 report](docs/phases/phase-3.md),
+> [Phase 2](docs/phases/phase-2.md), [Phases 0 and 1](docs/phases/phase-0-1.md)). Agents use
+> your steps, APIs, databases and MCP servers as tools, with a person approving what matters;
+> Knowledge Bases answer from your documents with citations; runs are durable and can wait for
+> people as long as it takes. Autopilot agents, evaluation and one-click publishing come in later
+> phases (see the [roadmap](#roadmap)).
 
 ## Quick start
 
@@ -33,8 +34,10 @@ make dev                 # API on :8000, web app on http://localhost:5173
 ```
 
 Then pick a template and press **Try it**. No API key yet? Switch on the **stand-in AI** in the
-Run panel to see the flow work with placeholder answers, or add your key under **Settings → API
-keys** (it is stored encrypted on your machine and never saved in flows or exports).
+Run panel to see the flow work with placeholder answers, or add your key under **Settings → Keys
+and providers** (it is stored encrypted on your machine and never saved in flows or exports).
+The *Support bot over docs* and *SQL analyst* templates come with a sample help centre and shop
+database, so they work straight away.
 
 **From the command line:**
 
@@ -46,6 +49,23 @@ uv run easychain worker --database-url postgresql://…           # a worker for
 ```
 
 ## What you get
+
+### Phase 3: agents and knowledge
+
+| | |
+|---|---|
+| **Agent step** | An AI that calls tools until it has an answer (`create_agent`). Any Web request, Code, Sub-flow, Knowledge Base search, Database query, MCP tool or Memory step becomes a tool: drag it onto the agent's **Tools** handle and describe it. Tool calls show live under the agent and in the trace. |
+| **Add-ons** | Agent middleware behind toggles: **ask a person before** a tool runs (approve, edit or reject in the run panel or Inbox), call limits, retries, fallback models, summarising long chats, personal data filters, tool selection, a to-do list, long-term memory. |
+| **Knowledge Bases** | Upload PDF, Word, HTML, Markdown, CSV or text, or add web pages; see how they split; search by meaning, words, or both (hybrid), with optional re-ranking. Answers cite `[1]` and the run panel links each citation to its passage, page and heading. pgvector on Postgres, SQLite locally. |
+| **Structured replies** | A field builder for the AI Model and Agent: text, numbers, yes/no, choices, lists, nested groups. Replies are validated, retried when they don't fit, and each field can go straight into Flow Data. |
+| **Tools from everywhere** | **MCP servers** (HTTP, or approved local commands) in Settings; **Import an API** from an OpenAPI description into typed Web request steps; a **Database query** step that is read-only unless you say otherwise; a **Memory** step to remember facts about a user, or keep a long chat short. |
+| **14 model providers** | OpenAI, Anthropic, Ollama, Google Gemini and Vertex AI, AWS Bedrock, Azure OpenAI, Mistral, Groq, Together, Fireworks, OpenRouter, DeepSeek and xAI, plus eight embedding model families. |
+
+See [docs/agents.md](docs/agents.md) and [docs/knowledge.md](docs/knowledge.md).
+
+![An Agent with Database query tools](docs/images/agent.png)
+
+![The Support bot answering with citations](docs/images/support-bot.png)
 
 ### Phase 2: a real runtime
 
@@ -82,7 +102,8 @@ See [docs/runs.md](docs/runs.md) for how runs, workers, the Inbox, triggers and 
 |---|---|---|
 | Input | `START` + input schema | Where a run starts: form fields, or chat messages |
 | Instructions | `ChatPromptTemplate` | A prompt with `{variables}` filled from Flow Data |
-| AI Model | chat model via `init_chat_model` | Sends text or a prompt to OpenAI, Anthropic or Ollama |
+| AI Model | chat model via `init_chat_model` | Sends text or a prompt to a model; free text or fixed fields (`with_structured_output`) |
+| Agent | `create_agent` + middleware | Calls tools (other steps, MCP servers) until it has an answer |
 | Web request | HTTP request tool | Fetches a page (as readable text) or calls an API |
 | Code | Python function | `run(data)` returns the Flow Data fields to update |
 | Decision | conditional edge | Picks an exit by rules, a safe expression, or by asking an AI; round limits for loops |
@@ -90,6 +111,10 @@ See [docs/runs.md](docs/runs.md) for how runs, workers, the Inbox, triggers and 
 | Sub-flow | subgraph | Runs another flow as one step, with shared or mapped Flow Data |
 | Jump | `Command(update, goto)` | Sets Flow Data and picks the next step in one move (Pro) |
 | Ask a Human | `interrupt()` | Pauses until a person approves, edits, answers or chooses |
+| Knowledge Base search | retriever (hybrid search) | Finds the passages that answer a question, numbered for citing |
+| Memory | LangGraph store, `trim_messages` | Remembers facts about a user, or keeps a long chat short |
+| Database query | SQL tool (SQLAlchemy) | Runs read-only SQL with safe parameters, or describes the tables |
+| MCP tool | `langchain-mcp-adapters` | Calls a tool on a connected MCP server |
 | Output | `END` + output schema | Chooses what a run returns |
 
 Each has a docs page in [`docs/steps/`](docs/steps).
@@ -128,14 +153,16 @@ docs/                        flow spec, step pages, phase reports
 
 ```bash
 make test        # Python tests + web and client unit tests
-make e2e         # Playwright: build, run, debug, export, Ask a Human, Inbox, Save Points, triggers, a11y
+make e2e         # Playwright: build, run, debug, export, Ask a Human, Inbox, Save Points, triggers,
+                 # agents and tool approval, Knowledge Bases and citations, MCP, API import, a11y
 make worker      # a separate worker process (run the server with EASYCHAIN_WORKER=off)
 make lint        # ruff + TypeScript
 make golden      # regenerate compiler golden files after an intended change
 ```
 
 The end-to-end and template tests use a small fake OpenAI-compatible server
-(`python -m easychain.testing.fake_openai`), so nothing calls a paid API. The queue and crash
+(`python -m easychain.testing.fake_openai`, with tool calls, structured replies and embeddings)
+and a small MCP server (`python -m easychain.testing.mcp_server`), so nothing calls a paid API. The queue and crash
 tests run on SQLite and, when Postgres is installed (or `EASYCHAIN_TEST_POSTGRES_URL` is set),
 on Postgres too. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for adding a step type.
@@ -151,8 +178,8 @@ traps already found, and how to set up a machine.
 | 0. Foundations | Monorepo, CI, Docker Compose, flow spec, compiler, CLI | ✅ Done |
 | 1. Visual MVP | Canvas, Step library, inspector, Input / AI Model / Instructions / Action / Decision / Output, three providers, streaming chat, run trace, Python export | ✅ Done |
 | 2. Real runtime | Flow Data panel and update rules, loops with guards, parallel branches, For Each, Sub-flows, Postgres Save Points, crash recovery, Ask a Human and Inbox, time travel, background runs, triggers | ✅ Done |
-| 3. Agents and knowledge | Agent step and add-ons, MCP, OpenAPI import, structured output, Knowledge Base, memory, all providers | Next |
-| 4. Autopilot and teams | Deep Agents, Helpers, Skills, sandboxes, multi-agent patterns, describe-it copilot | |
+| 3. Agents and knowledge | Agent step and add-ons, MCP, OpenAPI import, structured output, Knowledge Base, memory, all providers | ✅ Done |
+| 4. Autopilot and teams | Deep Agents, Helpers, Skills, sandboxes, multi-agent patterns, describe-it copilot | Next |
 | 5. Platform | Test Sets and Checks, Test Runs, CI gate, dashboards, model gateway, Publish, environments, roles, SSO | |
 | 6. Ecosystem | LangGraph.js export, custom module registry, import, collaboration, prompt optimisation, Helm | |
 
