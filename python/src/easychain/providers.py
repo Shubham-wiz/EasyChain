@@ -32,12 +32,27 @@ class Provider:
     host_env: str | None = None
     key_url: str | None = None
     supports_reasoning_effort: bool = False
+    # Settings besides the key, as (environment variable, label) pairs.
+    settings_env: tuple[tuple[str, str], ...] = ()
+    # For providers that use cloud credentials instead of an API key.
+    credentials: str | None = None
+    # The pip extra that installs this provider's package (None: always installed).
+    extra: str | None = None
+
+    def installed(self) -> bool:
+        import importlib.util
+
+        return importlib.util.find_spec(self.import_hint) is not None
 
     def model(self, model_id: str) -> ModelInfo | None:
         for model in self.models:
             if model.id == model_id:
                 return model
         return None
+
+
+def _m(model_id: str, label: str, inp: float | None = None, out: float | None = None) -> ModelInfo:
+    return ModelInfo(model_id, label, inp, out)
 
 
 PROVIDERS: dict[str, Provider] = {
@@ -91,8 +106,231 @@ PROVIDERS: dict[str, Provider] = {
                 ModelInfo("mistral", "Mistral", 0, 0),
             ),
         ),
+        Provider(
+            id="google_genai",
+            label="Google Gemini",
+            package="langchain-google-genai==4.4.0",
+            import_hint="langchain_google_genai",
+            key_env="GOOGLE_API_KEY",
+            key_label="Google AI Studio API key",
+            key_url="https://aistudio.google.com/app/apikey",
+            extra="providers",
+            models=(
+                _m("gemini-2.5-flash", "Gemini 2.5 Flash (fast, cheap)", 0.30, 2.50),
+                _m("gemini-2.5-pro", "Gemini 2.5 Pro", 1.25, 10.00),
+                _m("gemini-2.5-flash-lite", "Gemini 2.5 Flash-Lite", 0.10, 0.40),
+            ),
+        ),
+        Provider(
+            id="google_vertexai",
+            label="Google Vertex AI",
+            package="langchain-google-vertexai==3.2.4",
+            import_hint="langchain_google_vertexai",
+            key_env=None,
+            key_label="",
+            credentials="Google Cloud credentials: run `gcloud auth application-default login`, "
+            "or set GOOGLE_APPLICATION_CREDENTIALS to a service-account file.",
+            extra="vertex",
+            models=(
+                _m("gemini-2.5-flash", "Gemini 2.5 Flash", 0.30, 2.50),
+                _m("gemini-2.5-pro", "Gemini 2.5 Pro", 1.25, 10.00),
+            ),
+        ),
+        Provider(
+            id="bedrock_converse",
+            label="AWS Bedrock",
+            package="langchain-aws==1.8.0",
+            import_hint="langchain_aws",
+            key_env=None,
+            key_label="",
+            credentials="AWS credentials: an AWS profile, or AWS_ACCESS_KEY_ID and "
+            "AWS_SECRET_ACCESS_KEY, plus AWS_DEFAULT_REGION.",
+            extra="providers",
+            models=(
+                _m("amazon.nova-lite-v1:0", "Amazon Nova Lite (fast, cheap)", 0.06, 0.24),
+                _m("amazon.nova-pro-v1:0", "Amazon Nova Pro", 0.80, 3.20),
+                _m("meta.llama3-1-70b-instruct-v1:0", "Llama 3.1 70B", 0.72, 0.72),
+            ),
+        ),
+        Provider(
+            id="azure_openai",
+            label="Azure OpenAI",
+            package="langchain-openai==1.6.7",
+            import_hint="langchain_openai",
+            key_env="AZURE_OPENAI_API_KEY",
+            key_label="Azure OpenAI API key",
+            key_url="https://portal.azure.com/",
+            settings_env=(
+                ("AZURE_OPENAI_ENDPOINT", "Azure OpenAI endpoint (https://NAME.openai.azure.com)"),
+                ("OPENAI_API_VERSION", "Azure OpenAI API version, e.g. 2024-10-21"),
+            ),
+            models=(
+                _m("gpt-4o-mini", "gpt-4o-mini (your deployment name)", 0.15, 0.60),
+                _m("gpt-4o", "gpt-4o (your deployment name)", 2.50, 10.00),
+            ),
+        ),
+        Provider(
+            id="mistralai",
+            label="Mistral",
+            package="langchain-mistralai==1.1.6",
+            import_hint="langchain_mistralai",
+            key_env="MISTRAL_API_KEY",
+            key_label="Mistral API key",
+            key_url="https://console.mistral.ai/api-keys",
+            extra="providers",
+            models=(
+                _m("mistral-small-latest", "Mistral Small (fast, cheap)", 0.10, 0.30),
+                _m("mistral-large-latest", "Mistral Large", 2.00, 6.00),
+            ),
+        ),
+        Provider(
+            id="groq",
+            label="Groq",
+            package="langchain-groq==1.1.3",
+            import_hint="langchain_groq",
+            key_env="GROQ_API_KEY",
+            key_label="Groq API key",
+            key_url="https://console.groq.com/keys",
+            extra="providers",
+            models=(
+                _m("llama-3.3-70b-versatile", "Llama 3.3 70B", 0.59, 0.79),
+                _m("llama-3.1-8b-instant", "Llama 3.1 8B (fast)", 0.05, 0.08),
+                _m("openai/gpt-oss-120b", "GPT-OSS 120B", 0.15, 0.75),
+            ),
+        ),
+        Provider(
+            id="together",
+            label="Together AI",
+            package="langchain-together==0.4.0",
+            import_hint="langchain_together",
+            key_env="TOGETHER_API_KEY",
+            key_label="Together API key",
+            key_url="https://api.together.ai/settings/api-keys",
+            extra="providers",
+            models=(
+                _m("meta-llama/Llama-3.3-70B-Instruct-Turbo", "Llama 3.3 70B Turbo", 0.88, 0.88),
+                _m("deepseek-ai/DeepSeek-V3", "DeepSeek V3", 1.25, 1.25),
+            ),
+        ),
+        Provider(
+            id="fireworks",
+            label="Fireworks AI",
+            package="langchain-fireworks==1.7.0",
+            import_hint="langchain_fireworks",
+            key_env="FIREWORKS_API_KEY",
+            key_label="Fireworks API key",
+            key_url="https://fireworks.ai/account/api-keys",
+            extra="providers",
+            models=(
+                _m(
+                    "accounts/fireworks/models/llama-v3p3-70b-instruct", "Llama 3.3 70B", 0.90, 0.90
+                ),
+            ),
+        ),
+        Provider(
+            id="openrouter",
+            label="OpenRouter",
+            package="langchain-openrouter==0.2.9",
+            import_hint="langchain_openrouter",
+            key_env="OPENROUTER_API_KEY",
+            key_label="OpenRouter API key",
+            key_url="https://openrouter.ai/keys",
+            extra="providers",
+            models=(
+                _m("openai/gpt-4o-mini", "GPT-4o mini via OpenRouter"),
+                _m("anthropic/claude-haiku-4.5", "Claude Haiku 4.5 via OpenRouter"),
+                _m("meta-llama/llama-3.3-70b-instruct", "Llama 3.3 70B via OpenRouter"),
+            ),
+        ),
+        Provider(
+            id="deepseek",
+            label="DeepSeek",
+            package="langchain-deepseek==1.1.1",
+            import_hint="langchain_deepseek",
+            key_env="DEEPSEEK_API_KEY",
+            key_label="DeepSeek API key",
+            key_url="https://platform.deepseek.com/api_keys",
+            extra="providers",
+            models=(
+                _m("deepseek-chat", "DeepSeek Chat", 0.27, 1.10),
+                _m("deepseek-reasoner", "DeepSeek Reasoner", 0.55, 2.19),
+            ),
+        ),
+        Provider(
+            id="xai",
+            label="xAI",
+            package="langchain-xai==1.3.0",
+            import_hint="langchain_xai",
+            key_env="XAI_API_KEY",
+            key_label="xAI API key",
+            key_url="https://console.x.ai/",
+            extra="providers",
+            models=(
+                _m("grok-3-mini", "Grok 3 Mini (fast, cheap)", 0.30, 0.50),
+                _m("grok-4", "Grok 4", 3.00, 15.00),
+            ),
+        ),
     ]
 }
+
+
+@dataclass(frozen=True)
+class EmbeddingModel:
+    id: str  # provider:model, as init_embeddings takes it ("keywords" needs no model)
+    label: str
+    dims: int
+    provider: str | None = None
+    per_m: float | None = None
+
+
+EMBEDDING_MODELS: dict[str, EmbeddingModel] = {
+    m.id: m
+    for m in [
+        EmbeddingModel("keywords", "Keywords (no model or key; for trying things out)", 256),
+        EmbeddingModel(
+            "openai:text-embedding-3-small", "OpenAI text-embedding-3-small", 1536, "openai", 0.02
+        ),
+        EmbeddingModel(
+            "openai:text-embedding-3-large", "OpenAI text-embedding-3-large", 3072, "openai", 0.13
+        ),
+        EmbeddingModel(
+            "ollama:nomic-embed-text", "Ollama nomic-embed-text (local)", 768, "ollama", 0
+        ),
+        EmbeddingModel(
+            "ollama:mxbai-embed-large", "Ollama mxbai-embed-large (local)", 1024, "ollama", 0
+        ),
+        EmbeddingModel(
+            "google_genai:models/gemini-embedding-001",
+            "Google Gemini embedding",
+            3072,
+            "google_genai",
+        ),
+        EmbeddingModel("mistralai:mistral-embed", "Mistral embed", 1024, "mistralai", 0.10),
+        EmbeddingModel(
+            "bedrock:amazon.titan-embed-text-v2:0",
+            "Amazon Titan embeddings v2",
+            1024,
+            "bedrock_converse",
+        ),
+        EmbeddingModel(
+            "azure_openai:text-embedding-3-small",
+            "Azure OpenAI text-embedding-3-small (your deployment)",
+            1536,
+            "azure_openai",
+        ),
+    ]
+}
+
+
+def default_embedding_model() -> str:
+    """OpenAI when its key is set, Ollama when it is running locally, else keywords."""
+    import os
+
+    if os.environ.get("OPENAI_API_KEY"):
+        return "openai:text-embedding-3-small"
+    if os.environ.get("OLLAMA_HOST"):
+        return "ollama:nomic-embed-text"
+    return "keywords"
 
 
 def split_model(model: str) -> tuple[str | None, str]:

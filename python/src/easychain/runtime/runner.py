@@ -215,6 +215,8 @@ class RunOptions:
     # For "continue": when nothing is left to run, finish with the Flow Data as it is
     # (a worker recovering a run that ended just before it crashed).
     finish_if_done: bool = False
+    # Scripted turns for the stand-in AI (Test Sets); a Script shared across resumes.
+    script: Any = None
 
 
 def _now() -> float:
@@ -474,7 +476,7 @@ async def stream_run(
         except BaseException as exc:  # handed to the consumer below
             await queue.put(("error", exc))
 
-    token = use_settings(RunSettings(stand_in=opts.stand_in))
+    token = use_settings(RunSettings(stand_in=opts.stand_in, script=opts.script))
     producer = asyncio.create_task(produce())
     stop_wait = asyncio.create_task(opts.cancel.wait()) if opts.cancel else None
     cancelled = False

@@ -1,8 +1,8 @@
 """Load compiled flow source as a Python module.
 
 The runtime executes exactly the code the compiler produced (the same code an
-export contains). The only change is that the module's ``init_chat_model``
-name is pointed at the model gateway.
+export contains). The only change is that the module's ``init_chat_model`` and
+``init_embeddings`` names are pointed at the model gateway.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import types
 from collections import OrderedDict
 from typing import Any
 
-from .gateway import gateway_init_chat_model
+from .gateway import gateway_init_chat_model, gateway_init_embeddings
 from .resources import Resources, memory_resources
 
 _CACHE_SIZE = 64
@@ -36,6 +36,8 @@ def load_module(source: str, name: str = "easychain_flow") -> types.ModuleType:
         raise
     if "init_chat_model" in module.__dict__:
         module.__dict__["init_chat_model"] = gateway_init_chat_model
+    if "init_embeddings" in module.__dict__:
+        module.__dict__["init_embeddings"] = gateway_init_embeddings
     return module
 
 

@@ -146,7 +146,34 @@ def test_gateway_modes(monkeypatch):
     assert (
         gateway_init_chat_model("anthropic:claude-haiku-4-5").__class__.__name__ == "ChatAnthropic"
     )
-    assert key_status() == {"openai": False, "anthropic": True, "ollama": True}
+    status = key_status()
+    assert (status["openai"], status["anthropic"], status["ollama"]) == (False, True, True)
+    # Cloud-credential providers (no API key) count as set; key providers follow the env.
+    assert status["bedrock_converse"] is True and status["groq"] is False
+
+
+def test_gateway_missing_package_and_embeddings(monkeypatch):
+    from easychain.knowledge.embeddings import KeywordEmbeddings
+    from easychain.providers import PROVIDERS
+    from easychain.runtime.errors import explain
+    from easychain.runtime.gateway import MissingPackage, gateway_init_embeddings
+
+    monkeypatch.setattr(type(PROVIDERS["groq"]), "installed", lambda self: self.id != "groq")
+    monkeypatch.setenv("GROQ_API_KEY", "x")
+    with pytest.raises(MissingPackage) as info:
+        gateway_init_chat_model("groq:llama-3.1-8b-instant")
+    explained = explain(info.value)
+    assert explained["kind"] == "missing_package"
+    assert "easychain[providers]" in explained["hint"]
+
+    embedder = gateway_init_embeddings("keywords")
+    assert isinstance(embedder, KeywordEmbeddings)
+    near = embedder.embed_query("reset my password")
+    doc, other = embedder.embed_documents(["How to reset a password", "Invoices are monthly"])
+    dot = lambda a, b: sum(x * y for x, y in zip(a, b, strict=True))  # noqa: E731
+    assert dot(near, doc) > dot(near, other)
+    with pytest.raises(MissingAPIKey):
+        gateway_init_embeddings("openai:text-embedding-3-small")
 
 
 def test_loader_caches_and_swaps_init_chat_model():

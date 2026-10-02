@@ -1,9 +1,11 @@
 """A tiny OpenAI-compatible server for tests and offline demos.
 
-It speaks enough of ``/v1/chat/completions`` (streaming and not) for
-``langchain-openai`` to work unchanged, and serves sample web pages under
-``/pages/<name>``. Point ``OPENAI_BASE_URL`` at it and set any ``OPENAI_API_KEY``
-(the key ``sk-bad`` is rejected, to test error handling).
+It speaks enough of ``/v1/chat/completions`` (streaming and not, with tool calls
+and JSON-schema replies) and ``/v1/embeddings`` for ``langchain-openai`` to work
+unchanged, and serves sample web pages under ``/pages/<name>``. Point
+``OPENAI_BASE_URL`` at it and set any ``OPENAI_API_KEY`` (the key ``sk-bad`` is
+rejected, to test error handling). Replies come from the stand-in AI;
+``POST /__script`` with a list of turns scripts them (see ``standin.Script``).
 
     python -m easychain.testing.fake_openai --port 8765
 """
@@ -18,9 +20,10 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
-from ..runtime.standin import stand_in_reply
+from ..knowledge.embeddings import KeywordEmbeddings
+from ..runtime.standin import Script, fill_arguments, stand_in_reply, stand_in_turn
 
 PAGES = {
     "langchain": """<!doctype html><html><head><title>LangChain</title>
@@ -104,12 +107,15 @@ PAGES.update(
 )
 
 requests_log: list[dict[str, Any]] = []
+# Scripted turns for the next requests (POST /__script).
+script = Script()
 # Side effects received at /effects: every attempt, and the ones that took effect.
 effects: dict[str, list[dict[str, Any]]] = {"calls": [], "applied": []}
 
 
 def _to_messages(raw: list[dict[str, Any]]) -> list[Any]:
-    out = []
+    out: list[Any] = []
+    names: dict[str, str] = {}
     for m in raw:
         content = m.get("content") or ""
         if isinstance(content, list):
@@ -118,15 +124,69 @@ def _to_messages(raw: list[dict[str, Any]]) -> list[Any]:
         if role == "system" or role == "developer":
             out.append(SystemMessage(content))
         elif role == "assistant":
-            out.append(AIMessage(content))
+            calls = []
+            for call in m.get("tool_calls") or []:
+                fn = call.get("function") or {}
+                names[call.get("id", "")] = fn.get("name", "")
+                try:
+                    args = json.loads(fn.get("arguments") or "{}")
+                except json.JSONDecodeError:
+                    args = {}
+                calls.append({"name": fn.get("name", ""), "args": args, "id": call.get("id")})
+            out.append(AIMessage(content, tool_calls=calls))
+        elif role == "tool":
+            call_id = m.get("tool_call_id", "")
+            out.append(ToolMessage(content, tool_call_id=call_id, name=names.get(call_id)))
         else:
             out.append(HumanMessage(content))
     return out
 
 
+def _relabel(text: str, model: str) -> str:
+    return text.replace("[Stand-in AI: add an API key for real answers]", f"[fake {model}]")
+
+
 def fake_reply(raw_messages: list[dict[str, Any]], model: str) -> str:
-    reply = stand_in_reply(_to_messages(raw_messages))
-    return reply.replace("[Stand-in AI: add an API key for real answers]", f"[fake {model}]")
+    return _relabel(stand_in_reply(_to_messages(raw_messages)), model)
+
+
+def fake_message(body: dict[str, Any]) -> dict[str, Any]:
+    """The assistant message for a chat completion request: text, tool calls or JSON."""
+    model = body.get("model", "gpt-4o-mini")
+    messages = _to_messages(body.get("messages", []))
+    tools = body.get("tools") or None
+    fmt = body.get("response_format") or {}
+    if fmt.get("type") == "json_schema":
+        schema = (fmt.get("json_schema") or {}).get("schema") or {}
+        humans = [m.text for m in messages if m.type == "human"]
+        answer = _relabel(stand_in_reply(messages), model)
+        args = fill_arguments(schema, humans[-1] if humans else "", answer=answer, final=True)
+        return {"role": "assistant", "content": json.dumps(args)}
+    if not tools and not script:
+        return {"role": "assistant", "content": fake_reply(body.get("messages", []), model)}
+    reply = stand_in_turn(messages, tools, body.get("tool_choice"), script)
+    if reply.tool_calls:
+        return {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": call["id"],
+                    "type": "function",
+                    "function": {
+                        "name": call["name"],
+                        "arguments": json.dumps(
+                            {
+                                k: _relabel(v, model) if isinstance(v, str) else v
+                                for k, v in call["args"].items()
+                            }
+                        ),
+                    },
+                }
+                for call in reply.tool_calls
+            ],
+        }
+    return {"role": "assistant", "content": _relabel(reply.text, model)}
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -161,6 +221,13 @@ class _Handler(BaseHTTPRequestHandler):
         if self.path.startswith("/effects"):
             self._effect(body)
             return
+        if self.path.startswith("/__script"):
+            script.turns[:] = list(body if isinstance(body, list) else body.get("turns", []))
+            self._send(200, b'{"ok": true}')
+            return
+        if self.path.rstrip("/").endswith("/embeddings"):
+            self._embeddings(body)
+            return
         if not self.path.rstrip("/").endswith("/chat/completions"):
             self._send(404, b'{"error": {"message": "not found"}}')
             return
@@ -176,7 +243,9 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(401, json.dumps(err).encode())
             return
         model = body.get("model", "gpt-4o-mini")
-        reply = fake_reply(body.get("messages", []), model)
+        message = fake_message(body)
+        reply = message.get("content") or json.dumps(message.get("tool_calls"))
+        finish_reason = "tool_calls" if message.get("tool_calls") else "stop"
         prompt_tokens = (
             sum(len(str(m.get("content", ""))) for m in body.get("messages", [])) // 4 + 1
         )
@@ -189,13 +258,7 @@ class _Handler(BaseHTTPRequestHandler):
                 "object": "chat.completion",
                 "created": created,
                 "model": model,
-                "choices": [
-                    {
-                        "index": 0,
-                        "message": {"role": "assistant", "content": reply},
-                        "finish_reason": "stop",
-                    }
-                ],
+                "choices": [{"index": 0, "message": message, "finish_reason": finish_reason}],
                 "usage": usage,
             }
             self._send(200, json.dumps(payload).encode())
@@ -224,14 +287,37 @@ class _Handler(BaseHTTPRequestHandler):
             self.wfile.flush()
 
         chunk({"role": "assistant", "content": ""})
-        for piece in re.findall(r"\S+\s*|\s+", reply):
-            chunk({"content": piece})
-        chunk({}, "stop")
+        if message.get("tool_calls"):
+            calls = [{**call, "index": i} for i, call in enumerate(message["tool_calls"])]
+            chunk({"tool_calls": calls})
+        else:
+            for piece in re.findall(r"\S+\s*|\s+", reply):
+                chunk({"content": piece})
+        chunk({}, finish_reason)
         # Real OpenAI only sends usage when asked; sending it always lets tests check costs.
         chunk(None, extra={"usage": usage})  # type: ignore[arg-type]
         self.wfile.write(b"data: [DONE]\n\n")
         self.wfile.flush()
         self.close_connection = True
+
+    def _embeddings(self, body: dict[str, Any]) -> None:
+        """Keyword embeddings (see knowledge.embeddings), so search works offline."""
+        texts = body.get("input") or []
+        if isinstance(texts, str):
+            texts = [texts]
+        embedder = KeywordEmbeddings(int(body.get("dimensions") or 256))
+        data = [
+            {"object": "embedding", "index": i, "embedding": embedder.embed_query(str(text))}
+            for i, text in enumerate(texts)
+        ]
+        tokens = sum(len(str(t)) // 4 + 1 for t in texts)
+        payload = {
+            "object": "list",
+            "data": data,
+            "model": body.get("model", "text-embedding-3-small"),
+            "usage": {"prompt_tokens": tokens, "total_tokens": tokens},
+        }
+        self._send(200, json.dumps(payload).encode())
 
     def _effect(self, body: Any) -> None:
         """A side effect (like sending an email) that honours Idempotency-Key, as Stripe does.
@@ -276,6 +362,7 @@ class FakeOpenAI:
 
     def __enter__(self) -> FakeOpenAI:
         requests_log.clear()
+        script.turns.clear()
         effects["calls"].clear()
         effects["applied"].clear()
         self.thread.start()

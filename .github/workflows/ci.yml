@@ -37,7 +37,7 @@ jobs:
         with:
           version: "0.8.17"
           python-version: "3.12"
-      - run: uv sync --frozen
+      - run: uv sync --frozen --extra providers
       - name: Lint
         run: |
           uv run ruff check src tests
@@ -81,7 +81,7 @@ jobs:
         with:
           version: "0.8.17"
           python-version: "3.12"
-      - run: uv sync --frozen
+      - run: uv sync --frozen --extra providers
         working-directory: python
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4

@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 import httpx
 
 from ..providers import PROVIDERS, split_model
-from .gateway import MissingAPIKey
+from .gateway import MissingAPIKey, MissingPackage
 
 
 def _host(url: Any) -> str:
@@ -53,6 +53,17 @@ def explain(exc: BaseException, step: Any = None) -> dict[str, Any]:
                 },
                 {"kind": "use_stand_in", "label": "Try with the stand-in AI", "params": {}},
             ],
+        )
+        return out
+
+    if isinstance(exc, MissingPackage):
+        install = (
+            f"pip install 'easychain[{exc.extra}]'" if exc.extra else f"pip install {exc.package}"
+        )
+        out.update(
+            kind="missing_package",
+            message=f"{exc.label} isn't installed on this server.",
+            hint=f"Install it with `{install}` (the Docker image already has it), then try again.",
         )
         return out
 

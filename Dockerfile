@@ -18,10 +18,10 @@ RUN pip install --no-cache-dir uv==0.8.17
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/opt/venv PATH=/opt/venv/bin:$PATH
 WORKDIR /app/python
 COPY python/pyproject.toml python/uv.lock python/README.md ./
-RUN uv sync --frozen --no-dev --no-install-project
+RUN uv sync --frozen --no-dev --no-install-project --extra providers
 COPY python/src ./src
 COPY --from=web /src/apps/web/dist ./src/easychain/server/static
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev --extra providers
 
 ENV EASYCHAIN_HOME=/data \
     EASYCHAIN_HOST=0.0.0.0 \

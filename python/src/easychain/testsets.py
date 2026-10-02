@@ -18,6 +18,13 @@ trajectory checks, Test Runs and baselines). File format::
           - {action: approve, comment: "Fine"}
         expect:
           output.decision: Approved
+      - name: The analyst runs a query
+        inputs: {question: "How many customers are in Germany?"}
+        script:                          # the stand-in AI's turns (ignored by real models)
+          - {call: run_query, args: {sql: "SELECT COUNT(*) FROM customers WHERE country = 'Germany'"}}
+          - {answer: {answer: "There are 3 customers in Germany."}}
+        expect:
+          tools: [run_query]             # tools the agent called
 """
 
 from __future__ import annotations
@@ -32,6 +39,7 @@ from typing import Any
 import yaml
 
 from .runtime import RunOptions, run_flow
+from .runtime.standin import Script
 from .spec import FlowSpec, load_spec
 
 CHECKS = (
@@ -116,6 +124,9 @@ def check_value(value: Any, rules: Any) -> list[str]:
 async def run_case(spec: FlowSpec, case: dict[str, Any], stand_in: bool) -> CaseResult:
     name = case.get("name") or "case"
     options = RunOptions(stand_in=stand_in, thread_id=case.get("thread") or uuid.uuid4().hex)
+    if stand_in and case.get("script"):
+        # What the stand-in AI says, turn by turn (a real model ignores this).
+        options.script = Script(case["script"])
     final, events = await run_flow(spec, case.get("inputs") or {}, options)
     failures: list[str] = []
     # Answers for Ask a Human steps, in the order the run asks.

@@ -51,7 +51,14 @@ def test_health_and_catalog(client):
     assert ai["label"] == "AI Model" and ai["technical"].startswith("Chat model")
     assert ai["defaults"]["model"] == "openai:gpt-4o-mini"
     assert any(f["key"] == "temperature" and f["advanced"] for f in ai["form"])
-    assert {p["id"] for p in catalog["providers"]} == {"openai", "anthropic", "ollama"}
+    providers = {p["id"]: p for p in catalog["providers"]}
+    assert {"openai", "anthropic", "ollama", "google_genai", "bedrock_converse", "groq"} <= set(
+        providers
+    )
+    assert providers["azure_openai"]["settings"][0]["env"] == "AZURE_OPENAI_ENDPOINT"
+    assert providers["bedrock_converse"]["credentials"].startswith("AWS credentials")
+    assert providers["groq"]["install"] == "pip install 'easychain[providers]'"
+    assert catalog["embedding_models"][0]["id"] == "keywords"
     assert client.get("/api/schema").json()["title"] == "Easy Chain flow"
 
 

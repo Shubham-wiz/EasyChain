@@ -36,7 +36,7 @@ from ..compiler import CompileError, FlowAnalysis, compile_flow, validate
 from ..compiler.issues import Fix, warning
 from ..compiler.templates import secrets as template_secrets
 from ..export import export_zip
-from ..providers import PROVIDERS, split_model
+from ..providers import EMBEDDING_MODELS, PROVIDERS, split_model
 from ..runtime import key_status
 from ..runtime.resources import open_resources
 from ..spec import FlowSpec, SpecError, loads_spec, parse_spec, spec_json
@@ -236,6 +236,13 @@ def create_app(
                 "key_url": p.key_url,
                 "key_set": status[p.id],
                 "key_source": vault.source(p.key_env) if p.key_env else None,
+                "installed": p.installed(),
+                "install": (f"pip install 'easychain[{p.extra}]'" if p.extra else None),
+                "credentials": p.credentials,
+                "settings": [
+                    {"env": env, "label": label, "set": bool(os.environ.get(env))}
+                    for env, label in p.settings_env
+                ],
                 "models": [
                     {
                         "id": f"{p.id}:{m.id}",
@@ -254,6 +261,10 @@ def create_app(
         return {
             **step_catalog(),
             "providers": providers_payload(),
+            "embedding_models": [
+                {"id": m.id, "label": m.label, "dims": m.dims, "provider": m.provider}
+                for m in EMBEDDING_MODELS.values()
+            ],
             "spec_version": SPEC_VERSION,
             "field_types": [
                 "text",

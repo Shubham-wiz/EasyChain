@@ -15,7 +15,7 @@ help:
 	@echo "make docker    docker compose up --build (Postgres + API + worker)"
 
 install:
-	cd python && uv sync
+	cd python && uv sync --extra providers
 	pnpm install
 
 dev:
