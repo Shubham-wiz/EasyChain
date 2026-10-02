@@ -17,6 +17,20 @@ whenever something takes more than a few minutes to understand.
 | Sub-flow emitted class names clashed in one module | Child Input/Output classes were named independently | Claim names through `module.names` in codegen |
 | A recursion error surfaced as a stack trace | `GraphRecursionError` wasn't mapped | Mapped to the error kind `too_many_steps`, with a message pointing at "Most rounds of steps" |
 
+## Agents, Knowledge Bases and integrations (Phase 3)
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `UnboundLocalError: mcp_tools` in a generated agent | A local variable shadowed the `mcp_tools` helper | The local is `server_tools`. Generated names go in `Names.RESERVED` (`compiler/pycode.py`). |
+| A step id like `text` or `tool` breaks generated code | Step ids become function names and shadow imports | Search helpers use `sa.`/`np.` prefixes, and new helper and import names are reserved |
+| An agent's structured answer is missing (`None`) | A limit add-on ended the agent before it answered | Generated code raises "The agent stopped before it answered: …" |
+| An agent stopped with "25 rounds" | Each model call, tool call and add-on is a LangGraph step | The agent's own `max_steps` (default 100) applies to its `invoke`; the error names the agent |
+| OpenAI embeddings fail offline | `OpenAIEmbeddings` counts tokens with tiktoken, which downloads its tables | Easy Chain passes `check_embedding_ctx_length=False` (chunks are small) |
+| An off-topic question still "found" passages | Meaning search always returns the nearest chunks, and common words match everything | `min_similarity` drops weak meaning-only matches; full-text search ignores common words |
+| Duplicate dict key in generated code | A spread field had the same name as `save_as` | Check `schema_field_is_save_as`, with a fix |
+| Code steps importing `AIMessage` were refused | New names were reserved for generated code | Importing the same object is allowed (`_SAFE_IMPORTS` in `steps/actions.py`) |
+| YAML Test Set failed to parse | `?` or `:` inside a flow mapping (`{content: How?}`) | Quote chat texts in Test Sets |
+
 ## Database, queue and workers
 
 | Symptom | Cause | Fix |

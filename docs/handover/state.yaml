@@ -29,7 +29,11 @@ phases:
     name: Agents and knowledge
     state: in_progress
     done_when: "The Support bot over docs and SQL analyst templates pass their Test Sets"
+    done_when_met: true   # offline, stand-in AI; support-bot 12/12, sql-analyst 10/10
     plan: docs/phases/phase-2.md#phase-3-plan-agents-and-knowledge
+    backend: done
+    web_ui: next
+    docs_and_report: after the web UI
   - id: 4
     name: Autopilot and teams
     state: not_started
@@ -44,7 +48,8 @@ decisions: docs/handover/decisions.md
 open_questions: []
 
 tests:
-  python: {passed: 259, compiler_coverage: 0.94, floor: 0.90}
+  python: {passed: 317, floor: 0.90, measured_at: phase 3 backend}
+  python_end_of_phase_2: {passed: 259, compiler_coverage: 0.94}
   web_unit: {passed: 19}
   client: {passed: 4}
   e2e: {passed: 23, skipped: 1}

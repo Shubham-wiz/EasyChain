@@ -11,6 +11,12 @@ asked again.
 | 3.1 | Default vector store | **pgvector** in the Phase 2 Postgres; a built-in local index for SQLite installs; Qdrant/Chroma adapters later | owner said "continue" to the recommendation |
 | 3.2 | Default embeddings | OpenAI `text-embedding-3-small` when an OpenAI key is set, otherwise a local model through Ollama; tests use a deterministic offline embedder | owner said "continue" to the recommendation |
 | 3.3 | MCP servers over stdio (they start local processes) | Allowed only in **Pro mode**, and only commands on an allow-list approved in Settings; streamable-HTTP MCP servers are allowed normally | owner said "continue" to the recommendation |
+| 3.4 | How agents get tools | Other steps on the canvas are an Agent's tools (`settings.tools` lists their ids). Each becomes a `@tool` that runs the step's own function. Its arguments are the fields the step reads that Flow Data doesn't have when the agent runs. | build: reuses every step type as a tool, with no second implementation |
+| 3.5 | Agent Add-ons | LangChain's own middleware classes, emitted into the code | build: exported code stays plain LangChain |
+| 3.6 | Tool approval in the Inbox | HumanInTheLoopMiddleware interrupts are shown as kind `approve_tool`; Inbox answers become its decisions | build: one Inbox for Ask a Human and agents |
+| 3.7 | Knowledge Base storage | Easy Chain's own tables (`kb_bases`, `kb_documents`, `kb_chunks`) in its database, not a LangChain vector store class. Search is one function, copied into exported code. | build: one design for SQLite and Postgres, hybrid search and citations, and exported code that searches the same data |
+| 3.8 | Test Sets without a key | The stand-in AI answers from cited passages by itself; agent cases may script the model's tool calls (`script:`), while tool results, limits and approvals are real | build: CI has no keys; a real model ignores scripts |
+| 3.9 | SQL safety | Read-only queries run in a read-only transaction (SQLite `query_only`, Postgres `READ ONLY`), plus a statement check | build |
 
 ## Phase 2
 

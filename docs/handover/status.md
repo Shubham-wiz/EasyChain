@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-10-02._
+_Last updated: 2026-10-02 (Phase 3 in progress)._
 
 ## In one paragraph
 
@@ -34,7 +34,12 @@ made them, until access is granted and the branch is pushed.
 | `ea99268` | Phase 2 durability: run database, job queue, workers, Inbox, triggers and notifications |
 | `2904329` | Phase 2 web app: Ask a Human, Inbox, Save Points, breakpoints, triggers, Flow Data panel |
 | `a176712` | Phase 2 packaging, docs and report: client package, Compose with Postgres and workers |
-| (this) | Handover pack: AGENTS.md, CLAUDE.md, docs/handover |
+| `48afafb` | Handover pack: AGENTS.md, CLAUDE.md, docs/handover |
+| `09c1d47` | Phase 3 groundwork: stand-in tool calling, offline embeddings, more providers |
+| `16f9dda` | Agent step and structured replies |
+| `06608d2` | Knowledge Bases: ingestion, hybrid search, citations, search step |
+| `513e665` | Memory, Database query, MCP tools and OpenAPI import |
+| `09faba5` | Support bot over docs and SQL analyst templates, with passing Test Sets |
 
 `git log --oneline` is the authoritative list. This table is updated as phases land.
 
@@ -49,22 +54,40 @@ made them, until access is granted and the branch is pushed.
 | Lint | ruff check + format clean; tsc clean for web and client; JSON Schema up to date |
 | Durability | Worker SIGKILL takeover and day-later approval: passed 18 repeated runs on SQLite and Postgres |
 
+## Phase 3 progress
+
+The "Done when" is met offline: the **Support bot over docs** template passes its Test Set
+(12/12) and the **SQL analyst** passes its own (10/10), with the stand-in AI and no API key. In
+the SQL analyst set, only the SQL a model would write is scripted. Every template's Test Set runs
+in `tests/test_templates.py`. 317 Python tests pass.
+
+| Piece | State | Where |
+|---|---|---|
+| Stand-in AI calls tools, fills structured answers, answers from cited passages; scripted turns for Test Sets | Done | `runtime/standin.py` |
+| Fake OpenAI server: tool calls, JSON replies, embeddings, scripts | Done | `testing/fake_openai.py` |
+| Providers: Gemini, Vertex AI, Bedrock, Azure OpenAI, Mistral, Groq, Together, Fireworks, OpenRouter, DeepSeek, xAI (pip extras) | Done | `providers.py`, `runtime/gateway.py` |
+| Structured replies (AI Model and Agent): typed fields, choices, lists, nested objects, retries, spread into Flow Data | Done | `compiler/schema_code.py` |
+| Agent step (`create_agent`), steps as tools, 13 add-ons as middleware, tool approval in the Inbox, tool-call trace | Done | `steps/agent.py`, `runtime/runner.py` |
+| Knowledge Bases: PDF, Word, HTML, Markdown, CSV and text; chunk preview; pgvector or SQLite; hybrid search; re-ranking; citations; search step; API | Done | `knowledge/`, `steps/knowledge.py`, `server/knowledge_api.py` |
+| Memory step (remember, recall, trim, summarise) and the agent memory add-on | Done | `knowledge/memory.py`, `steps/memory.py` |
+| Database query step (read-only by transaction; schema mode for agents) | Done | `integrations/sql.py`, `steps/sql.py` |
+| MCP: servers in Settings (stdio only from an approved list), agent MCP tools, MCP tool step | Done | `integrations/mcp.py`, `steps/mcp.py`, `server/integrations_api.py` |
+| OpenAPI import into typed Web request steps | Done | `integrations/openapi.py` |
+| Templates: Support bot over docs, SQL analyst, with sample data | Done | `templates/` |
+| **Web UI** for all of the above | **Next** | `apps/web` |
+| Docs, Phase 3 report, e2e tests | After the UI | `docs/` |
+
 ## Next
 
-Phase 3, following the plan in [phase-2.md](../phases/phase-2.md#phase-3-plan-agents-and-knowledge):
-
-1. Agent step on LangChain `create_agent`, with tools from other steps and Agent Add-ons
-   (middleware toggles).
-2. Structured output builder.
-3. Knowledge Base: upload and chunk, embeddings, pgvector or a local index, hybrid search,
-   citations.
-4. MCP client and OpenAPI import.
-5. Memory (short- and long-term).
-6. More providers.
-7. Templates: **Support bot over docs** and **SQL analyst**, with 10-case Test Sets. Passing
-   them is the "Done when".
-
-The Phase 3 sections below are updated as work lands.
+1. The web app for Phase 3:
+   - Agent inspector, with tool connections drawn on the canvas, Add-ons and tool calls in the trace.
+   - Structured output builder.
+   - Knowledge page: bases, uploads, chunk preview, search.
+   - Memory, Database query and MCP tool forms.
+   - MCP servers in Settings, the OpenAPI import dialog, the new providers in the model picker.
+   - Citations in the run panel.
+2. Playwright journeys for the new screens, with axe scans.
+3. Docs: step pages, Knowledge Bases, agents, MCP and OpenAPI. Then the Phase 3 report.
 
 ## Blocked
 
