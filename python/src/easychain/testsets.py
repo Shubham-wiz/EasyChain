@@ -18,6 +18,12 @@ trajectory checks, Test Runs and baselines). File format::
           - {action: approve, comment: "Fine"}
         expect:
           output.decision: Approved
+      - name: A follow-up question in the same chat
+        turns:                           # several messages in one conversation
+          - {messages: [{role: user, content: "How do I reset my password?"}]}
+          - {messages: [{role: user, content: "And how long does the link work?"}]}
+        expect:
+          output.messages.-1.content: {contains: "one hour"}
       - name: The analyst runs a query
         inputs: {question: "How many customers are in Germany?"}
         script:                          # the stand-in AI's turns (ignored by real models)
@@ -127,17 +133,24 @@ async def run_case(spec: FlowSpec, case: dict[str, Any], stand_in: bool) -> Case
     if stand_in and case.get("script"):
         # What the stand-in AI says, turn by turn (a real model ignores this).
         options.script = Script(case["script"])
-    final, events = await run_flow(spec, case.get("inputs") or {}, options)
     failures: list[str] = []
     # Answers for Ask a Human steps, in the order the run asks.
     answers = list(case.get("answers") or [])
-    while final.get("status") == "paused" and final.get("reason") == "ask_human" and answers:
-        waiting = final.get("interrupts") or []
-        answer = answers.pop(0)
-        resume = {waiting[0]["id"]: answer} if len(waiting) == 1 else answer
-        options.action, options.resume = "resume", resume
-        final, more = await run_flow(spec, None, options)
+    # A chat case can have several turns in one conversation; checks apply to the last.
+    turns = case.get("turns") or [case.get("inputs") or {}]
+    events: list[dict[str, Any]] = []
+    final: dict[str, Any] = {}
+    for turn in turns:
+        options.action, options.resume = "start", None
+        final, more = await run_flow(spec, turn, options)
         events += more
+        while final.get("status") == "paused" and final.get("reason") == "ask_human" and answers:
+            waiting = final.get("interrupts") or []
+            answer = answers.pop(0)
+            resume = {waiting[0]["id"]: answer} if len(waiting) == 1 else answer
+            options.action, options.resume = "resume", resume
+            final, more = await run_flow(spec, None, options)
+            events += more
     expect = dict(case.get("expect") or {})
     expected_status = expect.pop("status", "ok")
     if final.get("status") != expected_status:
@@ -155,6 +168,14 @@ async def run_case(spec: FlowSpec, case: dict[str, Any], stand_in: bool) -> Case
         for tool in expect.pop("tools"):
             if tool not in called:
                 failures.append(f"tools: expected the agent to call {tool!r} (called {called})")
+    if "tool_calls" in expect:
+        count = len([e for e in events if e["type"] == "tool_started"])
+        rule = expect.pop("tool_calls")
+        limit = rule.get("max") if isinstance(rule, dict) else None
+        if limit is not None and count > int(limit):
+            failures.append(f"tool_calls: expected at most {limit}, got {count}")
+        elif not isinstance(rule, dict) and count != int(rule):
+            failures.append(f"tool_calls: expected {rule}, got {count}")
     if "not_tools" in expect:
         called = [e["tool"] for e in events if e["type"] == "tool_started"]
         for tool in expect.pop("not_tools"):
@@ -180,5 +201,12 @@ async def run_test_set(
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     data = _substitute(data, variables or {})
     spec = load_spec(path.parent / data["flow"])
+    if any(
+        st.type == "knowledge_search" and st.settings.knowledge_base == "help_centre"
+        for st in spec.steps
+    ):
+        from .templates.samples import ensure_sample_knowledge
+
+        ensure_sample_knowledge()
     stand_in = stand_in or bool(data.get("stand_in"))
     return [await run_case(spec, case, stand_in) for case in data.get("cases", [])]

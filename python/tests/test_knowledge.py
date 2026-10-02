@@ -268,7 +268,8 @@ def test_knowledge_api(client, fake_server):
     assert chunks[0]["position"] == 0 and chunks[0]["title"] == "Help centre"
 
     listed = client.get("/api/knowledge").json()
-    assert {b["id"] for b in listed} == {"product_docs", "product_docs_2"}
+    # The help centre the Support bot template uses is there from the start.
+    assert {b["id"] for b in listed} == {"product_docs", "product_docs_2", "help_centre"}
     assert next(b for b in listed if b["id"] == "product_docs")["documents"] == 4
 
     preview = client.post(

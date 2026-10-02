@@ -1,0 +1,88 @@
+version: 1
+name: SQL analyst
+description: Answers questions about the shop's sales by writing and running read-only SQL, and
+  emails a report once a person approves it.
+data:
+- name: sql
+  description: One SQLite SELECT statement.
+- name: report
+  description: The report to send, in a few lines.
+steps:
+- id: input
+  type: input
+  name: Question
+  settings:
+    fields:
+    - name: question
+      example: Which product category brings in the most money?
+    - name: report_url
+      required: false
+      default: https://hooks.example.com/reports
+      description: Where emailed reports go (a webhook).
+- id: analyst
+  type: agent
+  name: Analyst
+  settings:
+    instructions: |-
+      You are a careful data analyst for Bean & Leaf, an online shop selling coffee, tea and
+      kitchen goods.
+      1. Call describe_tables to see the tables.
+      2. Write one SQLite SELECT query and run it with run_query. If it fails, fix it and try again.
+      3. Answer only from the query results. Never make numbers up.
+      Only when the user asks for it, send the answer with email_report (a person approves it first).
+    input: question
+    tools: [describe_tables, run_query, email_report]
+    save_as: analysis
+    output:
+      description: The analyst's answer.
+      spread: true
+      fields:
+      - name: answer
+        description: The answer in one or two sentences, with the numbers.
+      - name: sql_used
+        description: The SQL query that produced the answer.
+    addons:
+      approve_tools: [email_report]
+      max_tool_calls: 8
+      max_model_calls: 10
+- id: describe_tables
+  type: sql_query
+  name: Describe the tables
+  description: Lists the shop database's tables, columns and row counts. Call it first.
+  settings:
+    connection: sqlite:///{home}/samples/shop.db
+    mode: schema
+    save_as: tables
+- id: run_query
+  type: sql_query
+  name: Run a query
+  description: Runs one read-only SQLite SELECT query and returns up to 50 rows.
+  settings:
+    connection: sqlite:///{home}/samples/shop.db
+    query: '{sql}'
+    max_rows: 50
+- id: email_report
+  type: http_request
+  name: Email the report
+  description: Emails a short report to the team. A person approves it first.
+  settings:
+    method: POST
+    url: '{report_url}'
+    body: '{"report": "{report}"}'
+    response: json
+    save_as: email_receipt
+- id: output
+  type: output
+  settings:
+    fields: [answer, sql_used]
+connections:
+- {from: input, to: analyst}
+- {from: analyst, to: output}
+canvas:
+  steps:
+    input: {x: 0, y: 120}
+    analyst: {x: 300, y: 120}
+    describe_tables: {x: 160, y: 340}
+    run_query: {x: 400, y: 340}
+    email_report: {x: 640, y: 340}
+    output: {x: 640, y: 120}

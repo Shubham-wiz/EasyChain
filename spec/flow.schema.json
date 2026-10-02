@@ -457,10 +457,10 @@
           "title": "Temperature"
         },
         "max_steps": {
-          "default": 40,
-          "description": "Most rounds of thinking and tool calls in one run.",
-          "maximum": 1000,
-          "minimum": 5,
+          "default": 100,
+          "description": "Most rounds the agent may take in one run (each model call, tool call and add-on counts).",
+          "maximum": 10000,
+          "minimum": 10,
           "title": "Max Steps",
           "type": "integer"
         },
@@ -1675,6 +1675,21 @@
           ],
           "title": "Mode",
           "type": "string"
+        },
+        "min_similarity": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Leave out passages found only by meaning that are less similar than this (0 to 1), so an unrelated question finds nothing.",
+          "title": "Min Similarity"
         },
         "rerank_model": {
           "anyOf": [

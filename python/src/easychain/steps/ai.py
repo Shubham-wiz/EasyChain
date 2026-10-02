@@ -210,7 +210,7 @@ class AIModelHandler(StepHandler):
         s = step.settings
         issues = check_model(step.id, s.model)
         if s.output is not None:
-            issues += check_schema(step.id, s.output)
+            issues += check_schema(step.id, s.output, save_as=s.save_as)
         provider_id, _ = split_model(s.model)
         info = model_info(s.model)
         if info is not None and not info.accepts_temperature and s.temperature is not None:

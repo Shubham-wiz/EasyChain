@@ -437,6 +437,13 @@ class KnowledgeSearchSettings(_Model):
         description="hybrid: by meaning and by words, merged. meaning: embeddings only. "
         "words: full-text search only.",
     )
+    min_similarity: float | None = Field(
+        default=None,
+        ge=0,
+        le=1,
+        description="Leave out passages found only by meaning that are less similar than this "
+        "(0 to 1), so an unrelated question finds nothing.",
+    )
     rerank_model: str | None = Field(
         default=None, description="An AI model that re-orders the passages by relevance."
     )
@@ -650,7 +657,11 @@ class AgentSettings(_Model):
     )
     temperature: float | None = Field(default=None, ge=0, le=2)
     max_steps: int = Field(
-        default=40, ge=5, le=1000, description="Most rounds of thinking and tool calls in one run."
+        default=100,
+        ge=10,
+        le=10000,
+        description="Most rounds the agent may take in one run (each model call, tool call and "
+        "add-on counts).",
     )
     addons: AgentAddons = Field(default_factory=AgentAddons)
 

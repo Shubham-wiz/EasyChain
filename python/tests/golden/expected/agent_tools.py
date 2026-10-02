@@ -411,8 +411,12 @@ def support(data: FlowData) -> dict[str, Any]:
         name="support",
     )
     result = agent.invoke(
-        {"messages": [HumanMessage(str(data.get("question", "")))]}, {"recursion_limit": 40}
+        {"messages": [HumanMessage(str(data.get("question", "")))]},
+        {"recursion_limit": 100},
     )
+    if result.get("structured_response") is None:
+        # A limit (or an error the agent was told about) ended it before it answered.
+        raise ValueError(f"The agent stopped before it answered: {result['messages'][-1].text}")
     answer = result["structured_response"].model_dump()
     return {
         "answer": answer,

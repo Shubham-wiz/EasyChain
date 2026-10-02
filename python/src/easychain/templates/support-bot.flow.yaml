@@ -1,0 +1,94 @@
+version: 1
+name: Support bot over docs
+description: Answers customers from the help centre, citing its sources, and hands a question to
+  a colleague in the Inbox when the help centre doesn't cover it.
+steps:
+- id: input
+  type: input
+  name: Customer message
+  settings:
+    mode: chat
+- id: tidy_chat
+  type: memory
+  name: Keep the chat short
+  settings:
+    action: summarise
+    keep: 12
+    save_as: chat_summary
+- id: search
+  type: knowledge_search
+  name: Search the help centre
+  settings:
+    knowledge_base: help_centre
+    query: messages
+    top_k: 3
+    min_similarity: 0.2
+- id: found
+  type: decision
+  name: Do the docs cover it?
+  settings:
+    exits:
+    - label: Found
+      when: {field: sources, op: is_not_empty}
+    otherwise: Hand over
+- id: write_prompt
+  type: instructions
+  name: Answer from the docs
+  settings:
+    system: |-
+      You are the support assistant of Bean & Leaf, an online coffee and tea shop.
+      Answer only from the help-centre passages below, in two or three friendly sentences, and
+      cite the passages you used like [1]. If they don't answer the question, say so and offer
+      to pass it to a colleague.
+      Earlier in this chat: {chat_summary}
+
+      Passages:
+
+      {context}
+    history: messages
+- id: answer
+  type: ai_model
+  name: Write the answer
+  settings:
+    save_as: messages
+- id: ask_colleague
+  type: ask_human
+  name: Ask a colleague
+  settings:
+    kind: answer
+    question: The help centre doesn't cover this. What should we tell the customer?
+    show: [messages]
+- id: send_answer
+  type: code
+  name: Send the colleague's answer
+  settings:
+    code: |
+      def run(data):
+          """Add the colleague's answer to the chat."""
+          return {"messages": [{"role": "assistant", "content": data["human_answer"]}]}
+    writes: [messages]
+- id: output
+  type: output
+  settings:
+    fields: [sources]
+connections:
+- {from: input, to: tidy_chat}
+- {from: tidy_chat, to: search}
+- {from: search, to: found}
+- {from: found, exit: Found, to: write_prompt}
+- {from: found, exit: Hand over, to: ask_colleague}
+- {from: write_prompt, to: answer}
+- {from: answer, to: output}
+- {from: ask_colleague, to: send_answer}
+- {from: send_answer, to: output}
+canvas:
+  steps:
+    input: {x: 0, y: 160}
+    tidy_chat: {x: 260, y: 160}
+    search: {x: 520, y: 160}
+    found: {x: 780, y: 160}
+    write_prompt: {x: 1060, y: 60}
+    answer: {x: 1320, y: 60}
+    ask_colleague: {x: 1060, y: 300}
+    send_answer: {x: 1320, y: 300}
+    output: {x: 1600, y: 160}

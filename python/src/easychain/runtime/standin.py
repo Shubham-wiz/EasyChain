@@ -109,12 +109,27 @@ def _pick_exit(system: str, human: str) -> str:
     return best.strip()
 
 
+_PASSAGE = re.compile(r"(?m)^\[\d+\] ")
+
+
 def stand_in_reply(messages: list[BaseMessage]) -> str:
     system = "\n".join(_text(m) for m in messages if m.type == "system")
     humans = [_text(m) for m in messages if m.type == "human"]
     human = humans[-1] if humans else ""
     if "Reply with the exit name only" in system:
         return _pick_exit(system, human)
+    # Numbered passages to answer from (a Knowledge Base search): cite the best sentences.
+    for text, in_system in ((system, True), (human, False)):
+        found = _PASSAGE.search(text)
+        if found is None:
+            continue
+        passages = text[found.start() :]
+        question = human if in_system else text[: found.start()]
+        question = re.sub(r"(?i)\b(question|passages)\s*:", " ", question)
+        if not in_system and "Question:" in text[found.start() :]:
+            passages, _, tail = passages.rpartition("Question:")
+            question = f"{question} {tail}"
+        return answer_from_results(question, [("the documents", passages)])
     paragraphs = [p.strip() for p in re.split(r"\n\s*\n", human) if p.strip()]
     if len(paragraphs) > 1:
         material = " ".join(paragraphs[1:])
@@ -283,6 +298,11 @@ def answer_from_results(question: str, results: list[tuple[str, str]]) -> str:
     """Answer from what the tools returned, citing numbered sources when there are any."""
     if not results:
         return stand_in_reply([])
+    tool, latest = results[-1]
+    if latest.lstrip()[:1] in ("[", "{") and not _PASSAGE.match(latest.lstrip()):
+        # Data (like query rows): answer with it as it is, so no number is made up.
+        data = " ".join(latest.split())
+        return f"{LABEL}\n{tool} returned: {data[:600]}{'…' if len(data) > 600 else ''}"
     found = words(question)
     scored: list[tuple[int, int, str]] = []
     order = 0
@@ -290,6 +310,8 @@ def answer_from_results(question: str, results: list[tuple[str, str]]) -> str:
         for marker, block in _blocks(text):
             lines = block.split("\n", 1)
             body = lines[1] if len(lines) > 1 and marker else block
+            # Headings (Markdown "#" lines) say what a passage is about, not the answer.
+            body = "\n".join(ln for ln in body.splitlines() if not ln.lstrip().startswith("#"))
             for sentence in _sentences(body):
                 score = len(words(sentence) & found)
                 cited = f"{sentence.rstrip()} {marker}".strip() if marker else sentence

@@ -131,9 +131,9 @@ class AgentHandler(StepHandler):
             key="max_steps",
             label="Most rounds",
             kind="number",
-            min=5,
-            help="Stops an agent that goes round in circles (each model call and each tool call "
-            "is a round).",
+            min=10,
+            help="Stops an agent that goes round in circles (each model call, tool call and "
+            "add-on counts as a round).",
             technical="recursion_limit",
             advanced=True,
         ),
@@ -209,7 +209,7 @@ class AgentHandler(StepHandler):
                     missing_field_issue(step, name, an, "instructions", "The role and rules use")
                 )
         if s.output is not None:
-            issues += check_schema(step.id, s.output)
+            issues += check_schema(step.id, s.output, save_as=s.save_as)
         names = set()
         for tool_id in s.tools:
             tool = an.steps.get(tool_id)
@@ -393,7 +393,12 @@ class AgentHandler(StepHandler):
         returns: list[str] = []
         tail: list[str] = []
         if output_class:
-            tail.append('    answer = result["structured_response"].model_dump()')
+            tail += [
+                '    if result.get("structured_response") is None:',
+                "        # A limit (or an error the agent was told about) ended it before it answered.",
+                "        raise ValueError(f\"The agent stopped before it answered: {result['messages'][-1].text}\")",
+                '    answer = result["structured_response"].model_dump()',
+            ]
             returns.append(f"{py_str(s.save_as)}: answer")
             if s.output.spread:
                 returns += [f"{py_str(f.name)}: answer[{py_str(f.name)}]" for f in s.output.fields]

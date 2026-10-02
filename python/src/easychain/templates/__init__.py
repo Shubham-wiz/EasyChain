@@ -46,6 +46,16 @@ TEMPLATES: list[dict[str, Any]] = [
         "category": "Research",
         "proves": ["For Each", "parallel Web requests", "retries"],
     },
+    {
+        "id": "support-bot",
+        "category": "Customer support",
+        "proves": ["Knowledge Base", "citations", "Decision", "Ask a Human", "chat memory"],
+    },
+    {
+        "id": "sql-analyst",
+        "category": "Data",
+        "proves": ["Agent", "Database query tools", "tool approval", "limits", "structured answer"],
+    },
 ]
 
 

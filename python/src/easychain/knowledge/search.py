@@ -41,12 +41,22 @@ def knowledge_engine() -> sa.Engine:
 
 
 def knowledge_words(query: str) -> list[str]:
-    """The words of a question, for full-text search."""
-    return [w for w in re.findall(r"[A-Za-z0-9]+", query.lower()) if len(w) > 1][:30]
+    """The words of a question that say what it's about, for full-text search."""
+    common_words = (
+        "a an and are as at be but by can could did do does for from get got had has have how "
+        "i if in into is it its me my no not of on or our so than that the their them then "
+        "there these they this to too us was we were what when where which who why will with "
+        "would you your about any some please tell know"
+    )
+    common = set(common_words.split())
+    words = [w for w in re.findall(r"[a-z0-9]+", query.lower()) if len(w) > 1]
+    return [w for w in words if w not in common][:30]
 
 
-def knowledge_by_meaning(conn: Any, base: str, vector: list[float], limit: int) -> list[str]:
-    """Chunk ids whose embeddings are closest to the question's (cosine)."""
+def knowledge_by_meaning(
+    conn: Any, base: str, vector: list[float], limit: int
+) -> list[tuple[str, float]]:
+    """(chunk id, cosine similarity) for the embeddings closest to the question's."""
     if conn.dialect.name == "postgresql":
         kind = conn.execute(
             sa.text(
@@ -56,12 +66,14 @@ def knowledge_by_meaning(conn: Any, base: str, vector: list[float], limit: int) 
         ).scalar()
         if kind and kind.startswith("vector"):
             dims = len(vector)
+            distance = f"(embedding::vector({dims})) <=> CAST(:q AS vector({dims}))"
             sql = (
-                f"SELECT id FROM kb_chunks WHERE kb_id = :kb AND embedding IS NOT NULL "
-                f"ORDER BY (embedding::vector({dims})) <=> CAST(:q AS vector({dims})) LIMIT :n"
+                f"SELECT id, 1 - ({distance}) FROM kb_chunks WHERE kb_id = :kb "
+                f"AND embedding IS NOT NULL ORDER BY {distance} LIMIT :n"
             )
             q = "[" + ",".join(f"{v:.7f}" for v in vector) + "]"
-            return [r[0] for r in conn.execute(sa.text(sql), {"kb": base, "q": q, "n": limit})]
+            rows = conn.execute(sa.text(sql), {"kb": base, "q": q, "n": limit})
+            return [(r[0], float(r[1])) for r in rows]
     # Without pgvector: compare against every chunk with numpy (fine for thousands of chunks).
     stamp = conn.execute(
         sa.text("SELECT updated_at FROM kb_bases WHERE id = :kb"), {"kb": base}
@@ -91,7 +103,7 @@ def knowledge_by_meaning(conn: Any, base: str, vector: list[float], limit: int) 
     q = q / (np.linalg.norm(q) or 1.0)
     scores = matrix @ q
     order = np.argsort(-scores)[:limit]
-    return [ids[i] for i in order]
+    return [(ids[i], float(scores[i])) for i in order]
 
 
 def knowledge_by_words(conn: Any, base: str, query: str, limit: int) -> list[str]:
@@ -115,12 +127,19 @@ def knowledge_by_words(conn: Any, base: str, query: str, limit: int) -> list[str
 
 
 def search_knowledge(
-    base: str, query: str, embeddings: Any, top_k: int = 4, mode: str = "hybrid"
+    base: str,
+    query: str,
+    embeddings: Any,
+    top_k: int = 4,
+    mode: str = "hybrid",
+    min_similarity: float = 0.0,
 ) -> list[dict[str, Any]]:
     """The passages of a Knowledge Base that best match a question, best first.
 
     mode: "hybrid" (meaning and words, merged by reciprocal rank fusion), "meaning"
-    (embeddings only) or "words" (full-text search only).
+    (embeddings only) or "words" (full-text search only). min_similarity drops passages
+    found only by meaning that are less similar than this (0 to 1), so an unrelated
+    question can come back with nothing.
     """
     if not query.strip():
         return []
@@ -128,12 +147,14 @@ def search_knowledge(
     pool = max(top_k * 4, 20)
     scores: dict[str, float] = {}
     with engine.connect() as conn:
-        found: list[list[str]] = []
-        if mode in ("hybrid", "meaning"):
-            found.append(knowledge_by_meaning(conn, base, embeddings.embed_query(query), pool))
-        if mode in ("hybrid", "words"):
-            found.append(knowledge_by_words(conn, base, query, pool))
-        for ids in found:
+        by_words = knowledge_by_words(conn, base, query, pool) if mode != "meaning" else []
+        by_meaning = []
+        if mode != "words":
+            near = knowledge_by_meaning(conn, base, embeddings.embed_query(query), pool)
+            worded = set(by_words)
+            by_meaning = [(cid, sim) for cid, sim in near if sim >= min_similarity or cid in worded]
+        similarity = dict(by_meaning)
+        for ids in ([cid for cid, _ in by_meaning], by_words):
             for rank, chunk_id in enumerate(ids, start=1):
                 scores[chunk_id] = scores.get(chunk_id, 0.0) + 1.0 / (60 + rank)
         best = sorted(scores, key=lambda cid: scores[cid], reverse=True)[:top_k]
@@ -147,7 +168,18 @@ def search_knowledge(
             {"ids": best},
         ).mappings()
         by_id = {row["id"]: dict(row) for row in rows}
-    hits = [by_id[cid] | {"score": round(scores[cid], 5)} for cid in best if cid in by_id]
+    words = set(by_words)
+    hits = []
+    for cid in best:
+        if cid not in by_id:
+            continue
+        hit = by_id[cid] | {"score": round(scores[cid], 5)}
+        if cid in similarity:
+            hit["similarity"] = round(similarity[cid], 3)
+        hit["matched"] = (
+            "both" if cid in similarity and cid in words else "words" if cid in words else "meaning"
+        )
+        hits.append(hit)
     return [{"n": n, **hit} for n, hit in enumerate(hits, start=1)]
 
 

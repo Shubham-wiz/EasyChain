@@ -79,6 +79,18 @@ class KnowledgeSearchHandler(StepHandler):
             advanced=True,
         ),
         FormField(
+            key="min_similarity",
+            label="Skip weak matches below",
+            kind="slider",
+            min=0,
+            max=1,
+            step=0.05,
+            help="Passages found only by meaning must be at least this similar to the question "
+            "(0 to 1). Use it to notice when the documents don't cover a question.",
+            technical="cosine similarity threshold",
+            advanced=True,
+        ),
+        FormField(
             key="rerank_model",
             label="Re-rank with",
             kind="model",
@@ -181,6 +193,8 @@ class KnowledgeSearchHandler(StepHandler):
         cite = ctx.helper("cite_passages")
         pool = s.top_k * 3 if s.rerank_model else s.top_k
         mode = f", mode={py_str(s.mode)}" if s.mode != "hybrid" else ""
+        if s.min_similarity:
+            mode += f", min_similarity={s.min_similarity}"
         lines = [
             f"    query = {query}",
             f"    embeddings = {embeddings_call(s.embedding_model, ctx)}",

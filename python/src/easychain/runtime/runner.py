@@ -843,7 +843,20 @@ async def stream_run(
             _, failed_step, failed_path = next(iter(running.values()))
         flow = flows.at(failed_path) if failed_step else None
         step_obj = flow.analysis.steps.get(failed_step) if flow and failed_step else None
-        if isinstance(failure, GraphRecursionError):
+        if (
+            isinstance(failure, GraphRecursionError)
+            and step_obj is not None
+            and step_obj.type == "agent"
+        ):
+            info = {
+                "kind": "too_many_steps",
+                "message": f"The agent “{step_obj.name or step_obj.id}” took more than "
+                f"{step_obj.settings.max_steps} rounds without finishing.",
+                "hint": "Give it a model-call or tool-call limit under Add-ons, make its "
+                "instructions clearer, or raise its Most rounds.",
+                "fixes": [],
+            }
+        elif isinstance(failure, GraphRecursionError):
             info = _recursion_error(compiled, config["recursion_limit"])
         else:
             info = explain(failure, step_obj)

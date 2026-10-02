@@ -1,0 +1,83 @@
+# Test Set for the Support bot over docs. The stand-in AI answers from the passages the help
+# centre search finds, so these cases check the search, the citations, the hand-over to a
+# colleague and the chat memory without an API key. With a key, the same cases run a real model.
+flow: support-bot.flow.yaml
+stand_in: true
+cases:
+- name: Password reset, cited from the account page
+  inputs:
+    messages: [{role: user, content: "How do I reset my password?"}]
+  expect:
+    route: {found: Found}
+    output.messages.-1.content: {contains: [Reset password, "[1]"]}
+    output.sources.0.source: account.md
+- name: Refund times
+  inputs:
+    messages: [{role: user, content: "How long do refunds take?"}]
+  expect:
+    output.messages.-1.content: {contains: five working days}
+    output.sources.0.source: returns.md
+- name: Where the shop ships
+  inputs:
+    messages: [{role: user, content: "Which countries do you ship to?"}]
+  expect:
+    output.messages.-1.content: {contains: [Germany, Portugal]}
+    output.sources.0.source: orders.md
+- name: Returns window
+  inputs:
+    messages: [{role: user, content: "Can I return something I bought?"}]
+  expect:
+    output.messages.-1.content: {contains: 30 days}
+- name: Deleting an account
+  inputs:
+    messages: [{role: user, content: "How do I delete my account?"}]
+  expect:
+    output.messages.-1.content: {contains: support@beanandleaf.example}
+- name: Pausing a subscription
+  inputs:
+    messages: [{role: user, content: "How can I pause my subscription?"}]
+  expect:
+    output.messages.-1.content: {contains: pause your subscription}
+    output.sources.0.source: subscriptions.md
+- name: Charged twice
+  inputs:
+    messages: [{role: user, content: "I was charged twice"}]
+  expect:
+    output.messages.-1.content: {contains: three days}
+- name: Tracking a parcel
+  inputs:
+    messages: [{role: user, content: "How can I track my parcel?"}]
+  expect:
+    output.messages.-1.content: {contains: tracking link}
+- name: A follow-up question uses the same chat
+  thread: support-follow-up
+  turns:
+  - messages: [{role: user, content: "How do I reset my password?"}]
+  - messages: [{role: user, content: "And how long does the link work?"}]
+  expect:
+    output.messages.-1.content: {contains: one hour}
+    output.messages: {count: 4}
+- name: Off-topic question goes to a colleague
+  inputs:
+    messages: [{role: user, content: "Can you recommend a good movie?"}]
+  answers:
+  - {action: approve, value: "Sorry, we can only help with your orders and your account."}
+  expect:
+    route: {found: Hand over}
+    steps: [ask_colleague, send_answer]
+    output.messages.-1.content: "Sorry, we can only help with your orders and your account."
+    output.sources: {count: 0}
+- name: The weather isn't in the help centre either
+  inputs:
+    messages: [{role: user, content: "What's the weather in Lisbon?"}]
+  answers:
+  - {action: approve, value: "We don't know the weather, but we deliver to Lisbon in 2 to 4 days."}
+  expect:
+    route: {found: Hand over}
+    output.messages.-1.content: {contains: Lisbon}
+- name: Waits for the colleague without an answer
+  inputs:
+    messages: [{role: user, content: "Do you sell bicycles?"}]
+  expect:
+    status: paused
+    route: {found: Hand over}

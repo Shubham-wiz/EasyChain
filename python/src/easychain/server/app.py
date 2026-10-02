@@ -44,7 +44,7 @@ from ..spec.models import SPEC_VERSION
 from ..spec.schema import flow_json_schema
 from ..steps import catalog as step_catalog
 from ..templates import list_templates, load_template
-from ..templates.samples import ensure_samples
+from ..templates.samples import ensure_sample_knowledge, ensure_samples
 from . import notify
 from .cron import CronError, next_fire
 from .cron import describe as describe_cron
@@ -175,10 +175,18 @@ def create_app(
         worker if worker is not None else os.environ.get("EASYCHAIN_WORKER", "inline") != "off"
     )
 
+    def prepare_samples() -> None:
+        """The sample shop database and help-centre Knowledge Base the templates use."""
+        try:
+            ensure_samples(home_path)
+            ensure_sample_knowledge()
+        except Exception as exc:  # samples are a convenience; never block startup
+            log.warning("Couldn't prepare the template samples: %s", exc)
+
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         use_database(db_url)
-        await asyncio.to_thread(ensure_samples, home_path)
+        await asyncio.to_thread(prepare_samples)
         db = await Database.connect(db_url)
         resources = await open_resources(checkpoint_url(db_url))
         app.state.hub = Hub(db, resources, flows, vault)

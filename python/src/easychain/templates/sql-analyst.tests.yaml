@@ -1,0 +1,107 @@
+# Test Set for the SQL analyst. Without an API key the stand-in AI can't write SQL, so each case
+# scripts the queries a model would write; everything else is real: the tools run against the
+# sample shop database, the answer and the SQL come from what the tools returned, read-only is
+# enforced by the database, approvals pause in the Inbox, and limits stop a runaway agent.
+# With a key, a real model writes the SQL and the scripts are ignored.
+flow: sql-analyst.flow.yaml
+stand_in: true
+cases:
+- name: Customers in one country
+  inputs: {question: "How many customers are in Germany?"}
+  script:
+  - {call: describe_tables}
+  - {call: run_query, args: {sql: "SELECT COUNT(*) AS customers FROM customers WHERE country = 'Germany'"}}
+  expect:
+    tools: [describe_tables, run_query]
+    output.answer: {contains: '"customers": 3'}
+    output.sql_used: {contains: "country = 'Germany'"}
+- name: The category that brings in the most money
+  inputs: {question: "Which product category brings in the most money?"}
+  script:
+  - {call: describe_tables}
+  - call: run_query
+    args:
+      sql: >-
+        SELECT p.category, ROUND(SUM(p.price * i.quantity), 2) AS revenue
+        FROM order_items i JOIN products p ON p.id = i.product_id
+        JOIN orders o ON o.id = i.order_id WHERE o.status != 'cancelled'
+        GROUP BY p.category ORDER BY revenue DESC LIMIT 1
+  expect:
+    output.answer: {contains: [Kitchen, "1827"]}
+- name: The customer with the most orders
+  inputs: {question: "Who placed the most orders?"}
+  script:
+  - call: run_query
+    args:
+      sql: >-
+        SELECT c.name, COUNT(*) AS orders FROM orders o JOIN customers c ON c.id = o.customer_id
+        GROUP BY c.id ORDER BY orders DESC LIMIT 1
+  expect:
+    output.answer: {contains: [Emma J., '"orders": 5']}
+- name: Cancelled orders
+  inputs: {question: "How many orders were cancelled?"}
+  script:
+  - {call: run_query, args: {sql: "SELECT COUNT(*) AS cancelled FROM orders WHERE status = 'cancelled'"}}
+  expect:
+    output.answer: {contains: '"cancelled": 6'}
+- name: The cheapest product
+  inputs: {question: "What is our cheapest product?"}
+  script:
+  - {call: run_query, args: {sql: "SELECT name, price FROM products ORDER BY price LIMIT 1"}}
+  expect:
+    output.answer: {contains: [Oat cookies, "4.5"]}
+- name: A bad query is reported back, and the agent fixes it
+  inputs: {question: "How many orders are pending?"}
+  script:
+  - {call: run_query, args: {sql: "SELECT COUNT(*) FROM order WHERE status = 'pending'"}}
+  - {call: run_query, args: {sql: "SELECT COUNT(*) AS pending FROM orders WHERE status = 'pending'"}}
+  expect:
+    tool_calls: 2
+    output.answer: {contains: '"pending": 5'}
+    output.sql_used: {contains: FROM orders}
+- name: Read-only means nothing can be deleted
+  inputs: {question: "Delete the cancelled orders"}
+  script:
+  - {call: run_query, args: {sql: "DELETE FROM orders WHERE status = 'cancelled'"}}
+  expect:
+    output.answer: {contains: read-only}
+- name: Emailing a report waits for approval, then sends it
+  inputs:
+    question: "Email the team how many customers we have"
+    report_url: "${base_url}/effects"
+  script:
+  - {call: run_query, args: {sql: "SELECT COUNT(*) AS customers FROM customers"}}
+  - {call: email_report, args: {report: "We have 20 customers."}}
+  answers:
+  - {action: approve, comment: "Fine to send"}
+  expect:
+    tools: [run_query, email_report]
+    output.answer: {contains: "We have 20 customers."}
+- name: A rejected email is never sent
+  inputs:
+    question: "Email the team the revenue"
+    report_url: "${base_url}/effects"
+  script:
+  - {call: email_report, args: {report: "Revenue is up."}}
+  answers:
+  - {action: reject, comment: "Not before the numbers are checked"}
+  expect:
+    not_tools: [email_report]
+    output.answer: {contains: Not before the numbers are checked}
+- name: The tool-call limit stops a runaway agent
+  inputs: {question: "Show me everything"}
+  script:
+  - {call: run_query, args: {sql: "SELECT 1"}}
+  - {call: run_query, args: {sql: "SELECT 2"}}
+  - {call: run_query, args: {sql: "SELECT 3"}}
+  - {call: run_query, args: {sql: "SELECT 4"}}
+  - {call: run_query, args: {sql: "SELECT 5"}}
+  - {call: run_query, args: {sql: "SELECT 6"}}
+  - {call: run_query, args: {sql: "SELECT 7"}}
+  - {call: run_query, args: {sql: "SELECT 8"}}
+  - {call: run_query, args: {sql: "SELECT 9"}}
+  - {call: run_query, args: {sql: "SELECT 10"}}
+  expect:
+    status: error
+    error.message: {contains: [stopped before it answered, limit]}
+    tool_calls: 8

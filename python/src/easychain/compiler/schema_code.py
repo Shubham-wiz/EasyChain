@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from .issues import Issue, error, warning
+from .issues import Fix, Issue, error, warning
 from .pycode import docstring, py_str
 
 if TYPE_CHECKING:
@@ -82,8 +82,26 @@ def emit_schema(output: StructuredOutput, class_name: str, doc: str, ctx: Any) -
     return blocks
 
 
-def check_schema(step_id: str, output: StructuredOutput, setting: str = "output") -> list[Issue]:
+def check_schema(
+    step_id: str, output: StructuredOutput, setting: str = "output", save_as: str | None = None
+) -> list[Issue]:
     issues: list[Issue] = []
+    if save_as and output.spread and any(f.name == save_as for f in output.fields):
+        issues.append(
+            error(
+                "schema_field_is_save_as",
+                f"The whole reply is saved as `{save_as}`, and one of its fields is also called "
+                f"`{save_as}`.",
+                step=step_id,
+                setting="save_as",
+                hint="Save the whole reply under another name.",
+                fix=Fix(
+                    "set_setting",
+                    f"Save it as `{save_as}_details`",
+                    {"key": "save_as", "value": f"{save_as}_details"},
+                ),
+            )
+        )
     if not output.fields:
         issues.append(
             error(
