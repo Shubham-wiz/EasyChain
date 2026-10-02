@@ -655,7 +655,12 @@ export function renderControl(props: FieldProps): ReactNode {
 
 export function isVisible(field: FormField, settings: Record<string, Value>): boolean {
   if (!field.show_if) return true;
+  // "*" means: shown when that setting has any value.
   return Object.entries(field.show_if).every(([key, expected]) =>
-    Array.isArray(expected) ? expected.includes(settings[key]) : settings[key] === expected,
+    Array.isArray(expected)
+      ? expected.includes(settings[key])
+      : expected === "*"
+        ? settings[key] !== undefined && settings[key] !== null && settings[key] !== ""
+        : settings[key] === expected,
   );
 }

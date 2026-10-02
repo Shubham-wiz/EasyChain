@@ -10,7 +10,9 @@ the CLI output:
 - route         {step, exit}           (a Decision, Jump, Ask a Human or For Each took an exit)
 - progress      {step, done, total}    (For Each)
 - custom        {data, step?}          (a step called get_stream_writer()(...))
-- step_paused   {step, interrupt_id, request}  (Ask a Human is waiting)
+- tool_started  {step, tool, args, call_id}    (an Agent called one of its tools)
+- tool_finished {step, tool, call_id, result, duration_ms, status}
+- step_paused   {step, interrupt_id, request}  (Ask a Human, or an Agent's tool approval)
 - save_point    {checkpoint_id, next, step_number}
 - step_failed   {step, error}
 - paused        {reason, interrupts, next}
@@ -316,6 +318,67 @@ def _path(ns: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(part.split(":", 1)[0] for part in ns)
 
 
+def _agent_at(flows: _Flows, path: tuple[str, ...]) -> str | None:
+    """The Agent step whose own graph (model, tools, add-ons) emitted an event at ``path``."""
+    if not path:
+        return None
+    parent = flows.at(path[:-1])
+    if parent is None:
+        return None
+    step = parent.analysis.steps.get(path[-1])
+    return path[-1] if step is not None and step.type == "agent" else None
+
+
+def describe_request(value: Any) -> Any:
+    """What a waiting step asks, in the shape the run panel and the Inbox show.
+
+    Ask a Human requests already have that shape. An Agent's tool approval (LangChain's
+    HumanInTheLoopMiddleware) becomes kind "approve_tool".
+    """
+    if isinstance(value, dict) and "action_requests" in value:
+        actions = [
+            {"tool": a.get("name"), "args": a.get("args") or {}}
+            for a in value.get("action_requests") or []
+        ]
+        configs = value.get("review_configs") or []
+        allowed = (configs[0].get("allowed_decisions") if configs else None) or [
+            "approve",
+            "reject",
+        ]
+        names = ", ".join(a["tool"] or "a tool" for a in actions)
+        return {
+            "kind": "approve_tool",
+            "question": f"The agent wants to use {names}. Do you approve?",
+            "actions": actions,
+            "allowed": allowed,
+        }
+    return value
+
+
+def _tool_decisions(value: Any, answer: Any) -> Any:
+    """Turn an Inbox answer into the decisions HumanInTheLoopMiddleware expects."""
+    if not (isinstance(value, dict) and "action_requests" in value):
+        return answer
+    if isinstance(answer, dict) and "decisions" in answer:
+        return answer
+    answer = answer if isinstance(answer, dict) else {"action": "approve"}
+    action = answer.get("action", "approve")
+    decisions = []
+    for request in value.get("action_requests") or []:
+        if action == "reject":
+            message = (answer.get("comment") or "").strip() or "A person said no to this."
+            decisions.append({"type": "reject", "message": message})
+            continue
+        edited = answer.get("value")
+        if isinstance(edited, dict) and edited != request.get("args"):
+            decisions.append(
+                {"type": "edit", "edited_action": {"name": request.get("name"), "args": edited}}
+            )
+        else:
+            decisions.append({"type": "approve"})
+    return {"decisions": decisions}
+
+
 async def stream_run(
     spec: FlowSpec,
     inputs: dict[str, Any] | None = None,
@@ -446,6 +509,83 @@ async def stream_run(
         label = flow.jumps.get(jump, {}).get(next_node)
         return event("route", **where(path, step=jump, exit=label)) if label else None
 
+    tool_started: dict[str, float] = {}
+
+    def agent_event(
+        ns: tuple[str, ...], path: tuple[str, ...], agent: str, name: str, payload: dict[str, Any]
+    ) -> list[dict[str, Any]]:
+        """Tool calls (and model usage) from inside an Agent step's own graph."""
+        nonlocal total_cost
+        key = "|".join([*ns, f"{name}:{payload.get('id')}"])
+        outer = path[:-1]
+        out: list[dict[str, Any]] = []
+        if "input" in payload:
+            if name == "tools":
+                tool_started[key] = time.perf_counter()
+                for call in payload.get("input") or []:
+                    if isinstance(call, dict) and "name" in call:
+                        out.append(
+                            event(
+                                "tool_started",
+                                **where(
+                                    outer,
+                                    step=agent,
+                                    tool=call["name"],
+                                    args=to_jsonable(call.get("args") or {}),
+                                    call_id=call.get("id"),
+                                ),
+                            )
+                        )
+            return out
+        own = tracker.take(key)
+        if own:
+            totals["input_tokens"] += own["input_tokens"]
+            totals["output_tokens"] += own["output_tokens"]
+            total_cost = (
+                None if (total_cost is None or own["cost"] is None) else total_cost + own["cost"]
+            )
+            _add_usage(child_usage.setdefault("|".join(ns), _empty_usage()), own)
+        if name != "tools":
+            return out
+        began = tool_started.pop(key, time.perf_counter())
+        duration = round((time.perf_counter() - began) * 1000, 1)
+        if payload.get("error"):
+            out.append(
+                event(
+                    "tool_finished",
+                    **where(
+                        outer,
+                        step=agent,
+                        tool=None,
+                        call_id=None,
+                        result=str(payload["error"])[:2000],
+                        status="error",
+                        duration_ms=duration,
+                    ),
+                )
+            )
+            return out
+        result = payload.get("result") or {}
+        messages = result.get("messages") if isinstance(result, dict) else None
+        for message in messages or []:
+            if getattr(message, "type", None) != "tool":
+                continue
+            out.append(
+                event(
+                    "tool_finished",
+                    **where(
+                        outer,
+                        step=agent,
+                        tool=message.name,
+                        call_id=message.tool_call_id,
+                        result=to_jsonable(message.text),
+                        status=getattr(message, "status", "success") or "success",
+                        duration_ms=duration,
+                    ),
+                )
+            )
+        return out
+
     stream_modes = ["tasks", "messages", "values", "checkpoints", "custom"]
     stream_kwargs: dict[str, Any] = {
         "stream_mode": stream_modes,
@@ -534,6 +674,11 @@ async def stream_run(
                 if not isinstance(chunk, AIMessageChunk) or not chunk.text:
                     continue
                 node = meta.get("langgraph_node")
+                agent = _agent_at(flows, path)
+                if agent is not None:
+                    if node == "model":
+                        yield event("token", **where(path[:-1], step=agent, text=chunk.text))
+                    continue
                 flow = flows.at(path)
                 if flow is not None and node in flow.analysis.steps:
                     yield event("token", **where(path, step=node, text=chunk.text))
@@ -541,8 +686,13 @@ async def stream_run(
             if mode != "tasks":
                 continue
 
-            flow = flows.at(path)
             name = payload.get("name")
+            agent = _agent_at(flows, path)
+            if agent is not None and name is not None:
+                for ev in agent_event(ns, path, agent, name, payload):
+                    yield ev
+                continue
+            flow = flows.at(path)
             if flow is None or name is None:
                 continue
             fan = flow.analysis
@@ -597,7 +747,7 @@ async def stream_run(
                             path,
                             step=step_id,
                             interrupt_id=first["id"],
-                            request=to_jsonable(first["value"]),
+                            request=to_jsonable(describe_request(first["value"])),
                         ),
                     )
                 continue
@@ -730,7 +880,7 @@ async def stream_run(
             {
                 "id": intr.id,
                 **paused_steps.get(intr.id, _interrupt_step(intr.value)),
-                "request": to_jsonable(intr.value),
+                "request": to_jsonable(describe_request(intr.value)),
             }
             for intr in snapshot.interrupts
         ]
@@ -813,7 +963,13 @@ async def _prepare_action(
     if opts.action == "resume":
         if not snapshot.interrupts:
             raise _NotResumable("not_waiting", "This run isn't waiting for an answer.")
-        return Command(resume=opts.resume), dict(snapshot.values)
+        waiting = {intr.id: intr.value for intr in snapshot.interrupts}
+        resume = opts.resume
+        if isinstance(resume, dict) and resume and all(k in waiting for k in resume):
+            resume = {k: _tool_decisions(waiting[k], v) for k, v in resume.items()}
+        elif len(waiting) == 1:
+            resume = _tool_decisions(next(iter(waiting.values())), resume)
+        return Command(resume=resume), dict(snapshot.values)
     if not snapshot.next:
         if opts.finish_if_done:
             return _ALREADY_DONE, dict(snapshot.values)

@@ -150,6 +150,16 @@ async def run_case(spec: FlowSpec, case: dict[str, Any], stand_in: bool) -> Case
         for step in expect.pop("steps"):
             if step not in ran:
                 failures.append(f"steps: expected {step!r} to run")
+    if "tools" in expect:
+        called = [e["tool"] for e in events if e["type"] == "tool_started"]
+        for tool in expect.pop("tools"):
+            if tool not in called:
+                failures.append(f"tools: expected the agent to call {tool!r} (called {called})")
+    if "not_tools" in expect:
+        called = [e["tool"] for e in events if e["type"] == "tool_started"]
+        for tool in expect.pop("not_tools"):
+            if tool in called:
+                failures.append(f"tools: expected the agent not to call {tool!r}")
     if "route" in expect:
         routes = {e["step"]: e["exit"] for e in events if e["type"] == "route"}
         for step, label in expect.pop("route").items():

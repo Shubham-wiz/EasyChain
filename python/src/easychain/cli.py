@@ -212,6 +212,14 @@ def cmd_run(args: argparse.Namespace) -> int:
 def _ask_in_terminal(request: dict[str, Any]) -> Any:
     from .compiler.helpers import HELPERS
 
+    if request.get("kind") == "approve_tool":
+        print(f"\n{request['question']}")
+        for action in request.get("actions") or []:
+            print(f"  {action['tool']}({json.dumps(action['args'], ensure_ascii=False)})")
+        if input("approve? [y/n]> ").strip().lower().startswith("y"):
+            return {"action": "approve"}
+        return {"action": "reject", "comment": input("why not?> ")}
+
     namespace: dict[str, Any] = {"Any": Any}
     exec(HELPERS["ask_in_terminal"].code, namespace)  # the same prompt exported flows use
     return namespace["ask_in_terminal"](request)
@@ -263,6 +271,11 @@ class _RunPrinter:
                 )
         elif kind == "route" and not quiet:
             print(f"↳ {self._name(ev['step'])}: took “{ev['exit']}”", file=sys.stderr)
+        elif kind == "tool_started" and not quiet:
+            args = json.dumps(ev.get("args") or {}, ensure_ascii=False)
+            print(f"  ⚙ {ev['tool']} {args[:120]}", file=sys.stderr)
+        elif kind == "tool_finished" and not quiet and ev.get("status") == "error":
+            print(f"  ✗ {ev.get('tool') or 'tool'}: {str(ev.get('result'))[:200]}", file=sys.stderr)
         elif kind == "progress" and not quiet:
             print(
                 f"  {self._name(ev['step'])}: {ev['done']} of {ev['total']} done", file=sys.stderr

@@ -7,6 +7,7 @@ that checks it and compiles it to LangGraph code.
 from __future__ import annotations
 
 from .actions import CodeHandler, HttpRequestHandler
+from .agent import AgentHandler
 from .ai import AIModelHandler, InstructionsHandler
 from .base import FormField, StepCode, StepHandler
 from .flow_control import AskHumanHandler, ForEachHandler, SubflowHandler
@@ -20,6 +21,7 @@ HANDLERS: dict[str, StepHandler] = {
         OutputHandler(),
         InstructionsHandler(),
         AIModelHandler(),
+        AgentHandler(),
         HttpRequestHandler(),
         CodeHandler(),
         DecisionHandler(),

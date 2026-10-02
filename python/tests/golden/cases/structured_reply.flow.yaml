@@ -1,0 +1,75 @@
+version: 1
+name: Structured reply
+description: Triages a product review into fields that later steps use directly.
+steps:
+- id: input
+  type: input
+  settings:
+    fields:
+    - name: review
+      example: The app crashes every time I upload a photo. Support never answered.
+- id: write_prompt
+  type: instructions
+  settings:
+    system: You triage product reviews for the support team.
+    user: "Review:\n\n{review}"
+- id: triage
+  type: ai_model
+  name: Triage the review
+  settings:
+    output:
+      description: How the support team should handle a review.
+      spread: true
+      retries: 2
+      fields:
+      - name: sentiment
+        type: choice
+        options: [positive, negative, mixed]
+      - name: score
+        type: whole_number
+        description: How happy the customer is, from 1 (angry) to 5 (delighted).
+      - name: reasons
+        type: list
+        description: Short reasons for the score.
+      - name: issues
+        type: list
+        items: object
+        description: Problems the review mentions.
+        fields:
+        - name: area
+          type: choice
+          options: [app, billing, support, other]
+        - name: detail
+          description: The problem in a few words.
+      - name: urgent
+        type: yes_no
+        required: false
+        description: Someone should reply today.
+    save_as: verdict
+- id: is_negative
+  type: decision
+  name: Is it negative?
+  settings:
+    exits:
+    - label: Negative
+      when: {field: sentiment, op: equals, value: negative}
+- id: escalate
+  type: ai_model
+  name: Draft an apology
+  settings:
+    model: openai:gpt-4o-mini
+    prompt: review
+    base_url: https://llm.internal/v1
+    api_key: INTERNAL_LLM_KEY
+    save_as: apology
+- id: output
+  type: output
+  settings:
+    fields: [verdict, sentiment, apology]
+connections:
+- {from: input, to: write_prompt}
+- {from: write_prompt, to: triage}
+- {from: triage, to: is_negative}
+- {from: is_negative, exit: Negative, to: escalate}
+- {from: is_negative, exit: Otherwise, to: output}
+- {from: escalate, to: output}

@@ -39,6 +39,7 @@ def test_health_and_catalog(client):
         "output",
         "instructions",
         "ai_model",
+        "agent",
         "http_request",
         "code",
         "decision",

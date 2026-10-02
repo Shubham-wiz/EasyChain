@@ -122,6 +122,31 @@
           "default": null,
           "description": "Custom endpoint, e.g. an OpenAI-compatible server.",
           "title": "Base Url"
+        },
+        "api_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Name of the secret holding the key, for a custom endpoint (empty: the provider's usual key).",
+          "title": "Api Key"
+        },
+        "output": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StructuredOutput"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Reply in a fixed shape instead of free text."
         }
       },
       "title": "AIModelSettings",
@@ -165,6 +190,325 @@
         "type"
       ],
       "title": "AIModelStep",
+      "type": "object"
+    },
+    "AgentAddons": {
+      "additionalProperties": false,
+      "description": "Agent Add-ons: LangChain agent middleware, switched on with a toggle.",
+      "properties": {
+        "approve_tools": {
+          "description": "Tools that wait for a person to approve, edit or reject each call (HumanInTheLoopMiddleware). The run pauses and the request appears in the Inbox.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Approve Tools",
+          "type": "array"
+        },
+        "max_model_calls": {
+          "anyOf": [
+            {
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Stop after this many model calls in one run.",
+          "title": "Max Model Calls"
+        },
+        "max_tool_calls": {
+          "anyOf": [
+            {
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Stop calling tools after this many in one run.",
+          "title": "Max Tool Calls"
+        },
+        "tool_errors": {
+          "default": "tell_agent",
+          "description": "When a tool fails: tell the agent so it can try another way, or stop the run.",
+          "enum": [
+            "tell_agent",
+            "stop"
+          ],
+          "title": "Tool Errors",
+          "type": "string"
+        },
+        "tool_retries": {
+          "default": 0,
+          "description": "Try a failing tool again this many times.",
+          "maximum": 10,
+          "minimum": 0,
+          "title": "Tool Retries",
+          "type": "integer"
+        },
+        "model_retries": {
+          "default": 0,
+          "description": "Try a failing model call again this many times.",
+          "maximum": 10,
+          "minimum": 0,
+          "title": "Model Retries",
+          "type": "integer"
+        },
+        "fallback_models": {
+          "description": "Models to try, in order, when the main one fails.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Fallback Models",
+          "type": "array"
+        },
+        "summarise": {
+          "default": false,
+          "description": "Summarise older messages when the conversation gets long.",
+          "title": "Summarise",
+          "type": "boolean"
+        },
+        "summarise_after": {
+          "default": 4000,
+          "description": "Summarise when the messages pass this many tokens.",
+          "minimum": 500,
+          "title": "Summarise After",
+          "type": "integer"
+        },
+        "summarise_keep": {
+          "default": 20,
+          "description": "Keep this many recent messages as they are.",
+          "minimum": 1,
+          "title": "Summarise Keep",
+          "type": "integer"
+        },
+        "clear_tool_results": {
+          "anyOf": [
+            {
+              "minimum": 500,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Clear old tool results when the conversation passes this many tokens.",
+          "title": "Clear Tool Results"
+        },
+        "pii": {
+          "description": "Personal data to catch in what the user sends.",
+          "items": {
+            "enum": [
+              "email",
+              "credit_card",
+              "ip",
+              "mac_address",
+              "url"
+            ],
+            "type": "string"
+          },
+          "title": "Pii",
+          "type": "array"
+        },
+        "pii_strategy": {
+          "default": "redact",
+          "enum": [
+            "redact",
+            "mask",
+            "hash",
+            "block"
+          ],
+          "title": "Pii Strategy",
+          "type": "string"
+        },
+        "select_tools": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "With many tools: let a model pick this many relevant ones for each request.",
+          "title": "Select Tools"
+        },
+        "todo_list": {
+          "default": false,
+          "description": "Give the agent a to-do list for planning longer tasks.",
+          "title": "Todo List",
+          "type": "boolean"
+        },
+        "emulate_tools": {
+          "default": false,
+          "description": "For testing: an AI model pretends to be the tools instead of running them.",
+          "title": "Emulate Tools",
+          "type": "boolean"
+        },
+        "memory": {
+          "default": false,
+          "description": "Long-term memory: the agent can remember facts about the user and recall them in later conversations (LangGraph store).",
+          "title": "Memory",
+          "type": "boolean"
+        }
+      },
+      "title": "AgentAddons",
+      "type": "object"
+    },
+    "AgentSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "default": "openai:gpt-4o-mini",
+          "description": "The model that thinks and picks tools.",
+          "title": "Model",
+          "type": "string"
+        },
+        "instructions": {
+          "default": "You are a helpful assistant. Use the tools when they help, and say so when you can't find an answer.",
+          "description": "Role and rules (the system prompt). Put Flow Data in with {field}.",
+          "title": "Instructions",
+          "type": "string"
+        },
+        "input": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_]{0,62}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What the agent works on: a text field, or a messages field for a chat. Empty means: what the previous step saved.",
+          "title": "Input"
+        },
+        "tools": {
+          "description": "Steps the agent can use as tools (their ids).",
+          "items": {
+            "pattern": "^[a-z][a-z0-9_]{0,62}$",
+            "type": "string"
+          },
+          "title": "Tools",
+          "type": "array"
+        },
+        "mcp": {
+          "items": {
+            "$ref": "#/$defs/McpTools"
+          },
+          "title": "Mcp",
+          "type": "array"
+        },
+        "save_as": {
+          "default": "answer",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Save As",
+          "type": "string"
+        },
+        "output": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StructuredOutput"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Answer in a fixed shape instead of free text."
+        },
+        "save_messages": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_]{0,62}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Also save the agent's whole conversation (tool calls included) here.",
+          "title": "Save Messages"
+        },
+        "temperature": {
+          "anyOf": [
+            {
+              "maximum": 2,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Temperature"
+        },
+        "max_steps": {
+          "default": 40,
+          "description": "Most rounds of thinking and tool calls in one run.",
+          "maximum": 1000,
+          "minimum": 5,
+          "title": "Max Steps",
+          "type": "integer"
+        },
+        "addons": {
+          "$ref": "#/$defs/AgentAddons"
+        }
+      },
+      "title": "AgentSettings",
+      "type": "object"
+    },
+    "AgentStep": {
+      "additionalProperties": false,
+      "description": "An AI that decides which tools to use, in a loop, until it has an answer (create_agent).",
+      "properties": {
+        "id": {
+          "description": "Unique id; also the LangGraph node name.",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "description": "Label shown on the canvas.",
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "run": {
+          "$ref": "#/$defs/RunPolicy"
+        },
+        "type": {
+          "const": "agent",
+          "title": "Type",
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/AgentSettings"
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ],
+      "title": "AgentStep",
       "type": "object"
     },
     "AskHumanSettings": {
@@ -1284,6 +1628,30 @@
       "title": "JumpStep",
       "type": "object"
     },
+    "McpTools": {
+      "additionalProperties": false,
+      "description": "Tools from an MCP server (Settings \u2192 MCP servers).",
+      "properties": {
+        "server": {
+          "description": "Id of the MCP server.",
+          "title": "Server",
+          "type": "string"
+        },
+        "tools": {
+          "description": "Tool names to use; empty means all of them.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Tools",
+          "type": "array"
+        }
+      },
+      "required": [
+        "server"
+      ],
+      "title": "McpTools",
+      "type": "object"
+    },
     "OutputSettings": {
       "additionalProperties": false,
       "properties": {
@@ -1421,6 +1789,76 @@
       "title": "RunPolicy",
       "type": "object"
     },
+    "SchemaField": {
+      "additionalProperties": false,
+      "description": "One field of a structured reply (becomes a Pydantic field).",
+      "properties": {
+        "name": {
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "type": {
+          "default": "text",
+          "enum": [
+            "text",
+            "number",
+            "whole_number",
+            "yes_no",
+            "choice",
+            "list",
+            "object"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "description": "Tells the model what to put here.",
+          "title": "Description",
+          "type": "string"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "options": {
+          "description": "For choice: the allowed values.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Options",
+          "type": "array"
+        },
+        "items": {
+          "default": "text",
+          "description": "For list: what each item is.",
+          "enum": [
+            "text",
+            "number",
+            "whole_number",
+            "yes_no",
+            "object"
+          ],
+          "title": "Items",
+          "type": "string"
+        },
+        "fields": {
+          "description": "For object, or a list of objects: their fields.",
+          "items": {
+            "$ref": "#/$defs/SchemaField"
+          },
+          "title": "Fields",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "SchemaField",
+      "type": "object"
+    },
     "StickyNote": {
       "additionalProperties": false,
       "properties": {
@@ -1458,6 +1896,41 @@
         "id"
       ],
       "title": "StickyNote",
+      "type": "object"
+    },
+    "StructuredOutput": {
+      "additionalProperties": false,
+      "description": "Make the model reply in a fixed shape (with_structured_output / response_format).",
+      "properties": {
+        "fields": {
+          "items": {
+            "$ref": "#/$defs/SchemaField"
+          },
+          "title": "Fields",
+          "type": "array"
+        },
+        "description": {
+          "default": "",
+          "description": "What the reply is, for the model.",
+          "title": "Description",
+          "type": "string"
+        },
+        "spread": {
+          "default": false,
+          "description": "Also save each field as its own Flow Data field.",
+          "title": "Spread",
+          "type": "boolean"
+        },
+        "retries": {
+          "default": 1,
+          "description": "Ask again this many times when a reply doesn't fit.",
+          "maximum": 5,
+          "minimum": 0,
+          "title": "Retries",
+          "type": "integer"
+        }
+      },
+      "title": "StructuredOutput",
       "type": "object"
     },
     "SubflowSettings": {
@@ -1575,6 +2048,7 @@
       "items": {
         "discriminator": {
           "mapping": {
+            "agent": "#/$defs/AgentStep",
             "ai_model": "#/$defs/AIModelStep",
             "ask_human": "#/$defs/AskHumanStep",
             "code": "#/$defs/CodeStep",
@@ -1622,6 +2096,9 @@
           },
           {
             "$ref": "#/$defs/JumpStep"
+          },
+          {
+            "$ref": "#/$defs/AgentStep"
           }
         ]
       },

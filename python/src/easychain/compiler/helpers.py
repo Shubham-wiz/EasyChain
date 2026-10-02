@@ -247,6 +247,16 @@ ASK_IN_TERMINAL = Helper(
     '''
 def ask_in_terminal(request: dict[str, Any]) -> dict[str, Any]:
     """Answer an Ask a Human step in the terminal (Easy Chain's Inbox does this in the app)."""
+    if "action_requests" in request:
+        # An agent wants to use a tool that needs approval (HumanInTheLoopMiddleware).
+        decisions = []
+        for action in request["action_requests"]:
+            print(f"\\nThe agent wants to use {action['name']} with {action['args']}")
+            if input("approve? [y/n]> ").strip().lower().startswith("y"):
+                decisions.append({"type": "approve"})
+            else:
+                decisions.append({"type": "reject", "message": input("why not?> ")})
+        return {"decisions": decisions}
     print(f"\\n{request['question']}")
     for name, value in request.get("show", {}).items():
         print(f"  {name}: {value}")
@@ -288,6 +298,77 @@ def as_text(value: Any) -> str:
     from_imports=(("typing", "Any"),),
 )
 
+TELL_AGENT = Helper(
+    "tell_agent",
+    '''
+def tell_agent(error: Exception, request: Any) -> str:
+    """When a tool fails, tell the agent (so it can try another way) instead of stopping."""
+    return f"The tool failed ({type(error).__name__}): {error}"
+''',
+    from_imports=(("typing", "Any"),),
+)
+
+MEMORY_TOOLS = Helper(
+    "memory_tools",
+    '''
+def memory_tools(data: dict[str, Any]) -> list[BaseTool]:
+    """Long-term memory for an agent: remember facts about the user and recall them later.
+
+    Memories live in the LangGraph store under ("memories", <user>): the `user_id` field
+    when the flow has one, otherwise the conversation (thread) id.
+    """
+    user = data.get("user_id") or get_config()["configurable"].get("thread_id", "anyone")
+    namespace = ("memories", str(user))
+
+    @tool("remember", description="Save a fact about the user, to use in later conversations.")
+    def remember(fact: str) -> str:
+        get_store().put(namespace, uuid.uuid4().hex, {"fact": fact})
+        return "Remembered."
+
+    @tool("recall", description="Look up what was remembered about the user before.")
+    def recall(query: str = "") -> str:
+        facts = [item.value.get("fact", "") for item in get_store().search(namespace, limit=100)]
+        if query:
+            wanted = set(query.lower().split())
+            facts.sort(key=lambda fact: -len(wanted & set(fact.lower().split())))
+        return "\\n".join(f"- {fact}" for fact in facts[:10]) or "Nothing remembered yet."
+
+    return [remember, recall]
+''',
+    imports=("uuid",),
+    from_imports=(
+        ("typing", "Any"),
+        ("langchain_core.tools", "BaseTool"),
+        ("langchain_core.tools", "tool"),
+        ("langgraph.config", "get_config"),
+        ("langgraph.config", "get_store"),
+    ),
+)
+
+MCP_TOOLS = Helper(
+    "mcp_tools",
+    '''
+async def mcp_tools(servers: dict[str, list[str]]) -> list[BaseTool]:
+    """Tools from MCP servers (an empty list means all of a server's tools).
+
+    How to reach each server comes from the EASYCHAIN_MCP_SERVERS environment variable,
+    as JSON: {"docs": {"transport": "streamable_http", "url": "https://example.com/mcp"}}.
+    """
+    connections = json.loads(os.environ.get("EASYCHAIN_MCP_SERVERS") or "{}")
+    client = MultiServerMCPClient({name: connections[name] for name in servers})
+    tools: list[BaseTool] = []
+    for name, wanted in servers.items():
+        found = await client.get_tools(server_name=name)
+        tools += [t for t in found if not wanted or t.name in wanted]
+    return tools
+''',
+    imports=("json", "os"),
+    from_imports=(
+        ("langchain_core.tools", "BaseTool"),
+        ("langchain_mcp_adapters.client", "MultiServerMCPClient"),
+    ),
+)
+
 HELPERS = {
     h.name: h
     for h in (
@@ -303,5 +384,8 @@ HELPERS = {
         IDEMPOTENCY_KEY,
         RUN_ONCE,
         ASK_IN_TERMINAL,
+        TELL_AGENT,
+        MEMORY_TOOLS,
+        MCP_TOOLS,
     )
 }

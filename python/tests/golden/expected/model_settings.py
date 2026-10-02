@@ -49,13 +49,21 @@ def openai(data: FlowData) -> dict[str, Any]:
 
     Sends `question` to openai:gpt-4.1-mini and saves the reply as `first`.
     """
-    model = init_chat_model("openai:gpt-4.1-mini", temperature=0.7, max_tokens=300, reasoning_effort="low", timeout=20.0, max_retries=1, stop=[
+    model = init_chat_model(
+        "openai:gpt-4.1-mini",
+        temperature=0.7,
+        max_tokens=300,
+        reasoning_effort="low",
+        timeout=20.0,
+        max_retries=1,
+        stop=[
     """\
 
 
 """,
     "END",
-])
+],
+    )
     reply = model.invoke(data["question"])
     return {"first": reply.text}
 

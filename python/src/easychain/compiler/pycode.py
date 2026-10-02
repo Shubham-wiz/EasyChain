@@ -26,8 +26,14 @@ def py_regex(value: str) -> str:
     return py_str(value)
 
 
+class RawCode(str):
+    """Source code to place as it is, where py_literal would otherwise quote a string."""
+
+
 def py_literal(value: Any, indent: int = 0) -> str:
     """Render JSON-like data as a Python literal with double quotes."""
+    if isinstance(value, RawCode):
+        return str(value)
     pad = " " * indent
     inner = " " * (indent + 4)
     if isinstance(value, str):
@@ -95,7 +101,11 @@ class Imports:
             groups[self._group(module.split(" ")[0])].append(f"import {module}")
         for module, names in self._names.items():
             ordered = sorted(names, key=_isort_key)
-            groups[self._group(module)].append(f"from {module} import {', '.join(ordered)}")
+            line = f"from {module} import {', '.join(ordered)}"
+            if len(line) > 88:
+                # isort/ruff style for long imports: one name per line in parentheses.
+                line = f"from {module} import (\n" + "".join(f"    {n},\n" for n in ordered) + ")"
+            groups[self._group(module)].append(line)
         for lines in groups.values():
             # isort/ruff style: plain imports first, then from-imports, each alphabetical.
             lines.sort(key=lambda line: (line.startswith("from"), line.split()[1].lower()))
@@ -152,6 +162,26 @@ class Names:
         "EXAMPLE_INPUT",
         "InMemorySaver",
         "data",
+        # Phase 3: agents, structured replies, Knowledge Bases, MCP
+        "tool",
+        "BaseTool",
+        "create_agent",
+        "HumanMessage",
+        "AIMessage",
+        "BaseModel",
+        "Field",
+        "Literal",
+        "ValidationError",
+        "OutputParserException",
+        "ToolStrategy",
+        "init_embeddings",
+        "as_text",
+        "tell_agent",
+        "memory_tools",
+        "mcp_tools",
+        "run_tool",
+        "agent",
+        "result",
     }
 
     def __init__(self) -> None:

@@ -118,6 +118,38 @@ class OutputStep(_StepBase):
     settings: OutputSettings = Field(default_factory=OutputSettings)
 
 
+SchemaFieldType = Literal["text", "number", "whole_number", "yes_no", "choice", "list", "object"]
+
+
+class SchemaField(_Model):
+    """One field of a structured reply (becomes a Pydantic field)."""
+
+    name: Ident
+    type: SchemaFieldType = "text"
+    description: str = Field(default="", description="Tells the model what to put here.")
+    required: bool = True
+    options: list[str] = Field(default_factory=list, description="For choice: the allowed values.")
+    items: Literal["text", "number", "whole_number", "yes_no", "object"] = Field(
+        default="text", description="For list: what each item is."
+    )
+    fields: list[SchemaField] = Field(
+        default_factory=list, description="For object, or a list of objects: their fields."
+    )
+
+
+class StructuredOutput(_Model):
+    """Make the model reply in a fixed shape (with_structured_output / response_format)."""
+
+    fields: list[SchemaField] = Field(default_factory=list)
+    description: str = Field(default="", description="What the reply is, for the model.")
+    spread: bool = Field(
+        default=False, description="Also save each field as its own Flow Data field."
+    )
+    retries: int = Field(
+        default=1, ge=0, le=5, description="Ask again this many times when a reply doesn't fit."
+    )
+
+
 class AIModelSettings(_Model):
     model: str = Field(
         default="openai:gpt-4o-mini",
@@ -138,6 +170,14 @@ class AIModelSettings(_Model):
     max_retries: int | None = Field(default=None, ge=0)
     base_url: str | None = Field(
         default=None, description="Custom endpoint, e.g. an OpenAI-compatible server."
+    )
+    api_key: str | None = Field(
+        default=None,
+        description="Name of the secret holding the key, for a custom endpoint "
+        "(empty: the provider's usual key).",
+    )
+    output: StructuredOutput | None = Field(
+        default=None, description="Reply in a fixed shape instead of free text."
     )
 
 
@@ -380,6 +420,128 @@ class JumpStep(_StepBase):
     settings: JumpSettings = Field(default_factory=JumpSettings)
 
 
+PIIType = Literal["email", "credit_card", "ip", "mac_address", "url"]
+
+
+class AgentAddons(_Model):
+    """Agent Add-ons: LangChain agent middleware, switched on with a toggle."""
+
+    approve_tools: list[str] = Field(
+        default_factory=list,
+        description="Tools that wait for a person to approve, edit or reject each call "
+        "(HumanInTheLoopMiddleware). The run pauses and the request appears in the Inbox.",
+    )
+    max_model_calls: int | None = Field(
+        default=None, ge=1, le=1000, description="Stop after this many model calls in one run."
+    )
+    max_tool_calls: int | None = Field(
+        default=None, ge=1, le=1000, description="Stop calling tools after this many in one run."
+    )
+    tool_errors: Literal["tell_agent", "stop"] = Field(
+        default="tell_agent",
+        description="When a tool fails: tell the agent so it can try another way, or stop the run.",
+    )
+    tool_retries: int = Field(
+        default=0, ge=0, le=10, description="Try a failing tool again this many times."
+    )
+    model_retries: int = Field(
+        default=0, ge=0, le=10, description="Try a failing model call again this many times."
+    )
+    fallback_models: list[str] = Field(
+        default_factory=list, description="Models to try, in order, when the main one fails."
+    )
+    summarise: bool = Field(
+        default=False, description="Summarise older messages when the conversation gets long."
+    )
+    summarise_after: int = Field(
+        default=4000, ge=500, description="Summarise when the messages pass this many tokens."
+    )
+    summarise_keep: int = Field(
+        default=20, ge=1, description="Keep this many recent messages as they are."
+    )
+    clear_tool_results: int | None = Field(
+        default=None,
+        ge=500,
+        description="Clear old tool results when the conversation passes this many tokens.",
+    )
+    pii: list[PIIType] = Field(
+        default_factory=list, description="Personal data to catch in what the user sends."
+    )
+    pii_strategy: Literal["redact", "mask", "hash", "block"] = "redact"
+    select_tools: int | None = Field(
+        default=None,
+        ge=1,
+        le=100,
+        description="With many tools: let a model pick this many relevant ones for each request.",
+    )
+    todo_list: bool = Field(
+        default=False, description="Give the agent a to-do list for planning longer tasks."
+    )
+    emulate_tools: bool = Field(
+        default=False,
+        description="For testing: an AI model pretends to be the tools instead of running them.",
+    )
+    memory: bool = Field(
+        default=False,
+        description="Long-term memory: the agent can remember facts about the user and recall "
+        "them in later conversations (LangGraph store).",
+    )
+
+
+class McpTools(_Model):
+    """Tools from an MCP server (Settings → MCP servers)."""
+
+    server: str = Field(description="Id of the MCP server.")
+    tools: list[str] = Field(
+        default_factory=list, description="Tool names to use; empty means all of them."
+    )
+
+
+DEFAULT_AGENT_INSTRUCTIONS = (
+    "You are a helpful assistant. Use the tools when they help, and say so when you can't "
+    "find an answer."
+)
+
+
+class AgentSettings(_Model):
+    model: str = Field(
+        default="openai:gpt-4o-mini", description="The model that thinks and picks tools."
+    )
+    instructions: str = Field(
+        default=DEFAULT_AGENT_INSTRUCTIONS,
+        description="Role and rules (the system prompt). Put Flow Data in with {field}.",
+    )
+    input: Ident | None = Field(
+        default=None,
+        description="What the agent works on: a text field, or a messages field for a chat. "
+        "Empty means: what the previous step saved.",
+    )
+    tools: list[Ident] = Field(
+        default_factory=list, description="Steps the agent can use as tools (their ids)."
+    )
+    mcp: list[McpTools] = Field(default_factory=list)
+    save_as: Ident = "answer"
+    output: StructuredOutput | None = Field(
+        default=None, description="Answer in a fixed shape instead of free text."
+    )
+    save_messages: Ident | None = Field(
+        default=None,
+        description="Also save the agent's whole conversation (tool calls included) here.",
+    )
+    temperature: float | None = Field(default=None, ge=0, le=2)
+    max_steps: int = Field(
+        default=40, ge=5, le=1000, description="Most rounds of thinking and tool calls in one run."
+    )
+    addons: AgentAddons = Field(default_factory=AgentAddons)
+
+
+class AgentStep(_StepBase):
+    """An AI that decides which tools to use, in a loop, until it has an answer (create_agent)."""
+
+    type: Literal["agent"]
+    settings: AgentSettings = Field(default_factory=AgentSettings)
+
+
 Step = Annotated[
     InputStep
     | OutputStep
@@ -391,7 +553,8 @@ Step = Annotated[
     | AskHumanStep
     | ForEachStep
     | SubflowStep
-    | JumpStep,
+    | JumpStep
+    | AgentStep,
     Field(discriminator="type"),
 ]
 
@@ -492,4 +655,5 @@ STEP_MODELS: dict[str, type[BaseModel]] = {
     "for_each": ForEachStep,
     "subflow": SubflowStep,
     "jump": JumpStep,
+    "agent": AgentStep,
 }

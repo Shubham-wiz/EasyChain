@@ -383,6 +383,16 @@ _SAFE_IMPORTS: dict[str, tuple[str, str | None]] = {
     "Any": ("typing", "Any"),
     "Annotated": ("typing", "Annotated"),
     "AnyMessage": ("langchain_core.messages", "AnyMessage"),
+    "AIMessage": ("langchain_core.messages", "AIMessage"),
+    "HumanMessage": ("langchain_core.messages", "HumanMessage"),
+    "BaseModel": ("pydantic", "BaseModel"),
+    "Field": ("pydantic", "Field"),
+    "ValidationError": ("pydantic", "ValidationError"),
+    "Literal": ("typing", "Literal"),
+    "tool": ("langchain_core.tools", "tool"),
+    "BaseTool": ("langchain_core.tools", "BaseTool"),
+    "create_agent": ("langchain.agents", "create_agent"),
+    "init_embeddings": ("langchain.embeddings", "init_embeddings"),
 }
 
 

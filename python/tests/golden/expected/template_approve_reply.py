@@ -8,7 +8,8 @@ LangChain and LangGraph: `pip install -r requirements.txt`, then
 `python approval_workflow.py '<inputs as JSON>'`.
 
 The compiled graph is `graph`; call `build_graph(checkpointer=...)` to keep Save Points.
-Ask a Human steps pause the run (LangGraph interrupt); resume with Command(resume=...).
+Ask a Human steps and tool approvals pause the run (LangGraph interrupt); resume with
+Command(resume=...).
 """
 
 import hashlib
@@ -84,6 +85,16 @@ def idempotency_key() -> str:
 
 def ask_in_terminal(request: dict[str, Any]) -> dict[str, Any]:
     """Answer an Ask a Human step in the terminal (Easy Chain's Inbox does this in the app)."""
+    if "action_requests" in request:
+        # An agent wants to use a tool that needs approval (HumanInTheLoopMiddleware).
+        decisions = []
+        for action in request["action_requests"]:
+            print(f"\nThe agent wants to use {action['name']} with {action['args']}")
+            if input("approve? [y/n]> ").strip().lower().startswith("y"):
+                decisions.append({"type": "approve"})
+            else:
+                decisions.append({"type": "reject", "message": input("why not?> ")})
+        return {"decisions": decisions}
     print(f"\n{request['question']}")
     for name, value in request.get("show", {}).items():
         print(f"  {name}: {value}")

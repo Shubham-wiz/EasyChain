@@ -6,7 +6,8 @@ import difflib
 from typing import Any
 
 from ..compiler.issues import Fix, Issue, error, warning
-from ..compiler.pycode import docstring, py_str
+from ..compiler.pycode import RawCode, docstring, py_str
+from ..compiler.schema_code import check_schema, emit_schema, spread_types
 from ..compiler.templates import to_fstring_template, variables
 from ..providers import PROVIDERS, model_info, split_model
 from .base import FormField, StepCode, StepHandler
@@ -97,6 +98,14 @@ class AIModelHandler(StepHandler):
             example="summary",
         ),
         FormField(
+            key="output",
+            label="Reply format",
+            kind="schema",
+            help="Free text, or a fixed set of fields (for example a sentiment, a score and the "
+            "reasons) that later steps can use directly.",
+            technical="with_structured_output · Pydantic",
+        ),
+        FormField(
             key="temperature",
             label="Creativity",
             kind="slider",
@@ -169,6 +178,17 @@ class AIModelHandler(StepHandler):
             advanced=True,
             pro=True,
         ),
+        FormField(
+            key="api_key",
+            label="Key for the custom endpoint",
+            kind="secret",
+            help="The secret that holds this endpoint's key (Settings → API keys). Empty: the "
+            "provider's usual key.",
+            technical="api_key",
+            advanced=True,
+            pro=True,
+            show_if={"base_url": "*"},
+        ),
     ]
 
     def prompt_field(self, step: Any, an: Any) -> str | None:
@@ -176,6 +196,8 @@ class AIModelHandler(StepHandler):
 
     def writes(self, step: Any, an: Any) -> dict[str, str]:
         target = step.settings.save_as
+        if step.settings.output is not None:
+            return {target: "object", **spread_types(step.settings.output)}
         if an.fields.get(target) is not None and an.fields[target].type == "messages":
             return {target: "messages"}
         return {target: "text"}
@@ -187,6 +209,8 @@ class AIModelHandler(StepHandler):
     def check(self, step: Any, an: Any) -> list[Issue]:
         s = step.settings
         issues = check_model(step.id, s.model)
+        if s.output is not None:
+            issues += check_schema(step.id, s.output)
         provider_id, _ = split_model(s.model)
         info = model_info(s.model)
         if info is not None and not info.accepts_temperature and s.temperature is not None:
@@ -248,6 +272,8 @@ class AIModelHandler(StepHandler):
                 kw[key] = value
         if s.stop:
             kw["stop"] = list(s.stop)
+        if s.api_key:
+            kw["api_key"] = RawCode(f'os.environ.get({py_str(s.api_key)}, "")')
         return kw
 
     def emit(self, step: Any, ctx: Any) -> StepCode:
@@ -261,6 +287,10 @@ class AIModelHandler(StepHandler):
             arg = f"json.dumps(data[{py_str(field)}], ensure_ascii=False, default=str)"
         else:
             arg = f"str(data[{py_str(field)}])"
+        if s.api_key:
+            ctx.imports.add("os")
+        if s.output is not None:
+            return self._emit_structured(step, ctx, fn, field, arg)
         out_type = self.writes(step, ctx.an)[s.save_as]
         result = "[reply]" if out_type == "messages" else "reply.text"
         doc = docstring(
@@ -274,6 +304,54 @@ class AIModelHandler(StepHandler):
             f"    return {{{py_str(s.save_as)}: {result}}}"
         )
         return StepCode([code], node=fn)
+
+    def _emit_structured(self, step: Any, ctx: Any, fn: str, field: str, arg: str) -> StepCode:
+        s = step.settings
+        output = s.output
+        class_name = ctx.names.claim(f"{''.join(p.capitalize() for p in step.id.split('_'))}Reply")
+        what = output.description.strip() or f"The reply of “{step.name or step.id}”."
+        classes = emit_schema(output, class_name, what, ctx)
+        structured = f"model.with_structured_output({class_name})"
+        if output.retries:
+            ctx.imports.add_from("pydantic", "ValidationError")
+            ctx.imports.add_from("langchain_core.exceptions", "OutputParserException")
+            structured += (
+                ".with_retry(\n"
+                "        retry_if_exception_type=(ValidationError, OutputParserException),\n"
+                f"        stop_after_attempt={output.retries + 1},\n"
+                "    )"
+            )
+        spread = [f.name for f in output.fields] if output.spread else []
+        if spread:
+            values = [f"{py_str(s.save_as)}: result"] + [
+                f"{py_str(n)}: result[{py_str(n)}]" for n in spread
+            ]
+            returned = "{" + ", ".join(values) + "}"
+            if len(returned) > 70:
+                returned = "{\n" + "".join(f"        {v},\n" for v in values) + "    }"
+            tail = f"    result = reply.model_dump()\n    return {returned}"
+        else:
+            tail = f"    return {{{py_str(s.save_as)}: reply.model_dump()}}"
+        spread_note = (
+            f" Each field is also saved on its own: {', '.join(f'`{n}`' for n in spread)}."
+            if spread
+            else ""
+        )
+        doc = docstring(
+            f"{self.title(step)}\n\nSends `{field}` to {s.model} and saves the reply, in the "
+            f"{class_name} format, as `{s.save_as}`.{spread_note}"
+        )
+        code = (
+            f"def {fn}(data: {ctx.data_class}) -> dict[str, Any]:\n"
+            f"{doc}\n"
+            f"    model = {ctx.model_call(s.model, self.kwargs(step))}\n"
+            f"    structured = {structured}\n"
+            f"    reply = structured.invoke({arg})\n"
+            "    if reply is None:\n"
+            f'        raise ValueError("The model didn\'t reply in the {class_name} format.")\n'
+            f"{tail}"
+        )
+        return StepCode([*classes, code], node=fn)
 
 
 class InstructionsHandler(StepHandler):

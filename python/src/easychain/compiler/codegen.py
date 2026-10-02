@@ -87,6 +87,8 @@ class ModuleContext:
         # Sub-flows already emitted: flow id -> its parts.
         self.children: dict[str, FlowParts] = {}
         self.child_order: list[str] = []
+        # Steps already wrapped as agent tools: (flow prefix, step id) -> factory name.
+        self.agent_tools: dict[tuple[str, str], str] = {}
 
     def helper(self, name: str) -> str:
         helper = HELPERS[name]
@@ -149,7 +151,11 @@ class EmitContext:
         if provider:
             self.module.providers.add(provider)
         parts = [py_str(model)] + [f"{k}={py_literal(v)}" for k, v in kwargs.items()]
-        return f"init_chat_model({', '.join(parts)})"
+        call = f"init_chat_model({', '.join(parts)})"
+        if len(call) > 80:
+            # Long calls go one argument per line (written for a `model = ...` line in a function).
+            call = "init_chat_model(\n" + "".join(f"        {p},\n" for p in parts) + "    )"
+        return call
 
     def subflow(self, flow_id: str) -> FlowParts | None:
         """Emit (once) a flow used as a Sub-flow and return its parts."""
@@ -276,7 +282,12 @@ def emit_flow(
             scratch = EmitContext(an, ModuleContext(module.resolve), prefix)
             scratch.data_class = data_class
             text = handler.emit(an.steps[sid], scratch).text()
-            wiring = ["# Not connected to Input yet."]
+            agent = an.tool_of.get(sid)
+            wiring = (
+                [f"# A tool of the agent “{agent}”: it runs when the agent calls it."]
+                if agent
+                else ["# Not connected to Input yet."]
+            )
         snippets[sid] = text + "\n\n\n# Wiring (inside build_graph)\n" + "\n".join(wiring)
 
     state, input_class, output_class, constants = _emit_state(an, ctx, data_class, root)
@@ -323,7 +334,11 @@ def _emit_module(spec: FlowSpec, an: FlowAnalysis, issues: list[Issue]) -> Compi
     module.imports.add_from("langgraph.graph", "END", "START", "StateGraph")
 
     root = emit_flow(spec, an, module)
-    if any(s.type == "ask_human" for p in [root, *module.children.values()] for s in p.spec.steps):
+    if any(
+        s.type == "ask_human" or (s.type == "agent" and s.settings.addons.approve_tools)
+        for p in [root, *module.children.values()]
+        for s in p.spec.steps
+    ):
         module.has_interrupts = True
     example_input = _example_input(an)
     run_config = _run_config(spec)
@@ -356,7 +371,9 @@ def _emit_module(spec: FlowSpec, an: FlowAnalysis, issues: list[Issue]) -> Compi
     if root.steps:
         parts.append(section("Steps") + "\n\n\n" + "\n\n\n".join(root.steps))
     unreachable = [
-        an.steps[s] for s in an.order if s not in an.reachable and an.handlers[s].has_node
+        an.steps[s]
+        for s in an.order
+        if s not in an.reachable and an.handlers[s].has_node and s not in an.tool_of
     ]
     if unreachable:
         names = ", ".join(f"{s.name or s.id} ({s.id})" for s in unreachable)
@@ -408,8 +425,9 @@ def _emit_header(spec: FlowSpec, mod: str, an: FlowAnalysis, module: ModuleConte
     ]
     if module.has_interrupts:
         lines.append(
-            "Ask a Human steps pause the run (LangGraph interrupt); resume with Command(resume=...)."
+            "Ask a Human steps and tool approvals pause the run (LangGraph interrupt); resume with"
         )
+        lines.append("Command(resume=...).")
     if module.has_async:
         lines.append("Some steps have a time limit, so call it with `await graph.ainvoke(...)`.")
     return docstring("\n".join(lines), spaces=0)

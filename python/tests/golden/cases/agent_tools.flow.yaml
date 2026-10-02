@@ -1,0 +1,81 @@
+version: 1
+name: Agent with tools
+description: A support agent that looks up orders, refunds them with approval, and does sums.
+data:
+- name: order_id
+  description: The order number, like A-1001.
+- name: amount
+  type: number
+  description: How much to refund, in euros.
+- name: expression
+  description: A sum to work out, like 12 * 3.
+steps:
+- id: input
+  type: input
+  settings:
+    fields:
+    - name: question
+      example: Where is my order A-1001?
+    - name: customer_id
+      example: C-42
+- id: support
+  type: agent
+  name: Support agent
+  settings:
+    instructions: |-
+      You help customer {customer_id} with their orders.
+      Ask for approval before refunds. Be brief.
+    input: question
+    tools: [lookup_order, refund, calculate]
+    output:
+      fields:
+      - name: reply
+        description: The answer for the customer.
+      - name: needs_human
+        type: yes_no
+        description: A person should follow up.
+      spread: true
+    addons:
+      approve_tools: [refund]
+      max_model_calls: 8
+      tool_retries: 1
+      summarise: true
+      pii: [email]
+      fallback_models: ["anthropic:claude-haiku-4-5"]
+      memory: true
+- id: lookup_order
+  type: http_request
+  name: Look up an order
+  description: Finds an order by its number and returns its status and items.
+  settings:
+    url: https://shop.example.com/api/orders/{order_id}?customer={customer_id}
+    response: json
+    save_as: order
+- id: refund
+  type: http_request
+  name: Refund an order
+  description: Refunds an order, fully or in part.
+  settings:
+    method: POST
+    url: https://shop.example.com/api/refunds
+    body: '{"order": "{order_id}", "amount": {amount}}'
+    response: json
+    save_as: refund_receipt
+- id: calculate
+  type: code
+  name: Calculator
+  description: Works out a sum.
+  settings:
+    code: |
+      def run(data):
+          """Return the result of a simple sum."""
+          left, op, right = data["expression"].split()
+          a, b = float(left), float(right)
+          return {"result": {"+": a + b, "-": a - b, "*": a * b, "/": a / b}[op]}
+- id: output
+  type: output
+  settings:
+    fields: [reply, needs_human]
+connections:
+- {from: input, to: support}
+- {from: support, to: output}

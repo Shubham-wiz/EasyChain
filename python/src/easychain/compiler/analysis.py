@@ -109,6 +109,15 @@ class FlowAnalysis:
                     if conn.exit == EACH_ITEM and conn.target not in self.foreach_body:
                         self.foreach_body[conn.target] = sid
 
+        # Steps an Agent uses as tools -> the first Agent that uses them. They don't run as
+        # part of the flow, so what they save doesn't become Flow Data.
+        self.tool_of: dict[str, str] = {}
+        for sid, step in self.steps.items():
+            if step.type == "agent":
+                for tool_id in step.settings.tools:
+                    if tool_id in self.steps and tool_id != sid:
+                        self.tool_of.setdefault(tool_id, sid)
+
         self.fields: dict[str, FieldInfo] = {}
         self.field_conflicts: list[tuple[str, str, str]] = []
         self.reads: dict[str, set[str]] = {}
@@ -173,7 +182,13 @@ class FlowAnalysis:
         return None
 
     def available_fields(self, sid: str) -> set[str]:
-        """Fields that may have a value when ``sid`` runs."""
+        """Fields that may have a value when ``sid`` runs.
+
+        A step used as a tool gets what its Agent can see, plus whatever else it reads
+        (the agent fills those in when it calls the tool).
+        """
+        if sid in self.tool_of:
+            return self.available_fields(self.tool_of[sid]) | self.reads.get(sid, set())
         names = {f.name for f in self.fields.values() if f.is_input}
         for anc in self.ancestors[sid]:
             names.update(self.writes.get(anc, {}))
@@ -226,6 +241,9 @@ class FlowAnalysis:
         for sid in self.order:
             step = self.steps[sid]
             handler = self.handlers[sid]
+            if sid in self.tool_of:
+                self.writes[sid] = {}
+                continue
             writes = handler.writes(step, self)
             self.writes[sid] = writes
             for name, ftype in writes.items():
@@ -256,6 +274,15 @@ class FlowAnalysis:
         if self.chat and "messages" in self.fields:
             self.fields["messages"].is_output = True
 
+    def tool_args(self, tool_id: str) -> list[str]:
+        """What the agent fills in when it calls a tool step: the fields the step reads that
+        its Agent can't already see in Flow Data."""
+        agent = self.tool_of.get(tool_id)
+        if agent is None:
+            return []
+        known = self.available_fields(agent)
+        return sorted(self.reads.get(tool_id, set()) - known)
+
     def field_type(self, name: str | None) -> str:
         if name and name in self.fields:
             return self.fields[name].type
@@ -279,6 +306,7 @@ class FlowAnalysis:
             "chat": self.chat,
             "fields": [f.to_dict() for f in self.fields.values()],
             "foreach_body": self.foreach_body,
+            "tool_of": self.tool_of,
             "reads": {k: sorted(v) for k, v in self.reads.items()},
             "writes": self.writes,
             "reachable": sorted(self.reachable),
