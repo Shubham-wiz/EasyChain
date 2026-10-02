@@ -19,6 +19,19 @@ class Helper:
     reducer: bool = False
     # Other helpers this one calls.
     requires: tuple[str, ...] = ()
+    # Packages exported code needs for it (requirements.txt).
+    requirements: tuple[str, ...] = ()
+
+
+def _source(*objects: object, constants: tuple[str, ...] = ()) -> str:
+    """Helper code taken from Easy Chain's own source, so there is one implementation."""
+    import inspect
+
+    from ..knowledge import search
+
+    parts = [f"{name}: dict[Any, Any] = {{}}" for name in constants if hasattr(search, name)]
+    parts += [inspect.getsource(o).strip("\n") for o in objects]  # type: ignore[arg-type]
+    return "\n" + "\n\n\n".join(parts) + "\n"
 
 
 FILL = Helper(
@@ -369,6 +382,35 @@ async def mcp_tools(servers: dict[str, list[str]]) -> list[BaseTool]:
     ),
 )
 
+
+def _knowledge_helpers() -> tuple[Helper, ...]:
+    from ..knowledge import search
+    from ..knowledge.embeddings import KeywordEmbeddings
+
+    return (
+        Helper(
+            "search_knowledge",
+            _source(*search.HELPER_FUNCTIONS, constants=search.HELPER_GLOBALS),
+            imports=("os", "re", "numpy as np", "sqlalchemy as sa"),
+            from_imports=(("typing", "Any"),),
+            requirements=("sqlalchemy>=2.0.36", "numpy>=2", "psycopg[binary]>=3.2"),
+        ),
+        Helper("cite_passages", _source(search.cite_passages), from_imports=(("typing", "Any"),)),
+        Helper(
+            "rerank_passages",
+            _source(search.rerank_passages),
+            imports=("re",),
+            from_imports=(("typing", "Any"),),
+        ),
+        Helper(
+            "KeywordEmbeddings",
+            _source(KeywordEmbeddings),
+            imports=("hashlib", "math", "re"),
+            from_imports=(("langchain_core.embeddings", "Embeddings"),),
+        ),
+    )
+
+
 HELPERS = {
     h.name: h
     for h in (
@@ -387,5 +429,6 @@ HELPERS = {
         TELL_AGENT,
         MEMORY_TOOLS,
         MCP_TOOLS,
+        *_knowledge_helpers(),
     )
 }

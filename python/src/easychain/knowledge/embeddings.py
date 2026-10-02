@@ -18,76 +18,13 @@ from langchain_core.embeddings import Embeddings
 class KeywordEmbeddings(Embeddings):
     """Embeddings without a model: each word is hashed into one of `dims` slots."""
 
-    STOPWORDS = frozenset(
-        [
-            "the",
-            "and",
-            "for",
-            "are",
-            "but",
-            "not",
-            "you",
-            "all",
-            "any",
-            "can",
-            "had",
-            "her",
-            "was",
-            "one",
-            "our",
-            "out",
-            "has",
-            "his",
-            "how",
-            "its",
-            "may",
-            "new",
-            "now",
-            "old",
-            "see",
-            "two",
-            "way",
-            "who",
-            "did",
-            "get",
-            "got",
-            "let",
-            "put",
-            "say",
-            "she",
-            "too",
-            "use",
-            "this",
-            "that",
-            "with",
-            "from",
-            "have",
-            "what",
-            "when",
-            "where",
-            "which",
-            "will",
-            "your",
-            "about",
-            "would",
-            "there",
-            "their",
-            "them",
-            "they",
-            "been",
-            "into",
-            "than",
-            "then",
-            "these",
-            "those",
-            "some",
-            "such",
-            "only",
-            "also",
-            "just",
-            "does",
-        ]
+    COMMON_WORDS = (
+        "the and for are but not you all any can had her was one our out has his how its may "
+        "new now old see two way who did get got let put say she too use this that with from "
+        "have what when where which will your about would there their them they been into "
+        "than then these those some such only also just does"
     )
+    STOPWORDS = frozenset(COMMON_WORDS.split())
 
     def __init__(self, dims: int = 256):
         self.dims = dims

@@ -325,6 +325,9 @@ def cmd_worker(args: argparse.Namespace) -> int:
     home = Path(args.home or os.environ.get("EASYCHAIN_HOME") or Path.home() / ".easychain")
     workspace = Path(args.workspace or os.environ.get("EASYCHAIN_WORKSPACE") or home / "flows")
     url = args.database_url or default_database_url(home)
+    from .server.knowledge_api import use_database
+
+    use_database(url)
 
     async def go() -> int:
         db = await Database.connect(url)

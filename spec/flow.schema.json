@@ -1628,6 +1628,125 @@
       "title": "JumpStep",
       "type": "object"
     },
+    "KnowledgeSearchSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "knowledge_base": {
+          "default": "",
+          "description": "Id of the Knowledge Base to search.",
+          "title": "Knowledge Base",
+          "type": "string"
+        },
+        "embedding_model": {
+          "default": "keywords",
+          "description": "The embedding model the Knowledge Base was built with (set when you pick it).",
+          "title": "Embedding Model",
+          "type": "string"
+        },
+        "query": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_]{0,62}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Field with the question. Empty means: what the previous step saved (or what the agent asks, when this step is a tool).",
+          "title": "Query"
+        },
+        "top_k": {
+          "default": 4,
+          "description": "How many passages to keep.",
+          "maximum": 50,
+          "minimum": 1,
+          "title": "Top K",
+          "type": "integer"
+        },
+        "mode": {
+          "default": "hybrid",
+          "description": "hybrid: by meaning and by words, merged. meaning: embeddings only. words: full-text search only.",
+          "enum": [
+            "hybrid",
+            "meaning",
+            "words"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "rerank_model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "An AI model that re-orders the passages by relevance.",
+          "title": "Rerank Model"
+        },
+        "save_as": {
+          "default": "context",
+          "description": "The passages, numbered for citing.",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Save As",
+          "type": "string"
+        },
+        "sources_as": {
+          "default": "sources",
+          "description": "The passages as a list (title, source, page, text).",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Sources As",
+          "type": "string"
+        }
+      },
+      "title": "KnowledgeSearchSettings",
+      "type": "object"
+    },
+    "KnowledgeSearchStep": {
+      "additionalProperties": false,
+      "description": "Finds the passages of a Knowledge Base that best match a question (a retriever).",
+      "properties": {
+        "id": {
+          "description": "Unique id; also the LangGraph node name.",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "description": "Label shown on the canvas.",
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "run": {
+          "$ref": "#/$defs/RunPolicy"
+        },
+        "type": {
+          "const": "knowledge_search",
+          "title": "Type",
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/KnowledgeSearchSettings"
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ],
+      "title": "KnowledgeSearchStep",
+      "type": "object"
+    },
     "McpTools": {
       "additionalProperties": false,
       "description": "Tools from an MCP server (Settings \u2192 MCP servers).",
@@ -2058,6 +2177,7 @@
             "input": "#/$defs/InputStep",
             "instructions": "#/$defs/InstructionsStep",
             "jump": "#/$defs/JumpStep",
+            "knowledge_search": "#/$defs/KnowledgeSearchStep",
             "output": "#/$defs/OutputStep",
             "subflow": "#/$defs/SubflowStep"
           },
@@ -2099,6 +2219,9 @@
           },
           {
             "$ref": "#/$defs/AgentStep"
+          },
+          {
+            "$ref": "#/$defs/KnowledgeSearchStep"
           }
         ]
       },

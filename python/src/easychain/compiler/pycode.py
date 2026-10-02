@@ -182,6 +182,21 @@ class Names:
         "run_tool",
         "agent",
         "result",
+        "np",
+        "sa",
+        "search_knowledge",
+        "cite_passages",
+        "rerank_passages",
+        "KeywordEmbeddings",
+        "Embeddings",
+        "knowledge_engine",
+        "knowledge_words",
+        "knowledge_by_meaning",
+        "knowledge_by_words",
+        "KNOWLEDGE_ENGINES",
+        "KNOWLEDGE_VECTORS",
+        "hits",
+        "embeddings",
     }
 
     def __init__(self) -> None:

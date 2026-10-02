@@ -49,6 +49,7 @@ from .cron import CronError, next_fire
 from .cron import describe as describe_cron
 from .db import Database, checkpoint_url
 from .hub import Busy, Hub, Invalid, NotFound
+from .knowledge_api import add_knowledge_routes, use_database
 from .secrets import SecretStore
 from .store import FlowNotFound, FlowStore
 from .worker import Worker
@@ -174,6 +175,7 @@ def create_app(
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        use_database(db_url)
         db = await Database.connect(db_url)
         resources = await open_resources(checkpoint_url(db_url))
         app.state.hub = Hub(db, resources, flows, vault)
@@ -201,6 +203,7 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.flows, app.state.vault = flows, vault
+    add_knowledge_routes(app, home_path)
     origins = os.environ.get(
         "EASYCHAIN_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
     )
@@ -385,6 +388,49 @@ def create_app(
 
     # ── checks, code, export ───────────────────────────────────────────────
 
+    def knowledge_issues(spec: FlowSpec) -> list[Any]:
+        """Knowledge Base search steps: the base exists here and was built with the same model."""
+        steps = [
+            s for s in spec.steps if s.type == "knowledge_search" and s.settings.knowledge_base
+        ]
+        if not steps:
+            return []
+        from ..knowledge.store import KnowledgeStore
+
+        try:
+            store = KnowledgeStore().setup()
+        except Exception:  # the knowledge database isn't reachable: the run will say so
+            return []
+        issues = []
+        for step in steps:
+            base = store.get_base(step.settings.knowledge_base)
+            if base is None:
+                issues.append(
+                    warning(
+                        "knowledge_base_missing",
+                        f"There's no Knowledge Base “{step.settings.knowledge_base}” here yet.",
+                        step=step.id,
+                        setting="knowledge_base",
+                        hint="Make it on the Knowledge page, or pick another one.",
+                    )
+                )
+            elif base["embedding_model"] != step.settings.embedding_model:
+                issues.append(
+                    warning(
+                        "knowledge_model_mismatch",
+                        f"This step searches with {step.settings.embedding_model}, but the "
+                        f"Knowledge Base was built with {base['embedding_model']}.",
+                        step=step.id,
+                        setting="knowledge_base",
+                        fix=Fix(
+                            "set_setting",
+                            f"Use {base['embedding_model']}",
+                            {"key": "embedding_model", "value": base["embedding_model"]},
+                        ),
+                    )
+                )
+        return issues
+
     def runtime_issues(spec: FlowSpec) -> list[Any]:
         """Checks that depend on this machine: missing API keys and secrets."""
         issues = []
@@ -408,6 +454,7 @@ def create_app(
                         ),
                     )
                 )
+        issues += knowledge_issues(spec)
         for step in spec.steps:
             if step.type != "http_request":
                 continue

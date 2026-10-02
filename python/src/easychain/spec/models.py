@@ -420,6 +420,39 @@ class JumpStep(_StepBase):
     settings: JumpSettings = Field(default_factory=JumpSettings)
 
 
+class KnowledgeSearchSettings(_Model):
+    knowledge_base: str = Field(default="", description="Id of the Knowledge Base to search.")
+    embedding_model: str = Field(
+        default="keywords",
+        description="The embedding model the Knowledge Base was built with (set when you pick it).",
+    )
+    query: Ident | None = Field(
+        default=None,
+        description="Field with the question. Empty means: what the previous step saved "
+        "(or what the agent asks, when this step is a tool).",
+    )
+    top_k: int = Field(default=4, ge=1, le=50, description="How many passages to keep.")
+    mode: Literal["hybrid", "meaning", "words"] = Field(
+        default="hybrid",
+        description="hybrid: by meaning and by words, merged. meaning: embeddings only. "
+        "words: full-text search only.",
+    )
+    rerank_model: str | None = Field(
+        default=None, description="An AI model that re-orders the passages by relevance."
+    )
+    save_as: Ident = Field(default="context", description="The passages, numbered for citing.")
+    sources_as: Ident = Field(
+        default="sources", description="The passages as a list (title, source, page, text)."
+    )
+
+
+class KnowledgeSearchStep(_StepBase):
+    """Finds the passages of a Knowledge Base that best match a question (a retriever)."""
+
+    type: Literal["knowledge_search"]
+    settings: KnowledgeSearchSettings = Field(default_factory=KnowledgeSearchSettings)
+
+
 PIIType = Literal["email", "credit_card", "ip", "mac_address", "url"]
 
 
@@ -554,7 +587,8 @@ Step = Annotated[
     | ForEachStep
     | SubflowStep
     | JumpStep
-    | AgentStep,
+    | AgentStep
+    | KnowledgeSearchStep,
     Field(discriminator="type"),
 ]
 
@@ -656,4 +690,5 @@ STEP_MODELS: dict[str, type[BaseModel]] = {
     "subflow": SubflowStep,
     "jump": JumpStep,
     "agent": AgentStep,
+    "knowledge_search": KnowledgeSearchStep,
 }

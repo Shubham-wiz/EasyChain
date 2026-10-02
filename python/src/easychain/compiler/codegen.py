@@ -95,6 +95,9 @@ class ModuleContext:
         for dep in helper.requires:
             self.helper(dep)
         self.helpers[name] = None
+        for req in helper.requirements:
+            if req not in self.extra_requirements:
+                self.extra_requirements.append(req)
         for module in helper.imports:
             self.imports.add(module)
         for module, imported in helper.from_imports:

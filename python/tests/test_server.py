@@ -40,6 +40,7 @@ def test_health_and_catalog(client):
         "instructions",
         "ai_model",
         "agent",
+        "knowledge_search",
         "http_request",
         "code",
         "decision",

@@ -1,0 +1,54 @@
+version: 1
+name: Answer from the docs
+description: Finds passages in the product docs and answers with citations.
+steps:
+- id: input
+  type: input
+  settings:
+    fields:
+    - name: question
+      example: How do I reset my password?
+- id: search
+  type: knowledge_search
+  name: Search the docs
+  settings:
+    knowledge_base: product_docs
+    embedding_model: openai:text-embedding-3-small
+    top_k: 3
+    rerank_model: openai:gpt-4o-mini
+- id: write_prompt
+  type: instructions
+  settings:
+    system: Answer only from the passages. Cite them like [1]. If they don't say, say you don't know.
+    user: "Passages:\n\n{context}\n\nQuestion: {question}"
+- id: answer_it
+  type: ai_model
+  name: Answer
+  settings:
+    save_as: answer
+- id: researcher
+  type: agent
+  name: Researcher
+  settings:
+    input: question
+    tools: [faq]
+    save_as: research
+- id: faq
+  type: knowledge_search
+  name: Search the FAQ
+  description: Searches the frequently asked questions.
+  settings:
+    knowledge_base: faq
+    mode: words
+    save_as: faq_passages
+    sources_as: faq_sources
+- id: output
+  type: output
+  settings:
+    fields: [answer, sources, research]
+connections:
+- {from: input, to: search}
+- {from: search, to: write_prompt}
+- {from: write_prompt, to: answer_it}
+- {from: answer_it, to: researcher}
+- {from: researcher, to: output}

@@ -12,6 +12,7 @@ from .ai import AIModelHandler, InstructionsHandler
 from .base import FormField, StepCode, StepHandler
 from .flow_control import AskHumanHandler, ForEachHandler, SubflowHandler
 from .io_steps import InputHandler, OutputHandler
+from .knowledge import KnowledgeSearchHandler
 from .logic import DecisionHandler, JumpHandler
 
 HANDLERS: dict[str, StepHandler] = {
@@ -22,6 +23,7 @@ HANDLERS: dict[str, StepHandler] = {
         InstructionsHandler(),
         AIModelHandler(),
         AgentHandler(),
+        KnowledgeSearchHandler(),
         HttpRequestHandler(),
         CodeHandler(),
         DecisionHandler(),
@@ -35,6 +37,7 @@ HANDLERS: dict[str, StepHandler] = {
 CATEGORIES = [
     {"id": "start_end", "label": "Start and finish"},
     {"id": "ai", "label": "AI"},
+    {"id": "knowledge", "label": "Knowledge and memory"},
     {"id": "actions", "label": "Actions"},
     {"id": "logic", "label": "Logic"},
     {"id": "people", "label": "People"},
