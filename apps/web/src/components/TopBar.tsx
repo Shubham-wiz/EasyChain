@@ -1,5 +1,5 @@
 import * as Popover from "@radix-ui/react-popover";
-import { AlertTriangle, CheckCircle2, CircleAlert, Cloud, CloudOff, Code2, Inbox, KeyRound, LayoutGrid, Loader2, Moon, Play, Redo2, Sun, Undo2, Zap } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CircleAlert, Cloud, CloudOff, Code2, FileJson, Inbox, KeyRound, LayoutGrid, Loader2, Moon, Play, Redo2, Sun, Undo2, Zap } from "lucide-react";
 import { useStore } from "zustand";
 import { autoLayout } from "../lib/spec";
 import { cn, modKey } from "../lib/utils";
@@ -8,6 +8,7 @@ import { redo, undo, useFlow } from "../state/flow";
 import { useRun } from "../state/run";
 import { useUi } from "../state/ui";
 import { useInboxCount } from "./Inbox";
+import { KnowledgeLink } from "./Knowledge";
 import { IssueList } from "./inspector/Inspector";
 import { Button, Tooltip } from "./ui";
 
@@ -74,7 +75,7 @@ export function TopBar({ onHome }: { onHome: () => void }) {
   const apply = useFlow((s) => s.apply);
   const canUndo = useStore(useFlow.temporal, (s) => s.pastStates.length > 0);
   const canRedo = useStore(useFlow.temporal, (s) => s.futureStates.length > 0);
-  const { mode, setMode, theme, toggleTheme, openSettings, setExportOpen, setRightTab, select, setTriggersOpen } = useUi();
+  const { mode, setMode, theme, toggleTheme, openSettings, setExportOpen, setRightTab, select, setTriggersOpen, setImportOpen } = useUi();
   const running = useRun((s) => s.status === "running" || s.status === "queued");
   const mod = modKey();
   return (
@@ -107,7 +108,13 @@ export function TopBar({ onHome }: { onHome: () => void }) {
       </div>
       <div className="ml-auto flex items-center gap-1.5">
         <ProblemsButton />
+        <KnowledgeLink />
         <InboxLink />
+        <Tooltip content="Import an API (OpenAPI) as steps or agent tools">
+          <Button variant="ghost" size="icon-sm" aria-label="Import an API" onClick={() => setImportOpen(true)}>
+            <FileJson size={15} />
+          </Button>
+        </Tooltip>
         <Tooltip content="Start this flow from a webhook, a schedule, an upload or another flow">
           <Button variant="ghost" size="icon-sm" aria-label="Triggers" onClick={() => setTriggersOpen(true)}>
             <Zap size={15} />

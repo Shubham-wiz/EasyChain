@@ -1,7 +1,7 @@
 import { AlertTriangle, ChevronDown, ChevronRight, CircleAlert, Wrench } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { applyFix } from "../../lib/fixes";
-import { getStep, renameStepId, toIdent, updateSettings, updateStep } from "../../lib/spec";
+import { getStep, renameStepId, toIdent, toolOf, updateSettings, updateStep } from "../../lib/spec";
 import type { Issue } from "../../lib/types";
 import { cn, preview } from "../../lib/utils";
 import { useStepInfo } from "../../state/catalog";
@@ -118,6 +118,10 @@ function StepPanel({ stepId }: { stepId: string }) {
   const [tab, setTab] = useState("settings");
   const formRef = useRef<HTMLDivElement>(null);
   const issues = useMemo(() => allIssues.filter((i) => i.step === stepId), [allIssues, stepId]);
+  const agentOf = useFlow((s) => {
+    const agentId = s.spec ? toolOf(s.spec, stepId) : null;
+    return agentId ? s.spec?.steps.find((x) => x.id === agentId)?.name || agentId : null;
+  });
 
   useEffect(() => setMoreOpen(mode === "pro"), [mode, stepId]);
 
@@ -155,6 +159,7 @@ function StepPanel({ stepId }: { stepId: string }) {
           fields,
           upstream,
           id: `${stepId}-${f.key}`,
+          stepId,
           onChange: (value) => apply((s) => updateSettings(s, stepId, { [f.key]: value }), `${stepId}:${f.key}`),
         })}
       </Field>
@@ -182,6 +187,25 @@ function StepPanel({ stepId }: { stepId: string }) {
           </div>
         </div>
         <p className="text-xs leading-relaxed text-muted">{info.summary}</p>
+        {agentOf && (
+          <div data-setting="description">
+            <Field
+              label="What this tool does"
+              help={`The agent “${agentOf}” reads this to decide when to use the tool. Say what it does and what it needs.`}
+              example="Looks up an order by its number and returns its status and items."
+              htmlFor={`${stepId}-description`}
+              issue={issueFor("description")}
+            >
+              <Textarea
+                id={`${stepId}-description`}
+                rows={2}
+                value={step.description ?? ""}
+                placeholder="Looks up … and returns …"
+                onChange={(e) => apply((s) => updateStep(s, stepId, { description: e.target.value }), `${stepId}:description`)}
+              />
+            </Field>
+          </div>
+        )}
         <IssueList issues={issues} compact />
         <StepRunResult stepId={stepId} />
       </div>

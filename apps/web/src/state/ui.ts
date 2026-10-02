@@ -1,7 +1,8 @@
 import { create } from "zustand";
 
 export type Mode = "beginner" | "pro";
-export type Theme = "light" | "dark";
+export type SettingsTab = "keys" | "mcp" | "notifications";
+type Theme = "light" | "dark";
 export type RightTab = "inspect" | "run";
 
 function stored<T extends string>(key: string, fallback: T): T {
@@ -40,7 +41,8 @@ interface UiState {
   theme: Theme;
   selected: string[];
   rightTab: RightTab;
-  settings: { open: boolean; provider?: string; secret?: string };
+  settings: { open: boolean; provider?: string; secret?: string; tab?: SettingsTab };
+  importOpen: boolean;
   exportOpen: boolean;
   problemsOpen: boolean;
   standIn: boolean;
@@ -53,7 +55,8 @@ interface UiState {
   toggleTheme: () => void;
   select: (ids: string[]) => void;
   setRightTab: (tab: RightTab) => void;
-  openSettings: (focus?: { provider?: string; secret?: string }) => void;
+  openSettings: (focus?: { provider?: string; secret?: string; tab?: SettingsTab }) => void;
+  setImportOpen: (open: boolean) => void;
   closeSettings: () => void;
   setExportOpen: (open: boolean) => void;
   setProblemsOpen: (open: boolean) => void;
@@ -73,6 +76,7 @@ export const useUi = create<UiState>()((set, get) => ({
   selected: [],
   rightTab: "inspect",
   settings: { open: false },
+  importOpen: false,
   exportOpen: false,
   problemsOpen: false,
   standIn: stored<string>("easychain.standIn", "false") === "true",
@@ -98,6 +102,7 @@ export const useUi = create<UiState>()((set, get) => ({
   setRightTab: (rightTab) => set({ rightTab }),
   openSettings: (focus) => set({ settings: { open: true, ...focus } }),
   closeSettings: () => set({ settings: { open: false } }),
+  setImportOpen: (importOpen) => set({ importOpen }),
   setExportOpen: (exportOpen) => set({ exportOpen }),
   setProblemsOpen: (problemsOpen) => set({ problemsOpen }),
   setStandIn: (standIn) => {

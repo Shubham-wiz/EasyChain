@@ -8,6 +8,8 @@ export interface FlowEdgeData extends Record<string, unknown> {
   exit?: string | null;
   /** Drawn by Easy Chain (For Each results), not a connection in the flow. */
   virtual?: boolean;
+  /** An Agent's tool (deleting it takes the step off the agent's tools). */
+  tool?: boolean;
   label?: string;
 }
 
@@ -20,7 +22,9 @@ export const FlowEdge = memo(function FlowEdge(props: EdgeProps) {
   const sourceExit = sourceRun?.exit;
   const { deleteElements } = useReactFlow();
   const taken = data?.exit ? sourceExit === data.exit : true;
-  const flowing = sourceRun?.status === "done" && targetRun?.status === "running" && taken;
+  // A tool's line lights up while the agent is calling it.
+  const toolCalling = data?.tool && targetRun?.status === "running" && (targetRun.tools ?? []).some((t) => t.tool === source && t.status === "running");
+  const flowing = (sourceRun?.status === "done" && targetRun?.status === "running" && taken && !data?.tool) || toolCalling;
   const done = sourceRun?.status === "done" && targetRun && targetRun.status !== "running" && taken;
   return (
     <>
@@ -31,7 +35,7 @@ export const FlowEdge = memo(function FlowEdge(props: EdgeProps) {
         className={cn(flowing && "edge-flowing", done && "edge-done")}
         style={{ strokeWidth: selected ? 2.5 : 1.75 }}
       />
-      {data?.virtual && data.label && (
+      {(data?.virtual || data?.tool) && data.label && !selected && (
         <EdgeLabelRenderer>
           <div
             className="nodrag nopan pointer-events-none absolute rounded-full bg-surface px-1.5 py-px text-[10px] text-faint italic"

@@ -18,7 +18,23 @@ import {
 } from "@xyflow/react";
 import { MousePointerClick } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addStep, canConnect, clone, connect, createStep, EACH_ITEM, getStep, hasExits, moveSteps, removeConnection, removeSteps, NODE_WIDTH } from "../../lib/spec";
+import {
+  addStep,
+  addTool,
+  canAddTool,
+  canConnect,
+  clone,
+  connect,
+  createStep,
+  EACH_ITEM,
+  getStep,
+  hasExits,
+  moveSteps,
+  removeConnection,
+  removeSteps,
+  removeTool,
+  NODE_WIDTH,
+} from "../../lib/spec";
 import type { Connection, FlowSpec, Position } from "../../lib/types";
 import { useCatalog } from "../../state/catalog";
 import { useCheck } from "../../state/check";
@@ -89,6 +105,25 @@ function syncEdges(prev: Edge[], spec: FlowSpec): Edge[] {
         selected: selected.has(id),
       };
     });
+  // Agent tools: dashed lines from each tool step up into the agent's Tools handle.
+  for (const step of spec.steps) {
+    if (step.type !== "agent") continue;
+    for (const toolId of (step.settings.tools ?? []) as string[]) {
+      if (!getStep(spec, toolId)) continue;
+      const id = `tool:${toolId}->${step.id}`;
+      edges.push({
+        id,
+        source: toolId,
+        target: step.id,
+        sourceHandle: "as-tool",
+        targetHandle: "tools",
+        type: "flow",
+        data: { tool: true, label: "tool" },
+        style: { strokeDasharray: "5 4" },
+        selected: selected.has(id),
+      });
+    }
+  }
   // For Each: each item's result goes back to the For Each (drawn, not editable).
   for (const c of spec.connections) {
     if (c.exit !== EACH_ITEM || !getStep(spec, c.to)) continue;
@@ -193,6 +228,10 @@ export function Canvas() {
       apply((s) => {
         let next = s;
         for (const e of deleted.filter((x) => !x.id.startsWith("results:"))) {
+          if (e.id.startsWith("tool:")) {
+            next = removeTool(next, e.target, e.source);
+            continue;
+          }
           const exit = e.sourceHandle?.startsWith("exit:") ? e.sourceHandle.slice(5) : null;
           next = removeConnection(next, { from: e.source, to: e.target, exit });
         }
@@ -204,23 +243,37 @@ export function Canvas() {
   const exitOf = (handle: string | null | undefined) => (handle?.startsWith("exit:") ? handle.slice(5) : null);
 
   const onConnect = useCallback(
-    (c: RFConnection) => apply((s) => connect(s, c.source, c.target, exitOf(c.sourceHandle))),
+    (c: RFConnection) =>
+      apply((s) =>
+        c.targetHandle === "tools" ? addTool(s, c.target, c.source) : connect(s, c.source, c.target, exitOf(c.sourceHandle)),
+      ),
     [apply],
   );
 
-  const isValidConnection = useCallback(
-    (c: RFConnection | Edge) => canConnect(spec, c.source, c.target, exitOf(c.sourceHandle)) === null,
+  const reasonFor = useCallback(
+    (source: string, target: string, sourceHandle: string | null | undefined, targetHandle: string | null | undefined) =>
+      targetHandle === "tools" || sourceHandle === "as-tool"
+        ? targetHandle === "tools"
+          ? canAddTool(spec, source, target)
+          : "Connect a tool to an Agent's Tools handle (at the bottom of the agent)."
+        : canConnect(spec, source, target, exitOf(sourceHandle)),
     [spec],
+  );
+
+  const isValidConnection = useCallback(
+    (c: RFConnection | Edge) => reasonFor(c.source, c.target, c.sourceHandle, c.targetHandle) === null,
+    [reasonFor],
   );
 
   const onConnectEnd = useCallback(
     (event: MouseEvent | TouchEvent, state: FinalConnectionState) => {
       if (state.isValid || !state.fromNode) return;
       if (state.toNode) {
-        const reason = canConnect(spec, state.fromNode.id, state.toNode.id, exitOf(state.fromHandle?.id));
+        const reason = reasonFor(state.fromNode.id, state.toNode.id, state.fromHandle?.id, state.toHandle?.id);
         if (reason) setToast(reason);
         return;
       }
+      if (state.fromHandle?.id === "as-tool" || state.fromHandle?.id === "tools") return;
       // Dropped on empty canvas: offer to add a step there, already connected.
       const point = "changedTouches" in event ? event.changedTouches[0] : event;
       const rect = wrapper.current?.getBoundingClientRect();
@@ -230,7 +283,7 @@ export function Canvas() {
         from: { step: state.fromNode.id, exit: exitOf(state.fromHandle?.id) },
       });
     },
-    [spec, screenToFlowPosition],
+    [reasonFor, screenToFlowPosition],
   );
 
   const addAt = useCallback(

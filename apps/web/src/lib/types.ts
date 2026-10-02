@@ -14,7 +14,12 @@ export type StepType =
   | "ask_human"
   | "for_each"
   | "subflow"
-  | "jump";
+  | "jump"
+  | "agent"
+  | "knowledge_search"
+  | "memory"
+  | "sql_query"
+  | "mcp_tool";
 
 export interface DataField {
   name: string;
@@ -130,13 +135,25 @@ export interface ProviderInfo {
   key_url: string | null;
   key_set: boolean;
   key_source: string | null;
+  installed?: boolean;
+  install?: string | null;
+  credentials?: string | null;
+  settings?: { env: string; label: string; set: boolean }[];
   models: ModelOption[];
+}
+
+export interface EmbeddingModelInfo {
+  id: string;
+  label: string;
+  dims: number;
+  provider: string | null;
 }
 
 export interface Catalog {
   categories: { id: string; label: string }[];
   steps: StepTypeInfo[];
   providers: ProviderInfo[];
+  embedding_models?: EmbeddingModelInfo[];
   spec_version: number;
   field_types: FieldType[];
   update_rules: UpdateRule[];
@@ -183,6 +200,8 @@ export interface Analysis {
   upstream: Record<string, string | null>;
   exits: Record<string, string[]>;
   foreach_body?: Record<string, string>;
+  /** Steps used as an Agent's tools -> that Agent. */
+  tool_of?: Record<string, string>;
 }
 
 export interface CheckResult {
@@ -227,12 +246,15 @@ export interface Waiting {
 
 export interface AskRequest {
   step?: string;
-  kind: "approve" | "edit" | "answer" | "choose";
+  kind: "approve" | "edit" | "answer" | "choose" | "approve_tool";
   question: string;
   show?: Record<string, unknown>;
   field?: string;
   value?: unknown;
   options?: string[];
+  /** approve_tool: the tool calls an agent wants to make. */
+  actions?: { tool: string; args: Record<string, unknown> }[];
+  allowed?: string[];
 }
 
 interface EventBase {
@@ -260,6 +282,16 @@ export type RunEvent = EventBase &
         item?: number;
       }
     | { type: "route"; step: string; exit: string }
+    | { type: "tool_started"; step: string; tool: string; args: Record<string, unknown>; call_id?: string | null }
+    | {
+        type: "tool_finished";
+        step: string;
+        tool: string | null;
+        call_id?: string | null;
+        result: unknown;
+        status: string;
+        duration_ms: number;
+      }
     | { type: "progress"; step: string; done: number; total: number }
     | { type: "step_paused"; step: string; interrupt_id: string; request: AskRequest }
     | { type: "save_point"; checkpoint_id: string; next: string[]; step_number: number | null }
@@ -410,4 +442,105 @@ export interface TemplateInfo {
 export interface SecretInfo {
   name: string;
   source: "vault" | "environment";
+}
+
+// ── knowledge ─────────────────────────────────────────────────────────────
+
+export interface KnowledgeDocument {
+  id: string;
+  kb_id: string;
+  title: string;
+  source: string;
+  kind: string;
+  status: "queued" | "processing" | "ready" | "error";
+  error?: string | null;
+  chunks: number;
+  chars: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface KnowledgeBase {
+  id: string;
+  name: string;
+  description: string;
+  embedding_model: string;
+  embedding_label?: string;
+  dims: number;
+  chunk_size: number;
+  chunk_overlap: number;
+  created_at: number;
+  updated_at: number;
+  documents?: KnowledgeDocument[] | number;
+  chunks?: number;
+}
+
+export interface KnowledgeHit {
+  n: number;
+  id: string;
+  doc_id?: string;
+  text: string;
+  title?: string | null;
+  source?: string | null;
+  page?: number | null;
+  heading?: string | null;
+  score?: number;
+  similarity?: number;
+  matched?: "both" | "meaning" | "words";
+}
+
+export interface ChunkPreview {
+  title: string;
+  kind: string;
+  count: number;
+  chars: number;
+  chunks: { position: number; text: string; page: number | null; heading: string | null }[];
+}
+
+// ── MCP and OpenAPI ───────────────────────────────────────────────────────
+
+export interface McpServer {
+  id: string;
+  name: string;
+  transport: "http" | "sse" | "stdio";
+  url: string;
+  headers: Record<string, string>;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+}
+
+export interface McpSettings {
+  servers: McpServer[];
+  allowed_commands: string[];
+}
+
+export interface McpTool {
+  name: string;
+  description: string;
+  args: Record<string, { type?: string; description?: string; title?: string }>;
+}
+
+export interface OpenApiParam {
+  name: string;
+  in: "path" | "query" | "header" | "body";
+  required: boolean;
+  type: FieldType;
+  description: string;
+}
+
+export interface OpenApiOperation {
+  id: string;
+  method: string;
+  path: string;
+  summary: string;
+  description: string;
+  params: OpenApiParam[];
+  body: OpenApiParam[];
+}
+
+export interface OpenApiInspection {
+  title: string;
+  server: string;
+  operations: OpenApiOperation[];
 }

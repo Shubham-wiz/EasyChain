@@ -34,6 +34,8 @@ export function usedNames(spec: FlowSpec, extraFields: string[] = []): Set<strin
     names.add(step.id);
     const s = step.settings ?? {};
     if (typeof s.save_as === "string") names.add(s.save_as);
+    if (typeof s.sources_as === "string") names.add(s.sources_as);
+    if (typeof s.save_messages === "string") names.add(s.save_messages);
     if (step.type === "input") for (const f of s.fields ?? []) names.add(f.name);
     if (step.type === "output") for (const f of s.fields ?? []) names.add(f);
   }
@@ -127,12 +129,58 @@ export function hasExits(step: Step): boolean {
   return exitLabels(step).length > 0;
 }
 
+// ── agent tools ───────────────────────────────────────────────────────────
+
+/** Step types an Agent can use as tools. */
+export const TOOL_TYPES = new Set<StepType>(["http_request", "code", "subflow", "knowledge_search", "sql_query", "mcp_tool", "memory"]);
+
+/** The Agent that uses a step as a tool, if any. */
+export function toolOf(spec: FlowSpec, stepId: string): string | null {
+  const agent = spec.steps.find((s) => s.type === "agent" && ((s.settings.tools ?? []) as string[]).includes(stepId));
+  return agent?.id ?? null;
+}
+
+/** Why a step can't become an Agent's tool, or null when it can. */
+export function canAddTool(spec: FlowSpec, toolId: string, agentId: string): string | null {
+  const tool = getStep(spec, toolId);
+  const agent = getStep(spec, agentId);
+  if (!tool || !agent) return "That step no longer exists.";
+  if (agent.type !== "agent") return "Only an Agent has tools.";
+  if (!TOOL_TYPES.has(tool.type)) return "Tools can be Web request, Code, Sub-flow, Knowledge Base search, Database query, MCP tool and Memory steps.";
+  if (((agent.settings.tools ?? []) as string[]).includes(toolId)) return "The agent already has this tool.";
+  if (spec.connections.some((c) => c.from === toolId || c.to === toolId))
+    return "A tool only runs when the agent calls it. Remove this step's connections first.";
+  return null;
+}
+
+export function addTool(spec: FlowSpec, agentId: string, toolId: string): FlowSpec {
+  if (canAddTool(spec, toolId, agentId)) return spec;
+  const next = clone(spec);
+  const agent = next.steps.find((s) => s.id === agentId)!;
+  agent.settings = { ...agent.settings, tools: [...((agent.settings.tools ?? []) as string[]), toolId] };
+  return next;
+}
+
+export function removeTool(spec: FlowSpec, agentId: string, toolId: string): FlowSpec {
+  const next = clone(spec);
+  const agent = next.steps.find((s) => s.id === agentId);
+  if (!agent) return spec;
+  const tools = ((agent.settings.tools ?? []) as string[]).filter((t) => t !== toolId);
+  const approve = ((agent.settings.addons?.approve_tools ?? []) as string[]).filter((t) => t !== toolId);
+  agent.settings = { ...agent.settings, tools, addons: { ...(agent.settings.addons ?? {}), approve_tools: approve } };
+  return next;
+}
+
 /** Why a connection is not allowed, or null when it is fine. */
 export function canConnect(spec: FlowSpec, from: string, to: string, exit: string | null): string | null {
   const source = getStep(spec, from);
   const target = getStep(spec, to);
   if (!source || !target) return "That step no longer exists.";
   if (from === to) return "A step can't connect to itself.";
+  for (const id of [from, to]) {
+    const agent = toolOf(spec, id);
+    if (agent) return `“${getStep(spec, id)?.name || id}” is a tool of the agent “${getStep(spec, agent)?.name || agent}”; it runs when the agent calls it.`;
+  }
   if (target.type === "input") return "Nothing can lead into Input; it's where runs start.";
   if (source.type === "output") return "Output is the end of the flow.";
   if (source.type === "input" && target.type === "output") return "Put at least one step between Input and Output.";
@@ -175,6 +223,11 @@ export function removeSteps(spec: FlowSpec, ids: string[]): FlowSpec {
   const next = clone(spec);
   next.steps = next.steps.filter((s) => !drop.has(s.id));
   next.connections = next.connections.filter((c) => !drop.has(c.from) && !drop.has(c.to));
+  for (const step of next.steps) {
+    if (step.type === "agent" && ((step.settings.tools ?? []) as string[]).some((t) => drop.has(t))) {
+      step.settings = { ...step.settings, tools: (step.settings.tools as string[]).filter((t) => !drop.has(t)) };
+    }
+  }
   for (const id of ids) delete next.canvas.steps[id];
   return next;
 }
@@ -191,6 +244,15 @@ export function renameStepId(spec: FlowSpec, from: string, to: string): FlowSpec
   if (from === to || !getStep(spec, from) || getStep(spec, to)) return spec;
   const next = clone(spec);
   for (const step of next.steps) if (step.id === from) step.id = to;
+  for (const step of next.steps) {
+    if (step.type !== "agent") continue;
+    const rename = (list: string[] | undefined) => (list ?? []).map((t) => (t === from ? to : t));
+    step.settings = {
+      ...step.settings,
+      tools: rename(step.settings.tools),
+      addons: { ...(step.settings.addons ?? {}), approve_tools: rename(step.settings.addons?.approve_tools) },
+    };
+  }
   for (const conn of next.connections) {
     if (conn.from === from) conn.from = to;
     if (conn.to === from) conn.to = to;
@@ -311,7 +373,41 @@ export function pasteSteps(spec: FlowSpec, clip: Clipboard, offset = 40): { spec
   return { spec: next, ids: Object.values(remap) };
 }
 
-export const STEP_TYPES_WITH_OUTPUT: StepType[] = ["ai_model", "instructions", "http_request", "code", "subflow"];
+export const STEP_TYPES_WITH_OUTPUT: StepType[] = [
+  "ai_model",
+  "instructions",
+  "http_request",
+  "code",
+  "subflow",
+  "agent",
+  "knowledge_search",
+  "sql_query",
+  "mcp_tool",
+];
+
+/** Add a new step as an Agent's tool, placed under the agent. */
+export function addToolStep(spec: FlowSpec, agentId: string, step: Step): FlowSpec {
+  const at = spec.canvas.steps[agentId] ?? { x: 0, y: 0 };
+  const count = ((getStep(spec, agentId)?.settings.tools ?? []) as string[]).length;
+  const next = addStep(spec, step, { x: at.x - 120 + count * (NODE_WIDTH + 30), y: at.y + 220 });
+  return addTool(next, agentId, step.id);
+}
+
+/** Steps and Flow Data from an OpenAPI import: new ids where they clash, positioned in a row. */
+export function addImportedSteps(spec: FlowSpec, steps: Step[], data: FlowSpec["data"], agentId?: string | null): FlowSpec {
+  let next = clone(spec);
+  const known = new Set(next.data.map((f) => f.name));
+  for (const field of data) if (!known.has(field.name)) next.data.push({ ...field, update: field.update ?? "replace", type: field.type ?? "text", description: field.description ?? "" });
+  const origin = agentId ? (spec.canvas.steps[agentId] ?? { x: 0, y: 0 }) : nextFreePosition(spec);
+  steps.forEach((step, i) => {
+    const position = agentId
+      ? { x: origin.x - 120 + i * (NODE_WIDTH + 30), y: origin.y + 220 }
+      : { x: origin.x + i * (NODE_WIDTH + 30), y: origin.y + 200 };
+    next = addStep(next, { ...step, name: step.name ?? step.id, description: step.description ?? "" }, position);
+    if (agentId) next = addTool(next, agentId, step.id);
+  });
+  return next;
+}
 
 /** Flow Data fields declared in the Flow Data panel. */
 export function setDataFields(spec: FlowSpec, data: FlowSpec["data"]): FlowSpec {

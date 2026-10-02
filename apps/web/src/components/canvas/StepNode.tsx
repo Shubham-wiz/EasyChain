@@ -1,7 +1,7 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { AlertTriangle, CheckCircle2, CircleAlert, ExternalLink, Hand, Loader2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CircleAlert, ExternalLink, Hand, Loader2, Wrench } from "lucide-react";
 import { memo, useMemo } from "react";
-import { exitLabels } from "../../lib/spec";
+import { exitLabels, TOOL_TYPES, toolOf } from "../../lib/spec";
 import type { Step } from "../../lib/types";
 import { cn, formatCost, formatMs, formatTokens } from "../../lib/utils";
 import { useStepInfo } from "../../state/catalog";
@@ -14,13 +14,15 @@ import { colorsFor, iconFor, stepSummary } from "./stepMeta";
 
 function useStepView(id: string) {
   const step = useFlow((s) => s.spec?.steps.find((x) => x.id === id));
+  const agentId = useFlow((s) => (s.spec ? toolOf(s.spec, id) : null));
+  const agentName = useFlow((s) => (agentId ? s.spec?.steps.find((x) => x.id === agentId)?.name || agentId : null));
   const info = useStepInfo(step?.type);
   const run = useRun((s) => s.steps[id]);
   const allIssues = useCheck((s) => s.issues);
   const upstream = useCheck((s) => s.analysis?.upstream[id]);
   const mode = useUi((s) => s.mode);
   const issues = useMemo(() => allIssues.filter((i) => i.step === id), [allIssues, id]);
-  return { step, info, run, issues, upstream, mode };
+  return { step, info, run, issues, upstream, mode, agentName };
 }
 
 /** Open a flow used as a Sub-flow. */
@@ -104,8 +106,26 @@ function RunFooter({ id }: { id: string }) {
   }
   const tail = run.tokens.length > 140 ? `…${run.tokens.slice(-140)}` : run.tokens;
   const items = run.items ? Object.values(run.items) : null;
+  const calls = run.tools ?? [];
   return (
     <div className="space-y-1 border-t border-border px-3 py-1.5">
+      {calls.length > 0 && (
+        <ul className="space-y-0.5" data-testid={`tool-calls-${id}`} aria-label="Tool calls">
+          {calls.slice(-4).map((call, i) => (
+            <li key={`${call.callId}-${i}`} className="flex items-center gap-1 text-[10.5px] text-muted">
+              {call.status === "running" ? (
+                <Loader2 size={10} className="animate-spin text-accent" />
+              ) : call.status === "error" ? (
+                <CircleAlert size={10} className="text-danger" />
+              ) : (
+                <Wrench size={10} className="text-faint" />
+              )}
+              <span className="truncate font-mono">{call.tool}</span>
+            </li>
+          ))}
+          {calls.length > 4 && <li className="text-[10px] text-faint">and {calls.length - 4} earlier</li>}
+        </ul>
+      )}
       {run.progress && run.progress.total > 0 && (
         <div className="space-y-0.5" data-testid={`progress-${id}`}>
           <div className="h-1.5 overflow-hidden rounded-full bg-surface-2">
@@ -168,7 +188,7 @@ function SubflowLink({ step }: { step: Step }) {
 }
 
 export const StepNode = memo(function StepNode({ id, selected }: NodeProps) {
-  const { step, info, run, issues, upstream, mode } = useStepView(id);
+  const { step, info, run, issues, upstream, mode, agentName } = useStepView(id);
   if (!step) return null;
   const Icon = iconFor(info?.icon);
   const colors = colorsFor(info?.category);
@@ -187,7 +207,16 @@ export const StepNode = memo(function StepNode({ id, selected }: NodeProps) {
       onDoubleClick={() => openSubflow(step)}
     >
       <Breakpoints id={id} />
-      {step.type !== "input" && <Handle type="target" position={Position.Left} title="Connect into this step" />}
+      {step.type !== "input" && !agentName && <Handle type="target" position={Position.Left} title="Connect into this step" />}
+      {TOOL_TYPES.has(step.type) && (
+        <Handle
+          type="source"
+          id="as-tool"
+          position={Position.Top}
+          title="Drag to an Agent's Tools handle to make this step one of its tools"
+          className="tool-handle"
+        />
+      )}
       <div className="overflow-hidden rounded-[11px]">
         <div className="flex items-start gap-2.5 px-3 pt-2.5 pb-2">
           <div className={cn("mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg", colors.chip)}>
@@ -207,12 +236,31 @@ export const StepNode = memo(function StepNode({ id, selected }: NodeProps) {
               </p>
             )}
             <p className="mt-1 line-clamp-2 text-[11.5px] leading-snug text-muted">{stepSummary(step, upstream)}</p>
+            {agentName && (
+              <p className="mt-1 flex items-center gap-1 text-[11px] font-medium text-violet-600 dark:text-violet-400" data-testid={`tool-of-${id}`}>
+                <Wrench size={11} /> Tool of {agentName}
+              </p>
+            )}
             <SubflowLink step={step} />
           </div>
         </div>
         <RunFooter id={id} />
       </div>
-      {step.type !== "output" && <Handle type="source" position={Position.Right} title="Drag to connect to the next step" />}
+      {step.type !== "output" && !agentName && <Handle type="source" position={Position.Right} title="Drag to connect to the next step" />}
+      {step.type === "agent" && (
+        <>
+          <Handle
+            type="target"
+            id="tools"
+            position={Position.Bottom}
+            title="Tools: drag a Web request, Code, Knowledge Base search or another step here"
+            className="tools-handle"
+          />
+          <span className="pointer-events-none absolute -bottom-[7px] left-1/2 ml-3 rounded border border-border bg-surface px-1 text-[10px] leading-[13px] font-medium text-faint">
+            Tools
+          </span>
+        </>
+      )}
     </div>
   );
 });

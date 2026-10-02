@@ -18,6 +18,16 @@ export interface InnerEvent {
   durationMs?: number;
 }
 
+/** One tool call an Agent made. */
+export interface ToolCallRun {
+  callId: string | null;
+  tool: string;
+  args: Record<string, unknown>;
+  status: StepStatus;
+  result?: unknown;
+  durationMs?: number;
+}
+
 export interface StepRun {
   status: StepStatus;
   tokens: string;
@@ -38,6 +48,8 @@ export interface StepRun {
   /** The latest progress the step reported itself (get_stream_writer). */
   note?: string;
   inner?: InnerEvent[];
+  /** Agent: the tools it called, in order. */
+  tools?: ToolCallRun[];
 }
 
 export interface ChatMessage {
@@ -203,6 +215,8 @@ export const useRun = create<RunState>()((set, get) => ({
             error: undefined,
             request: undefined,
             exit: prev.status === "waiting" ? prev.exit : undefined,
+            // An agent resumed after an approval keeps the tool calls it made before.
+            tools: prev.status === "waiting" ? prev.tools : undefined,
           })),
           events,
           lastEventId,
@@ -243,6 +257,31 @@ export const useRun = create<RunState>()((set, get) => ({
       }
       case "route":
         set({ ...withStep(state, event.step, (prev) => ({ ...prev, exit: event.exit })), events, lastEventId });
+        return;
+      case "tool_started":
+        set({
+          ...withStep(state, event.step, (prev) => ({
+            ...prev,
+            tools: [...(prev.tools ?? []), { callId: event.call_id ?? null, tool: event.tool, args: event.args, status: "running" }],
+          })),
+          events,
+          lastEventId,
+        });
+        return;
+      case "tool_finished":
+        set({
+          ...withStep(state, event.step, (prev) => {
+            const tools = [...(prev.tools ?? [])];
+            let i = tools.findIndex((t) => t.callId != null && t.callId === event.call_id);
+            if (i === -1) i = tools.findIndex((t) => t.status === "running" && (!event.tool || t.tool === event.tool));
+            const done = { status: (event.status === "error" ? "error" : "done") as StepStatus, result: event.result, durationMs: event.duration_ms };
+            if (i === -1) tools.push({ callId: event.call_id ?? null, tool: event.tool ?? "tool", args: {}, ...done });
+            else tools[i] = { ...tools[i], ...done };
+            return { ...prev, tools };
+          }),
+          events,
+          lastEventId,
+        });
         return;
       case "progress":
         set({ ...withStep(state, event.step, (prev) => ({ ...prev, progress: { done: event.done, total: event.total } })), events, lastEventId });

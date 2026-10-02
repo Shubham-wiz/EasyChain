@@ -28,8 +28,23 @@ export function applyFix(fix: Fix, stepId?: string, rerun?: () => void) {
     case "focus_setting":
       if (stepId) ui.focus(stepId, String(p.key));
       return;
-    case "set_setting":
-      if (stepId) apply((s) => updateSettings(s, stepId, { [String(p.key)]: p.value }));
+    case "set_setting": {
+      if (!stepId) return;
+      // "addons.emulate_tools" sets one key inside an object setting.
+      const [key, inner] = String(p.key).split(".", 2);
+      apply((s) => {
+        if (!inner) return updateSettings(s, stepId, { [key]: p.value });
+        const current = (getStep(s, stepId)?.settings[key] ?? {}) as Record<string, unknown>;
+        return updateSettings(s, stepId, { [key]: { ...current, [inner]: p.value } });
+      });
+      return;
+    }
+    case "remove_from_list":
+      if (stepId)
+        apply((s) => {
+          const list = (getStep(s, stepId)?.settings[String(p.setting)] ?? []) as unknown[];
+          return updateSettings(s, stepId, { [String(p.setting)]: list.filter((v) => v !== p.value) });
+        });
       return;
     case "rename_variable":
       if (stepId) apply((s) => renameVariable(s, stepId, String(p.setting), String(p.from), String(p.to)));

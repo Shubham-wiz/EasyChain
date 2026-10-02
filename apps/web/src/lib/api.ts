@@ -1,6 +1,16 @@
 import type {
   Catalog,
   CheckResult,
+  ChunkPreview,
+  KnowledgeBase,
+  KnowledgeDocument,
+  KnowledgeHit,
+  McpServer,
+  McpSettings,
+  McpTool,
+  OpenApiInspection,
+  Step,
+  DataField,
   CompileResult,
   FlowListItem,
   FlowSpec,
@@ -28,9 +38,11 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  // FormData bodies set their own multipart Content-Type.
+  const isForm = typeof FormData !== "undefined" && init?.body instanceof FormData;
   const res = await fetch(path, {
     ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    headers: isForm ? (init?.headers ?? {}) : { "Content-Type": "application/json", ...(init?.headers ?? {}) },
   });
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;
@@ -120,6 +132,51 @@ export const api = {
     request<{ saved: boolean }>(`/api/secrets/${encodeURIComponent(name)}`, { method: "PUT", ...json({ value }) }),
   deleteSecret: (name: string) =>
     request<{ deleted: boolean }>(`/api/secrets/${encodeURIComponent(name)}`, { method: "DELETE" }),
+
+  // Knowledge Bases
+  knowledgeBases: () => request<KnowledgeBase[]>("/api/knowledge"),
+  knowledgeBase: (id: string) =>
+    request<KnowledgeBase & { documents: KnowledgeDocument[] }>(`/api/knowledge/${encodeURIComponent(id)}`),
+  createKnowledgeBase: (body: { name: string; description?: string; embedding_model?: string; chunk_size?: number; chunk_overlap?: number }) =>
+    request<KnowledgeBase>("/api/knowledge", { method: "POST", ...json(body) }),
+  updateKnowledgeBase: (id: string, body: { name?: string; description?: string }) =>
+    request<KnowledgeBase>(`/api/knowledge/${encodeURIComponent(id)}`, { method: "PATCH", ...json(body) }),
+  deleteKnowledgeBase: (id: string) =>
+    request<{ deleted: string }>(`/api/knowledge/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  addKnowledgeFiles: (id: string, files: File[]) => {
+    const form = new FormData();
+    for (const file of files) form.append("files", file);
+    return request<KnowledgeDocument[]>(`/api/knowledge/${encodeURIComponent(id)}/files`, { method: "POST", body: form });
+  },
+  addKnowledgeUrls: (id: string, urls: string[]) =>
+    request<KnowledgeDocument[]>(`/api/knowledge/${encodeURIComponent(id)}/urls`, { method: "POST", ...json({ urls }) }),
+  addKnowledgeText: (id: string, title: string, text: string) =>
+    request<KnowledgeDocument>(`/api/knowledge/${encodeURIComponent(id)}/text`, { method: "POST", ...json({ title, text }) }),
+  deleteKnowledgeDocument: (id: string, docId: string) =>
+    request<{ deleted: string }>(`/api/knowledge/${encodeURIComponent(id)}/documents/${docId}`, { method: "DELETE" }),
+  knowledgeChunks: (id: string, docId: string) =>
+    request<KnowledgeHit[]>(`/api/knowledge/${encodeURIComponent(id)}/documents/${docId}/chunks`),
+  searchKnowledge: (id: string, query: string, opts: { top_k?: number; mode?: string } = {}) =>
+    request<{ hits: KnowledgeHit[] }>(`/api/knowledge/${encodeURIComponent(id)}/search`, { method: "POST", ...json({ query, ...opts }) }),
+  previewChunks: (input: { file?: File; url?: string; text?: string }, chunkSize: number, chunkOverlap: number) => {
+    const form = new FormData();
+    if (input.file) form.append("file", input.file);
+    if (input.url) form.append("url", input.url);
+    if (input.text) form.append("text", input.text);
+    form.append("chunk_size", String(chunkSize));
+    form.append("chunk_overlap", String(chunkOverlap));
+    return request<ChunkPreview>("/api/knowledge-preview", { method: "POST", body: form });
+  },
+
+  // MCP servers and OpenAPI import
+  mcpSettings: () => request<McpSettings>("/api/settings/mcp"),
+  saveMcpSettings: (body: McpSettings) => request<McpSettings>("/api/settings/mcp", { method: "PUT", ...json(body) }),
+  mcpTools: (server: { server_id?: string; server?: McpServer }) =>
+    request<{ tools: McpTool[] }>("/api/mcp/tools", { method: "POST", ...json(server) }),
+  inspectOpenApi: (source: string) =>
+    request<OpenApiInspection>("/api/openapi/inspect", { method: "POST", ...json({ source }) }),
+  openApiSteps: (body: { source: string; operations: string[]; server?: string; auth_header?: string; auth_secret?: string; taken?: string[] }) =>
+    request<{ steps: Step[]; data: DataField[] }>("/api/openapi/steps", { method: "POST", ...json(body) }),
 
   async exportZip(spec: FlowSpec, flowId?: string | null): Promise<Blob> {
     const res = await fetch(`/api/export${flowParam(flowId)}`, { method: "POST", headers: { "Content-Type": "application/json" }, ...json(spec) });

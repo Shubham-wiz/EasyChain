@@ -10,6 +10,9 @@ import { useCatalog } from "../../state/catalog";
 import { useFlow } from "../../state/flow";
 import { useUi } from "../../state/ui";
 import { CodeView } from "../CodeView";
+import { AddonsField, McpToolsField, ToolsField } from "./AgentFields";
+import { KnowledgeBasePicker, McpServerPicker, McpToolPicker, SecretPicker, SqlEditor } from "./IntegrationFields";
+import { SchemaBuilder } from "./SchemaBuilder";
 import { Button, Input, Select, Switch, Textarea } from "../ui";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -23,6 +26,8 @@ export interface FieldProps {
   fields: FieldInfo[];
   upstream?: string | null;
   id: string;
+  /** The step being edited (controls that change more than their own setting need it). */
+  stepId?: string;
 }
 
 const VAR_RE = /\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
@@ -297,6 +302,7 @@ const KEY_VALUE_LABELS: Record<string, { key: string; value: string; add: string
   headers: { key: "Header name", value: "Header value", add: "Add a header", first: () => "X-Header" },
   inputs: { key: "Its input", value: "Value", add: "Give it a value", first: () => "input" },
   outputs: { key: "Field here", value: "Its result", add: "Save a result", first: () => "result" },
+  arguments: { key: "Argument", value: "Value ({field} works)", add: "Add an argument", first: () => "argument" },
 };
 
 export function KeyValueEditor({ value, onChange, field }: FieldProps) {
@@ -648,6 +654,24 @@ export function renderControl(props: FieldProps): ReactNode {
       return <FlowPicker {...props} />;
     case "code":
       return <CodeView value={value ?? ""} onChange={onChange} height={260} label="Python code" />;
+    case "schema":
+      return <SchemaBuilder {...props} />;
+    case "tools":
+      return <ToolsField {...props} />;
+    case "agent_addons":
+      return <AddonsField {...props} />;
+    case "mcp_tools":
+      return <McpToolsField {...props} />;
+    case "knowledge_base":
+      return <KnowledgeBasePicker {...props} />;
+    case "secret":
+      return <SecretPicker {...props} />;
+    case "sql":
+      return <SqlEditor {...props} />;
+    case "mcp_server":
+      return <McpServerPicker {...props} />;
+    case "mcp_tool":
+      return <McpToolPicker {...props} />;
     default:
       return <Input id={id} value={String(value ?? "")} onChange={(e) => onChange(e.target.value)} />;
   }

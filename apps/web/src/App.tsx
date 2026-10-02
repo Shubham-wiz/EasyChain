@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Editor } from "./components/Editor";
 import { Home } from "./components/Home";
 import { Inbox } from "./components/Inbox";
+import { Knowledge } from "./components/Knowledge";
 import { Button } from "./components/ui";
 import { useCatalog } from "./state/catalog";
 
@@ -10,11 +11,14 @@ interface Route {
   flowId: string | null;
   tryIt: boolean;
   inbox: string | null | undefined;
+  knowledge?: string | null;
 }
 
 function parseHash(): Route {
   const inbox = /^#\/inbox(?:\/([a-f0-9]+))?/.exec(window.location.hash);
   if (inbox) return { flowId: null, tryIt: false, inbox: inbox[1] ?? null };
+  const knowledge = /^#\/knowledge(?:\/([a-z0-9_]+))?/.exec(window.location.hash);
+  if (knowledge) return { flowId: null, tryIt: false, inbox: undefined, knowledge: knowledge[1] ?? null };
   const match = /^#\/flows\/([a-z0-9-]+)(\?try=1)?/.exec(window.location.hash);
   return match ? { flowId: match[1], tryIt: !!match[2], inbox: undefined } : { flowId: null, tryIt: false, inbox: undefined };
 }
@@ -62,6 +66,7 @@ export default function App() {
     );
   }
   if (route.inbox !== undefined) return <Inbox focus={route.inbox} onHome={() => navigate(null)} />;
+  if (route.knowledge !== undefined) return <Knowledge id={route.knowledge} />;
   return route.flowId ? (
     <Editor key={route.flowId} flowId={route.flowId} tryIt={route.tryIt} onHome={() => navigate(null)} />
   ) : (

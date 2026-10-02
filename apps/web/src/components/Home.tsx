@@ -5,6 +5,7 @@ import type { FlowListItem, TemplateInfo } from "../lib/types";
 import { timeAgo } from "../lib/utils";
 import { useUi } from "../state/ui";
 import { SettingsDialog } from "./dialogs/SettingsDialog";
+import { KnowledgeLink } from "./Knowledge";
 import { InboxLink } from "./TopBar";
 import { Badge, Button } from "./ui";
 
@@ -41,6 +42,7 @@ export function Home({ open }: { open: (flowId: string, opts?: { tryIt?: boolean
           <img src="/favicon.svg" alt="" className="h-7 w-7" />
           <span className="text-base font-semibold">Easy Chain</span>
           <div className="ml-auto flex items-center gap-1">
+            <KnowledgeLink />
             <InboxLink />
             <Button variant="ghost" size="sm" onClick={() => openSettings()}>
               <KeyRound size={14} /> API keys

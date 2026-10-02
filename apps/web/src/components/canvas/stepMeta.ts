@@ -1,4 +1,23 @@
-import { Box, Code2, CornerDownRight, Globe, Layers, LogIn, LogOut, Repeat, ScrollText, Sparkles, Split, UserCheck, type LucideIcon } from "lucide-react";
+import {
+  Bot,
+  Box,
+  Brain,
+  Code2,
+  CornerDownRight,
+  Database,
+  Globe,
+  Layers,
+  Library,
+  LogIn,
+  LogOut,
+  Plug,
+  Repeat,
+  ScrollText,
+  Sparkles,
+  Split,
+  UserCheck,
+  type LucideIcon,
+} from "lucide-react";
 import type { Step } from "../../lib/types";
 
 export const ICONS: Record<string, LucideIcon> = {
@@ -13,6 +32,11 @@ export const ICONS: Record<string, LucideIcon> = {
   layers: Layers,
   "user-check": UserCheck,
   "corner-down-right": CornerDownRight,
+  bot: Bot,
+  library: Library,
+  brain: Brain,
+  database: Database,
+  plug: Plug,
 };
 
 export function iconFor(name: string | undefined): LucideIcon {
@@ -25,6 +49,7 @@ export const CATEGORY_COLORS: Record<string, { chip: string; ring: string }> = {
   actions: { chip: "bg-sky-500/12 text-sky-600 dark:text-sky-400", ring: "#0ea5e9" },
   logic: { chip: "bg-amber-500/14 text-amber-600 dark:text-amber-400", ring: "#f59e0b" },
   people: { chip: "bg-rose-500/12 text-rose-600 dark:text-rose-400", ring: "#f43f5e" },
+  knowledge: { chip: "bg-teal-500/12 text-teal-600 dark:text-teal-400", ring: "#14b8a6" },
 };
 
 export function colorsFor(category: string | undefined) {
@@ -70,6 +95,26 @@ export function stepSummary(step: Step, upstream?: string | null): string {
       const updates = (s.updates ?? []) as { field: string }[];
       return updates.length ? `Sets ${updates.map((u) => u.field).join(", ")}` : "Picks the next step";
     }
+    case "agent": {
+      const tools = ((s.tools ?? []) as string[]).length + ((s.mcp ?? []) as unknown[]).length;
+      const model = String(s.model ?? "").split(":").slice(1).join(":") || s.model;
+      return `${model} · ${tools ? `${tools} tool${tools === 1 ? "" : "s"}` : "no tools yet"} → ${s.output ? `${s.save_as} (fields)` : s.save_as}`;
+    }
+    case "knowledge_search":
+      return s.knowledge_base ? `Searches “${s.knowledge_base}” for ${s.query || upstream || "?"} → ${s.save_as}` : "Pick a Knowledge Base";
+    case "memory":
+      return (
+        {
+          remember: `Remembers ${s.text || upstream || "?"} for the user`,
+          recall: `Recalls facts → ${s.save_as}`,
+          trim: `Keeps the last ${s.keep} messages`,
+          summarise: `Summarises all but the last ${s.keep} messages`,
+        } as Record<string, string>
+      )[s.action] ?? "Memory";
+    case "sql_query":
+      return s.mode === "schema" ? `Describes the tables → ${s.save_as}` : String(s.query || "SQL query").replace(/\s+/g, " ").trim();
+    case "mcp_tool":
+      return s.tool ? `${s.server} · ${s.tool} → ${s.save_as}` : "Pick an MCP tool";
     default:
       return "";
   }

@@ -10,6 +10,7 @@ import { attachRun, startRun, useRun } from "../state/run";
 import { useUi } from "../state/ui";
 import { Canvas } from "./canvas/Canvas";
 import { ExportDialog } from "./dialogs/ExportDialog";
+import { ImportApiDialog } from "./dialogs/ImportApiDialog";
 import { SettingsDialog } from "./dialogs/SettingsDialog";
 import { TriggersDialog } from "./dialogs/TriggersDialog";
 import { Inspector } from "./inspector/Inspector";
@@ -219,6 +220,7 @@ export function Editor({ flowId, tryIt, onHome }: { flowId: string; tryIt: boole
         <ExportDialog />
         <SettingsDialog />
         <TriggersDialog />
+        <ImportApiDialog />
       </div>
     </ReactFlowProvider>
   );

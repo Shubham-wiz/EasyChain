@@ -174,3 +174,16 @@ body {
 .scroll-thin {
   scrollbar-width: thin;
 }
+
+/* Agent tools: the handle a tool step drags from, and the agent's Tools handle. */
+.react-flow__handle.tool-handle {
+  background: #8b5cf6;
+  border-color: var(--surface);
+}
+.react-flow__handle.tools-handle {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  background: #8b5cf6;
+  border: 2px solid var(--surface);
+}

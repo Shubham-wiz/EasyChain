@@ -27,6 +27,7 @@ import { useUi } from "../../state/ui";
 import { IssueList } from "../inspector/Inspector";
 import { Badge, Button, Field, Input, Select, Switch, Textarea, Tooltip } from "../ui";
 import { AnswerForm } from "./AnswerForm";
+import { CitedText, isSources, SourceList } from "./Citations";
 import { SavePoints } from "./SavePoints";
 
 function useInputStep(): Step | undefined {
@@ -84,8 +85,14 @@ function ErrorCard({ error, retry }: { error: RunError; retry: () => void }) {
   );
 }
 
-function ValueView({ value }: { value: unknown }) {
-  if (typeof value === "string") return <div className="text-sm leading-relaxed whitespace-pre-wrap">{value}</div>;
+function ValueView({ value, sources }: { value: unknown; sources?: ReturnType<typeof findSources> }) {
+  if (typeof value === "string")
+    return (
+      <div className="text-sm leading-relaxed whitespace-pre-wrap">
+        <CitedText text={value} sources={sources ?? null} />
+      </div>
+    );
+  if (isSources(value)) return <SourceList sources={value} />;
   if (Array.isArray(value) && value.every((m) => m && typeof m === "object" && "role" in m)) {
     return (
       <div className="space-y-1">
@@ -98,6 +105,56 @@ function ValueView({ value }: { value: unknown }) {
     );
   }
   return <pre className="overflow-auto font-mono text-xs whitespace-pre-wrap">{JSON.stringify(value, null, 2)}</pre>;
+}
+
+/** The first list of Knowledge Base sources among a run's results, if any. */
+function findSources(values: Record<string, unknown> | undefined | null) {
+  for (const v of Object.values(values ?? {})) if (isSources(v)) return v;
+  return null;
+}
+
+/** The tools an Agent called, with what it sent and what came back. */
+function ToolCallsView({ run }: { run: StepRun }) {
+  const [open, setOpen] = useState<number | null>(null);
+  if (!run.tools?.length) return null;
+  return (
+    <div data-testid="trace-tool-calls">
+      <p className="font-semibold text-muted">Tool calls</p>
+      <ol className="space-y-1">
+        {run.tools.map((call, i) => (
+          <li key={i} className="rounded-md border border-border bg-surface">
+            <button
+              type="button"
+              className="flex w-full items-center gap-1.5 px-2 py-1 text-left"
+              aria-expanded={open === i}
+              onClick={() => setOpen(open === i ? null : i)}
+            >
+              {call.status === "running" ? (
+                <Loader2 size={11} className="animate-spin text-accent" />
+              ) : call.status === "error" ? (
+                <CircleAlert size={11} className="text-danger" />
+              ) : (
+                <Wrench size={11} className="text-faint" />
+              )}
+              <span className="font-mono font-medium">{call.tool}</span>
+              <span className="min-w-0 flex-1 truncate font-mono text-faint">{preview(call.args, 60)}</span>
+              {call.durationMs != null && <span className="text-faint">{formatMs(call.durationMs)}</span>}
+            </button>
+            {open === i && (
+              <div className="space-y-1 border-t border-border px-2 py-1.5">
+                <p className="text-faint">Sent</p>
+                <pre className="overflow-auto font-mono text-[11px] whitespace-pre-wrap">{JSON.stringify(call.args, null, 2)}</pre>
+                <p className="text-faint">{call.status === "error" ? "Failed" : "Got back"}</p>
+                <pre className={cn("max-h-48 overflow-auto font-mono text-[11px] whitespace-pre-wrap", call.status === "error" && "text-danger")}>
+                  {typeof call.result === "string" ? call.result : JSON.stringify(call.result, null, 2)}
+                </pre>
+              </div>
+            )}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
 }
 
 function Trace() {
@@ -157,6 +214,7 @@ function Trace() {
                     <p className="font-semibold text-muted">Saved</p>
                     {run.error ? <p className="text-danger">{run.error.message}</p> : Object.keys(run.output ?? {}).length ? <ValueView value={run.output} /> : <p className="text-faint">no changes</p>}
                   </div>
+                  <ToolCallsView run={run} />
                   <ItemsView run={run} />
                   <InnerView inner={run.inner} />
                 </div>
@@ -446,6 +504,8 @@ function Conversations() {
 
 function ChatRun() {
   const chat = useRun((s) => s.chat);
+  const final = useRun((s) => s.final);
+  const sources = findSources(final?.status === "ok" ? final.output : null);
   const status = useRun((s) => s.status === "queued" ? "running" : s.status);
   const newChat = useRun((s) => s.newChat);
   const [text, setText] = useState("");
@@ -468,10 +528,22 @@ function ChatRun() {
                 m.role === "user" ? "bg-accent text-accent-text" : m.failed ? "bg-danger-soft text-danger" : "border border-border bg-surface",
               )}
             >
-              {m.content || (m.pending ? <Loader2 size={14} className="animate-spin" /> : "")}
+              {m.content ? (
+                <CitedText text={m.content} sources={i === chat.length - 1 && m.role === "assistant" ? sources : null} prefix="chat-source" />
+              ) : m.pending ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                ""
+              )}
             </div>
           </div>
         ))}
+        {sources && chat.at(-1)?.role === "assistant" && !chat.at(-1)?.pending && (
+          <div className="pl-1">
+            <p className="mb-1 text-[11px] font-semibold text-faint uppercase">Sources</p>
+            <SourceList sources={sources} prefix="chat-source" />
+          </div>
+        )}
       </div>
       <form
         className="flex gap-1.5"
@@ -503,6 +575,7 @@ export function RunPanel() {
   const issues = useCheck((s) => s.issues);
   const errors = useMemo(() => issues.filter((i) => i.level === "error"), [issues]);
   const outputs = Object.entries(run.final?.status === "ok" ? run.final.output ?? {} : {});
+  const sources = findSources(run.final?.status === "ok" ? run.final.output : null);
 
   const retry = useCallback(() => {
     const state = useRun.getState();
@@ -573,7 +646,7 @@ export function RunPanel() {
             {outputs.map(([k, v]) => (
               <div key={k}>
                 <p className="mb-0.5 font-mono text-[11px] text-muted">{k}</p>
-                <ValueView value={v} />
+                <ValueView value={v} sources={sources} />
               </div>
             ))}
           </div>
