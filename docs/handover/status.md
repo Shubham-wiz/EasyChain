@@ -44,7 +44,7 @@ pushed.
 | `8082c15` | Handover: Phase 3 progress, decisions and lessons |
 | `fd9f701` | Web: Agent tools on the canvas, Knowledge page, MCP and API import |
 | `7ba21d7` | Web tests for Phase 3, and fixes they found |
-| (next) | Phase 3 docs, report and handover; version 0.3.0 |
+| `6697af7` | Phase 3 docs, report and handover; version 0.3.0 |
 
 `git log --oneline` is the authoritative list. This table is updated as phases land.
 
