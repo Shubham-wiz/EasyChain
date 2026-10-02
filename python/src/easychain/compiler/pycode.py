@@ -197,6 +197,15 @@ class Names:
         "KNOWLEDGE_VECTORS",
         "hits",
         "embeddings",
+        "memory_namespace",
+        "memory_store",
+        "remember_fact",
+        "recall_facts",
+        "namespace",
+        "sql_engine",
+        "run_sql",
+        "describe_database",
+        "SQL_ENGINES",
     }
 
     def __init__(self) -> None:

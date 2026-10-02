@@ -44,11 +44,13 @@ from ..spec.models import SPEC_VERSION
 from ..spec.schema import flow_json_schema
 from ..steps import catalog as step_catalog
 from ..templates import list_templates, load_template
+from ..templates.samples import ensure_samples
 from . import notify
 from .cron import CronError, next_fire
 from .cron import describe as describe_cron
 from .db import Database, checkpoint_url
 from .hub import Busy, Hub, Invalid, NotFound
+from .integrations_api import add_integration_routes
 from .knowledge_api import add_knowledge_routes, use_database
 from .secrets import SecretStore
 from .store import FlowNotFound, FlowStore
@@ -176,6 +178,7 @@ def create_app(
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         use_database(db_url)
+        await asyncio.to_thread(ensure_samples, home_path)
         db = await Database.connect(db_url)
         resources = await open_resources(checkpoint_url(db_url))
         app.state.hub = Hub(db, resources, flows, vault)
@@ -456,9 +459,12 @@ def create_app(
                 )
         issues += knowledge_issues(spec)
         for step in spec.steps:
-            if step.type != "http_request":
+            if step.type == "sql_query":
+                texts = [step.settings.connection]
+            elif step.type == "http_request":
+                texts = [step.settings.url, step.settings.body, *step.settings.headers.values()]
+            else:
                 continue
-            texts = [step.settings.url, step.settings.body, *step.settings.headers.values()]
             for name in sorted({n for t in texts for n in template_secrets(t)}):
                 if not vault.has(name):
                     issues.append(
@@ -466,7 +472,7 @@ def create_app(
                             "missing_secret",
                             f"The secret {name} isn't set yet.",
                             step=step.id,
-                            setting="headers",
+                            setting="connection" if step.type == "sql_query" else "headers",
                             fix=Fix("add_secret", f"Add {name}", {"name": name}),
                         )
                     )
@@ -537,6 +543,8 @@ def create_app(
         if found is None:
             raise HTTPException(503, detail={"message": "The server is still starting."})
         return found
+
+    add_integration_routes(app, hub)
 
     def sse(event: dict[str, Any]) -> str:
         data = json.dumps(event, ensure_ascii=False, default=str)

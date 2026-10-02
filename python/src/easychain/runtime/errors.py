@@ -56,6 +56,12 @@ def explain(exc: BaseException, step: Any = None) -> dict[str, Any]:
         )
         return out
 
+    from ..integrations.mcp import McpNotAllowed
+
+    if isinstance(exc, McpNotAllowed):
+        out.update(kind="mcp_not_allowed", message=str(exc))
+        return out
+
     if isinstance(exc, MissingPackage):
         install = (
             f"pip install 'easychain[{exc.extra}]'" if exc.extra else f"pip install {exc.package}"

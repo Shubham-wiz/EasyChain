@@ -1747,6 +1747,79 @@
       "title": "KnowledgeSearchStep",
       "type": "object"
     },
+    "McpToolSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "server": {
+          "default": "",
+          "description": "Id of the MCP server (Settings \u2192 MCP servers).",
+          "title": "Server",
+          "type": "string"
+        },
+        "tool": {
+          "default": "",
+          "description": "Name of the tool on that server.",
+          "title": "Tool",
+          "type": "string"
+        },
+        "arguments": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Tool argument -> value, with {field} placeholders (a lone {field} keeps its type).",
+          "title": "Arguments",
+          "type": "object"
+        },
+        "save_as": {
+          "default": "result",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Save As",
+          "type": "string"
+        }
+      },
+      "title": "McpToolSettings",
+      "type": "object"
+    },
+    "McpToolStep": {
+      "additionalProperties": false,
+      "description": "Action: calls one tool on an MCP server.",
+      "properties": {
+        "id": {
+          "description": "Unique id; also the LangGraph node name.",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "description": "Label shown on the canvas.",
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "run": {
+          "$ref": "#/$defs/RunPolicy"
+        },
+        "type": {
+          "const": "mcp_tool",
+          "title": "Type",
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/McpToolSettings"
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ],
+      "title": "McpToolStep",
+      "type": "object"
+    },
     "McpTools": {
       "additionalProperties": false,
       "description": "Tools from an MCP server (Settings \u2192 MCP servers).",
@@ -1769,6 +1842,129 @@
         "server"
       ],
       "title": "McpTools",
+      "type": "object"
+    },
+    "MemorySettings": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "default": "recall",
+          "description": "remember: save a fact about the user. recall: look up what was saved. trim: keep only the latest chat messages. summarise: replace older messages with a summary.",
+          "enum": [
+            "remember",
+            "recall",
+            "trim",
+            "summarise"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "user": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_]{0,62}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Field with the user's id (remember, recall). Empty: `user_id` when the flow has it, otherwise the conversation.",
+          "title": "User"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_]{0,62}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "remember: the field to save. recall: the field to match. Empty means: what the previous step saved.",
+          "title": "Text"
+        },
+        "limit": {
+          "default": 5,
+          "description": "recall: how many facts to keep.",
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "messages": {
+          "default": "messages",
+          "description": "trim, summarise: the chat field.",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Messages",
+          "type": "string"
+        },
+        "keep": {
+          "default": 20,
+          "description": "trim, summarise: recent messages to keep as they are.",
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Keep",
+          "type": "integer"
+        },
+        "model": {
+          "default": "openai:gpt-4o-mini",
+          "description": "summarise: the model that writes it.",
+          "title": "Model",
+          "type": "string"
+        },
+        "save_as": {
+          "default": "memories",
+          "description": "recall: the facts, one per line. summarise: the summary.",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Save As",
+          "type": "string"
+        }
+      },
+      "title": "MemorySettings",
+      "type": "object"
+    },
+    "MemoryStep": {
+      "additionalProperties": false,
+      "description": "Remembers facts across conversations, or keeps a long chat short (LangGraph store).",
+      "properties": {
+        "id": {
+          "description": "Unique id; also the LangGraph node name.",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "description": "Label shown on the canvas.",
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "run": {
+          "$ref": "#/$defs/RunPolicy"
+        },
+        "type": {
+          "const": "memory",
+          "title": "Type",
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/MemorySettings"
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ],
+      "title": "MemoryStep",
       "type": "object"
     },
     "OutputSettings": {
@@ -1978,6 +2174,95 @@
       "title": "SchemaField",
       "type": "object"
     },
+    "SqlQuerySettings": {
+      "additionalProperties": false,
+      "properties": {
+        "connection": {
+          "default": "",
+          "description": "Database URL, e.g. postgresql://user@host/db or sqlite:///data.db. Put the password in a secret: postgresql://user:{secret:DB_PASSWORD}@host/db.",
+          "title": "Connection",
+          "type": "string"
+        },
+        "mode": {
+          "default": "query",
+          "description": "query: run SQL. schema: describe the tables and columns (for an agent).",
+          "enum": [
+            "query",
+            "schema"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "query": {
+          "default": "",
+          "description": "SQL with {field} values, sent safely as parameters. A lone {field} runs the SQL in that field (an agent writes it).",
+          "title": "Query",
+          "type": "string"
+        },
+        "read_only": {
+          "default": true,
+          "description": "Only read data: the query runs in a read-only transaction.",
+          "title": "Read Only",
+          "type": "boolean"
+        },
+        "max_rows": {
+          "default": 100,
+          "description": "Most rows to keep.",
+          "maximum": 10000,
+          "minimum": 1,
+          "title": "Max Rows",
+          "type": "integer"
+        },
+        "save_as": {
+          "default": "rows",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Save As",
+          "type": "string"
+        }
+      },
+      "title": "SqlQuerySettings",
+      "type": "object"
+    },
+    "SqlQueryStep": {
+      "additionalProperties": false,
+      "description": "Action: runs a SQL query on a database (SQLAlchemy).",
+      "properties": {
+        "id": {
+          "description": "Unique id; also the LangGraph node name.",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "description": "Label shown on the canvas.",
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "run": {
+          "$ref": "#/$defs/RunPolicy"
+        },
+        "type": {
+          "const": "sql_query",
+          "title": "Type",
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/SqlQuerySettings"
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ],
+      "title": "SqlQueryStep",
+      "type": "object"
+    },
     "StickyNote": {
       "additionalProperties": false,
       "properties": {
@@ -2178,7 +2463,10 @@
             "instructions": "#/$defs/InstructionsStep",
             "jump": "#/$defs/JumpStep",
             "knowledge_search": "#/$defs/KnowledgeSearchStep",
+            "mcp_tool": "#/$defs/McpToolStep",
+            "memory": "#/$defs/MemoryStep",
             "output": "#/$defs/OutputStep",
+            "sql_query": "#/$defs/SqlQueryStep",
             "subflow": "#/$defs/SubflowStep"
           },
           "propertyName": "type"
@@ -2222,6 +2510,15 @@
           },
           {
             "$ref": "#/$defs/KnowledgeSearchStep"
+          },
+          {
+            "$ref": "#/$defs/MemoryStep"
+          },
+          {
+            "$ref": "#/$defs/SqlQueryStep"
+          },
+          {
+            "$ref": "#/$defs/McpToolStep"
           }
         ]
       },

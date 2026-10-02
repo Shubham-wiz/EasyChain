@@ -219,6 +219,8 @@ class RunOptions:
     finish_if_done: bool = False
     # Scripted turns for the stand-in AI (Test Sets); a Script shared across resumes.
     script: Any = None
+    # MCP server connections (Settings → MCP servers); None reads EASYCHAIN_MCP_SERVERS.
+    mcp: dict[str, Any] | None = None
 
 
 def _now() -> float:
@@ -616,7 +618,7 @@ async def stream_run(
         except BaseException as exc:  # handed to the consumer below
             await queue.put(("error", exc))
 
-    token = use_settings(RunSettings(stand_in=opts.stand_in, script=opts.script))
+    token = use_settings(RunSettings(stand_in=opts.stand_in, script=opts.script, mcp=opts.mcp))
     producer = asyncio.create_task(produce())
     stop_wait = asyncio.create_task(opts.cancel.wait()) if opts.cancel else None
     cancelled = False

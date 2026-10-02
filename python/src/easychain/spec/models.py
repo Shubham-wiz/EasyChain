@@ -453,6 +453,93 @@ class KnowledgeSearchStep(_StepBase):
     settings: KnowledgeSearchSettings = Field(default_factory=KnowledgeSearchSettings)
 
 
+class MemorySettings(_Model):
+    action: Literal["remember", "recall", "trim", "summarise"] = Field(
+        default="recall",
+        description="remember: save a fact about the user. recall: look up what was saved. "
+        "trim: keep only the latest chat messages. summarise: replace older messages with a "
+        "summary.",
+    )
+    user: Ident | None = Field(
+        default=None,
+        description="Field with the user's id (remember, recall). Empty: `user_id` when the "
+        "flow has it, otherwise the conversation.",
+    )
+    text: Ident | None = Field(
+        default=None,
+        description="remember: the field to save. recall: the field to match. Empty means: "
+        "what the previous step saved.",
+    )
+    limit: int = Field(default=5, ge=1, le=100, description="recall: how many facts to keep.")
+    messages: Ident = Field(default="messages", description="trim, summarise: the chat field.")
+    keep: int = Field(
+        default=20,
+        ge=1,
+        le=1000,
+        description="trim, summarise: recent messages to keep as they are.",
+    )
+    model: str = Field(
+        default="openai:gpt-4o-mini", description="summarise: the model that writes it."
+    )
+    save_as: Ident = Field(
+        default="memories", description="recall: the facts, one per line. summarise: the summary."
+    )
+
+
+class MemoryStep(_StepBase):
+    """Remembers facts across conversations, or keeps a long chat short (LangGraph store)."""
+
+    type: Literal["memory"]
+    settings: MemorySettings = Field(default_factory=MemorySettings)
+
+
+class SqlQuerySettings(_Model):
+    connection: str = Field(
+        default="",
+        description="Database URL, e.g. postgresql://user@host/db or sqlite:///data.db. Put the "
+        "password in a secret: postgresql://user:{secret:DB_PASSWORD}@host/db.",
+    )
+    mode: Literal["query", "schema"] = Field(
+        default="query",
+        description="query: run SQL. schema: describe the tables and columns (for an agent).",
+    )
+    query: str = Field(
+        default="",
+        description="SQL with {field} values, sent safely as parameters. A lone {field} runs the "
+        "SQL in that field (an agent writes it).",
+    )
+    read_only: bool = Field(
+        default=True, description="Only read data: the query runs in a read-only transaction."
+    )
+    max_rows: int = Field(default=100, ge=1, le=10000, description="Most rows to keep.")
+    save_as: Ident = "rows"
+
+
+class SqlQueryStep(_StepBase):
+    """Action: runs a SQL query on a database (SQLAlchemy)."""
+
+    type: Literal["sql_query"]
+    settings: SqlQuerySettings = Field(default_factory=SqlQuerySettings)
+
+
+class McpToolSettings(_Model):
+    server: str = Field(default="", description="Id of the MCP server (Settings → MCP servers).")
+    tool: str = Field(default="", description="Name of the tool on that server.")
+    arguments: dict[str, str] = Field(
+        default_factory=dict,
+        description="Tool argument -> value, with {field} placeholders (a lone {field} keeps "
+        "its type).",
+    )
+    save_as: Ident = "result"
+
+
+class McpToolStep(_StepBase):
+    """Action: calls one tool on an MCP server."""
+
+    type: Literal["mcp_tool"]
+    settings: McpToolSettings = Field(default_factory=McpToolSettings)
+
+
 PIIType = Literal["email", "credit_card", "ip", "mac_address", "url"]
 
 
@@ -588,7 +675,10 @@ Step = Annotated[
     | SubflowStep
     | JumpStep
     | AgentStep
-    | KnowledgeSearchStep,
+    | KnowledgeSearchStep
+    | MemoryStep
+    | SqlQueryStep
+    | McpToolStep,
     Field(discriminator="type"),
 ]
 
@@ -691,4 +781,7 @@ STEP_MODELS: dict[str, type[BaseModel]] = {
     "jump": JumpStep,
     "agent": AgentStep,
     "knowledge_search": KnowledgeSearchStep,
+    "memory": MemoryStep,
+    "sql_query": SqlQueryStep,
+    "mcp_tool": McpToolStep,
 }

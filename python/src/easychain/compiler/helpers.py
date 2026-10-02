@@ -24,12 +24,12 @@ class Helper:
 
 
 def _source(*objects: object, constants: tuple[str, ...] = ()) -> str:
-    """Helper code taken from Easy Chain's own source, so there is one implementation."""
+    """Helper code taken from Easy Chain's own source, so there is one implementation.
+
+    ``constants`` are module-level caches (empty dicts) the functions share."""
     import inspect
 
-    from ..knowledge import search
-
-    parts = [f"{name}: dict[Any, Any] = {{}}" for name in constants if hasattr(search, name)]
+    parts = [f"{name}: dict[Any, Any] = {{}}" for name in constants]
     parts += [inspect.getsource(o).strip("\n") for o in objects]  # type: ignore[arg-type]
     return "\n" + "\n\n\n".join(parts) + "\n"
 
@@ -321,73 +321,52 @@ def tell_agent(error: Exception, request: Any) -> str:
     from_imports=(("typing", "Any"),),
 )
 
-MEMORY_TOOLS = Helper(
-    "memory_tools",
-    '''
-def memory_tools(data: dict[str, Any]) -> list[BaseTool]:
-    """Long-term memory for an agent: remember facts about the user and recall them later.
-
-    Memories live in the LangGraph store under ("memories", <user>): the `user_id` field
-    when the flow has one, otherwise the conversation (thread) id.
-    """
-    user = data.get("user_id") or get_config()["configurable"].get("thread_id", "anyone")
-    namespace = ("memories", str(user))
-
-    @tool("remember", description="Save a fact about the user, to use in later conversations.")
-    def remember(fact: str) -> str:
-        get_store().put(namespace, uuid.uuid4().hex, {"fact": fact})
-        return "Remembered."
-
-    @tool("recall", description="Look up what was remembered about the user before.")
-    def recall(query: str = "") -> str:
-        facts = [item.value.get("fact", "") for item in get_store().search(namespace, limit=100)]
-        if query:
-            wanted = set(query.lower().split())
-            facts.sort(key=lambda fact: -len(wanted & set(fact.lower().split())))
-        return "\\n".join(f"- {fact}" for fact in facts[:10]) or "Nothing remembered yet."
-
-    return [remember, recall]
-''',
-    imports=("uuid",),
-    from_imports=(
-        ("typing", "Any"),
-        ("langchain_core.tools", "BaseTool"),
-        ("langchain_core.tools", "tool"),
-        ("langgraph.config", "get_config"),
-        ("langgraph.config", "get_store"),
-    ),
-)
-
-MCP_TOOLS = Helper(
-    "mcp_tools",
-    '''
-async def mcp_tools(servers: dict[str, list[str]]) -> list[BaseTool]:
-    """Tools from MCP servers (an empty list means all of a server's tools).
-
-    How to reach each server comes from the EASYCHAIN_MCP_SERVERS environment variable,
-    as JSON: {"docs": {"transport": "streamable_http", "url": "https://example.com/mcp"}}.
-    """
-    connections = json.loads(os.environ.get("EASYCHAIN_MCP_SERVERS") or "{}")
-    client = MultiServerMCPClient({name: connections[name] for name in servers})
-    tools: list[BaseTool] = []
-    for name, wanted in servers.items():
-        found = await client.get_tools(server_name=name)
-        tools += [t for t in found if not wanted or t.name in wanted]
-    return tools
-''',
-    imports=("json", "os"),
-    from_imports=(
-        ("langchain_core.tools", "BaseTool"),
-        ("langchain_mcp_adapters.client", "MultiServerMCPClient"),
-    ),
-)
-
 
 def _knowledge_helpers() -> tuple[Helper, ...]:
-    from ..knowledge import search
+    from ..integrations import mcp, sql
+    from ..knowledge import memory, search
     from ..knowledge.embeddings import KeywordEmbeddings
 
+    graph_imports = (
+        ("typing", "Any"),
+        ("langgraph.config", "get_config"),
+        ("langgraph.config", "get_store"),
+    )
     return (
+        Helper(
+            "mcp_tools",
+            _source(*mcp.HELPER_FUNCTIONS),
+            imports=("json", "os"),
+            from_imports=(
+                ("langchain_core.tools", "BaseTool"),
+                ("langchain_mcp_adapters.client", "MultiServerMCPClient"),
+            ),
+            requirements=("langchain-mcp-adapters==0.3.2",),
+        ),
+        Helper("mcp_text", _source(mcp.mcp_text), from_imports=(("typing", "Any"),)),
+        Helper(
+            "sql",
+            _source(*sql.HELPER_FUNCTIONS, constants=sql.HELPER_GLOBALS),
+            imports=("datetime", "decimal", "os", "re", "sqlalchemy as sa"),
+            from_imports=(("typing", "Any"),),
+            requirements=("sqlalchemy>=2.0.36", "psycopg[binary]>=3.2"),
+        ),
+        Helper(
+            "memory",
+            _source(*memory.HELPER_FUNCTIONS),
+            imports=("re", "uuid"),
+            from_imports=graph_imports,
+        ),
+        Helper(
+            "memory_tools",
+            _source(memory.memory_tools),
+            from_imports=(
+                ("typing", "Any"),
+                ("langchain_core.tools", "BaseTool"),
+                ("langchain_core.tools", "tool"),
+            ),
+            requires=("memory",),
+        ),
         Helper(
             "search_knowledge",
             _source(*search.HELPER_FUNCTIONS, constants=search.HELPER_GLOBALS),
@@ -427,8 +406,6 @@ HELPERS = {
         RUN_ONCE,
         ASK_IN_TERMINAL,
         TELL_AGENT,
-        MEMORY_TOOLS,
-        MCP_TOOLS,
         *_knowledge_helpers(),
     )
 }

@@ -83,6 +83,8 @@ class ModuleContext:
         self.has_async = False
         self.has_interrupts = False
         self.uses_cache = False
+        # Long-term memory needs a LangGraph store in exported code too.
+        self.uses_store = False
         self.resolve = resolve
         # Sub-flows already emitted: flow id -> its parts.
         self.children: dict[str, FlowParts] = {}
@@ -730,7 +732,7 @@ def _emit_main(
 ) -> str:
     imports = module.imports
     is_async = module.has_async
-    stateful = an.chat or module.has_interrupts
+    stateful = an.chat or module.has_interrupts or module.uses_store
     call = "await app.ainvoke" if is_async else "app.invoke"
     starts = [
         name
@@ -758,9 +760,13 @@ def _emit_main(
         )
 
     body: list[str] = []
-    if stateful:
+    if stateful or module.uses_store:
         imports.add_from("langgraph.checkpoint.memory", "InMemorySaver")
-        body.append("app = build_graph(checkpointer=InMemorySaver())")
+        if module.uses_store:
+            imports.add_from("langgraph.store.memory", "InMemoryStore")
+            body.append("app = build_graph(checkpointer=InMemorySaver(), store=InMemoryStore())")
+        else:
+            body.append("app = build_graph(checkpointer=InMemorySaver())")
         body.append(f'config = {{"configurable": {{"thread_id": "terminal"}}{config_extra}}}')
     else:
         body.append("app = graph")

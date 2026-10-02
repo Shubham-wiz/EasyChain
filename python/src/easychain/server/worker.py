@@ -220,7 +220,11 @@ class Worker:
             pause_after += [n for n in snapshot.next if n not in pause_after]
         if action == "start" and payload.get("rollback"):
             checkpoint_id = await self._rollback_point(run, spec, children, payload["rollback"])
+        from ..integrations.mcp import connections as mcp_connections
+
+        mcp = mcp_connections(await self.db.get_setting("mcp", {}) or {})
         opts = RunOptions(
+            mcp=mcp,
             thread_id=run["thread_id"],
             run_id=run["id"],
             stand_in=bool(options.get("stand_in")),

@@ -332,10 +332,11 @@ class AgentHandler(StepHandler):
             tool_calls.append(f"{factory}(data)")
         if s.addons.memory:
             tool_calls.append(f"*{ctx.helper('memory_tools')}(data)")
+            ctx.module.uses_store = True
         mcp_line = None
         if s.mcp:
             mcp_line = self._mcp_tools(step, ctx)
-            tool_calls.append("*mcp_tools")
+            tool_calls.append("*server_tools")
 
         middleware = self._middleware(step, ctx)
         model = ctx.model_call(
@@ -492,10 +493,9 @@ class AgentHandler(StepHandler):
         return factory, [*defs, factory_code]
 
     def _mcp_tools(self, step: Any, ctx: Any) -> str:
-        ctx.module.extra_requirements.append("langchain-mcp-adapters==0.3.2")
         loader = ctx.helper("mcp_tools")
         servers = {m.server: list(m.tools) for m in step.settings.mcp}
-        return f"    mcp_tools = await {loader}({py_literal(servers)})"
+        return f"    server_tools = await {loader}({py_literal(servers)})"
 
     def _middleware(self, step: Any, ctx: Any) -> list[str]:
         s = step.settings

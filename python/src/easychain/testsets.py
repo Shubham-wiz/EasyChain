@@ -173,6 +173,9 @@ async def run_case(spec: FlowSpec, case: dict[str, Any], stand_in: bool) -> Case
 async def run_test_set(
     path: str | Path, variables: dict[str, str] | None = None, stand_in: bool = False
 ) -> list[CaseResult]:
+    from .templates.samples import ensure_samples
+
+    ensure_samples()
     path = Path(path)
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     data = _substitute(data, variables or {})

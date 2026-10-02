@@ -1,0 +1,56 @@
+version: 1
+name: Chat with memory
+description: Remembers facts about the user and keeps the chat short.
+steps:
+- id: input
+  type: input
+  settings:
+    mode: chat
+    fields:
+    - name: user_id
+      example: u-42
+- id: recall
+  type: memory
+  name: What do we know?
+  settings:
+    action: recall
+    text: messages
+    limit: 3
+- id: summarise
+  type: memory
+  settings:
+    action: summarise
+    keep: 10
+    save_as: memories_summary
+- id: write_prompt
+  type: instructions
+  settings:
+    system: "You are a friendly assistant.\nWhat you know about the user:\n{memories}\n\nEarlier in this chat: {memories_summary}"
+    history: messages
+- id: reply
+  type: ai_model
+  settings:
+    save_as: messages
+- id: note
+  type: memory
+  name: Remember the request
+  settings:
+    action: remember
+    text: last_request
+- id: last
+  type: code
+  settings:
+    code: |
+      def run(data):
+          """Remember what the user asked last."""
+          return {"last_request": data["messages"][-2].text}
+- id: output
+  type: output
+connections:
+- {from: input, to: recall}
+- {from: recall, to: summarise}
+- {from: summarise, to: write_prompt}
+- {from: write_prompt, to: reply}
+- {from: reply, to: last}
+- {from: last, to: note}
+- {from: note, to: output}

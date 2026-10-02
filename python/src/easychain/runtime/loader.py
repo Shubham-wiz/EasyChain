@@ -14,7 +14,7 @@ import types
 from collections import OrderedDict
 from typing import Any
 
-from .gateway import gateway_init_chat_model, gateway_init_embeddings
+from .gateway import gateway_init_chat_model, gateway_init_embeddings, gateway_mcp_tools
 from .resources import Resources, memory_resources
 
 _CACHE_SIZE = 64
@@ -38,6 +38,8 @@ def load_module(source: str, name: str = "easychain_flow") -> types.ModuleType:
         module.__dict__["init_chat_model"] = gateway_init_chat_model
     if "init_embeddings" in module.__dict__:
         module.__dict__["init_embeddings"] = gateway_init_embeddings
+    if "mcp_tools" in module.__dict__:
+        module.__dict__["mcp_tools"] = gateway_mcp_tools
     return module
 
 

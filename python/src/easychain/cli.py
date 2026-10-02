@@ -172,7 +172,9 @@ def _parse_inputs(args: argparse.Namespace) -> dict[str, Any]:
 
 def cmd_run(args: argparse.Namespace) -> int:
     from .runtime import RunOptions, stream_run
+    from .templates.samples import ensure_samples
 
+    ensure_samples()
     spec = _load(args.file)
     inputs = _parse_inputs(args)
     options = RunOptions(
@@ -326,8 +328,10 @@ def cmd_worker(args: argparse.Namespace) -> int:
     workspace = Path(args.workspace or os.environ.get("EASYCHAIN_WORKSPACE") or home / "flows")
     url = args.database_url or default_database_url(home)
     from .server.knowledge_api import use_database
+    from .templates.samples import ensure_samples
 
     use_database(url)
+    ensure_samples(home)
 
     async def go() -> int:
         db = await Database.connect(url)

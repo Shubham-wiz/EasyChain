@@ -43,6 +43,8 @@ class RunSettings:
     stand_in: bool = False
     # Scripted turns for the stand-in AI (Test Sets).
     script: Script | None = None
+    # MCP server connections from Settings (None: use EASYCHAIN_MCP_SERVERS).
+    mcp: dict[str, Any] | None = None
 
 
 _DEFAULT = RunSettings()
@@ -97,3 +99,31 @@ def gateway_init_embeddings(model: str, **kwargs: Any) -> Any:
     info = EMBEDDING_MODELS.get(model)
     _check_provider(info.provider if info else provider_id, kwargs)
     return _init_embeddings(model, **kwargs)
+
+
+async def gateway_mcp_tools(servers: dict[str, list[str]]) -> list[Any]:
+    """MCP tools with the connections from Settings → MCP servers."""
+    from langchain_mcp_adapters.client import MultiServerMCPClient
+
+    from ..integrations.mcp import McpNotAllowed
+    from ..integrations.mcp import mcp_tools as from_environment
+
+    known = current_settings().mcp
+    if known is None:
+        return await from_environment(servers)
+    picked: dict[str, Any] = {}
+    for name in servers:
+        conn = known.get(name)
+        if conn is None:
+            raise McpNotAllowed(
+                f"There's no MCP server “{name}” in Settings → MCP servers on this machine."
+            )
+        if "error" in conn:
+            raise McpNotAllowed(conn["error"])
+        picked[name] = conn
+    client = MultiServerMCPClient(picked)
+    tools: list[Any] = []
+    for name, wanted in servers.items():
+        found = await client.get_tools(server_name=name)
+        tools += [t for t in found if not wanted or t.name in wanted]
+    return tools

@@ -14,6 +14,9 @@ from .flow_control import AskHumanHandler, ForEachHandler, SubflowHandler
 from .io_steps import InputHandler, OutputHandler
 from .knowledge import KnowledgeSearchHandler
 from .logic import DecisionHandler, JumpHandler
+from .mcp import McpToolHandler
+from .memory import MemoryHandler
+from .sql import SqlQueryHandler
 
 HANDLERS: dict[str, StepHandler] = {
     h.type: h
@@ -24,8 +27,11 @@ HANDLERS: dict[str, StepHandler] = {
         AIModelHandler(),
         AgentHandler(),
         KnowledgeSearchHandler(),
+        MemoryHandler(),
         HttpRequestHandler(),
         CodeHandler(),
+        SqlQueryHandler(),
+        McpToolHandler(),
         DecisionHandler(),
         ForEachHandler(),
         JumpHandler(),
