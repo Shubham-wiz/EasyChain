@@ -1,0 +1,46 @@
+# Decisions
+
+Newest first. Each entry says who decided (**owner** = the project owner; **build** = chosen
+during the build and open to review) and why. Questions already answered here should not be
+asked again.
+
+## Phase 3
+
+| # | Question | Decision | Who |
+|---|---|---|---|
+| 3.1 | Default vector store | **pgvector** in the Phase 2 Postgres; a built-in local index for SQLite installs; Qdrant/Chroma adapters later | owner said "continue" to the recommendation |
+| 3.2 | Default embeddings | OpenAI `text-embedding-3-small` when an OpenAI key is set, otherwise a local model through Ollama; tests use a deterministic offline embedder | owner said "continue" to the recommendation |
+| 3.3 | MCP servers over stdio (they start local processes) | Allowed only in **Pro mode**, and only commands on an allow-list approved in Settings; streamable-HTTP MCP servers are allowed normally | owner said "continue" to the recommendation |
+
+## Phase 2
+
+| # | Question | Decision | Who |
+|---|---|---|---|
+| 2.1 | Where flows live | Flows stay **YAML files** in a workspace folder (git-friendly). The database holds runs, events, jobs, flow versions (every run records the exact version it ran), Save Points, the Inbox, triggers and settings. | owner: "ok what ever u think is right" |
+| 2.2 | Job queue | A **database-table queue** (`FOR UPDATE SKIP LOCKED` + advisory locks on Postgres; `BEGIN IMMEDIATE` on SQLite). No Redis until load needs it. | owner: same answer |
+| 2.3 | Code step safety before Phase 4 | Code steps stay **unsandboxed** (local, single-user, trusted) until Phase 4. The server binds to 127.0.0.1, and workers can run in separate containers. | owner: same answer |
+| 2.4 | Licence | Apache 2.0 | owner: same answer (suggested by the build prompt) |
+| 2.5 | Breakpoints | Stored per flow in the browser, not in the flow file | build: they are a debugging aid, not flow behaviour |
+| 2.6 | For Each body | One step per item; several steps per item go in a Sub-flow | build: maps to one `Send` target, so the canvas shows what runs per item |
+| 2.7 | Event streaming | The API tails run events from the database (polling plus an in-process wake-up), not LISTEN/NOTIFY | build: the same on SQLite and Postgres, and survives API restarts |
+| 2.8 | Side effects | POST/PUT/PATCH/DELETE requests and Code steps marked "at most once" record their result in the LangGraph store under a stable key, and send it as `Idempotency-Key` | build: needed for the "no duplicate side effects" Done-when |
+| 2.9 | Schema migrations | `create_all` plus a schema version check; Alembic arrives with the first schema change | build |
+| 2.10 | Ask a Human default `save_as` | `human_answer` (not `review`, which collided with a common step id) | build |
+
+## Phases 0 and 1
+
+| # | Question | Decision | Who |
+|---|---|---|---|
+| 1.1 | How much to build before stopping | Phases 0 and 1 were built in one go and reported together | owner: "you are the developer, take this and build, do testing and all as well" |
+| 1.2 | Decision step | A node (a no-op for rules; the classifier for AI mode) plus a conditional edge | build: one node per canvas box, so the trace, glow and errors map 1:1 |
+| 1.3 | Model construction | `init_chat_model(...)` inside each AI step function | build: a missing key becomes that step's error, and the gateway can swap one name |
+| 1.4 | Running without keys | A clearly labelled **stand-in AI** | build: templates, demos and tests run with no key |
+| 1.5 | Secrets | A Fernet-encrypted local vault (`~/.easychain`); values go into the server's environment | build: single-user local install for now; KMS, roles and audit come in Phase 5 |
+| 1.6 | Tracing | Easy Chain's own event stream, stored with each run | build: OTel/LangSmith export comes in Phase 5; the events map onto spans |
+| 1.7 | UI components | shadcn-style components written directly on Radix (`components/ui.tsx`) | build: same look and accessibility, without the CLI |
+| 1.8 | Framework majors | TypeScript 5.9, Vite 7, Vitest 3, React 19 | build: "prefer well-known, boring libraries" |
+| 1.9 | Pins | LangGraph 1.2.12, LangChain 1.4.3, langchain-core 1.6.6, langchain-openai 1.6.7, langchain-anthropic 1.7.5, langchain-ollama 1.1.0 | build: exact pins plus `uv.lock`; upgrades go through golden tests |
+| 1.10 | Templates | Templates ship with Test Sets of 10–12 cases. The build prompt's section 14 templates arrive with the phases that provide their features. | build |
+
+The full table of deliberate deviations from the build prompt is in
+[ARCHITECTURE.md §10](../../ARCHITECTURE.md#10-deviations-from-the-build-prompt-and-why).

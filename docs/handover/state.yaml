@@ -1,0 +1,67 @@
+# Machine-readable project state. Keep in step with status.md.
+project: Easy Chain
+repo: Shubham-wiz/EasyChain
+branch: claude/tender-fermat-4kj4k6
+version: 0.2.0
+updated: 2026-10-02
+
+push:
+  state: blocked
+  reason: "HTTP 403: the Claude GitHub App has no access to Shubham-wiz/EasyChain"
+  fix: "Connect GitHub at https://claude.ai/connect-github and install the Claude GitHub App on the repo, then: git push -u origin claude/tender-fermat-4kj4k6"
+
+phases:
+  - id: 0
+    name: Foundations
+    state: done
+    report: docs/phases/phase-0-1.md
+  - id: 1
+    name: Visual MVP
+    state: done
+    report: docs/phases/phase-0-1.md
+  - id: 2
+    name: Real runtime
+    state: done
+    report: docs/phases/phase-2.md
+    done_when: "Killing a worker mid-run and restarting resumes from the last step with no duplicate side effects; a paused approval can be resumed a day later"
+    evidence: python/tests/test_durability.py
+  - id: 3
+    name: Agents and knowledge
+    state: in_progress
+    done_when: "The Support bot over docs and SQL analyst templates pass their Test Sets"
+    plan: docs/phases/phase-2.md#phase-3-plan-agents-and-knowledge
+  - id: 4
+    name: Autopilot and teams
+    state: not_started
+  - id: 5
+    name: Platform
+    state: not_started
+  - id: 6
+    name: Ecosystem
+    state: not_started
+
+decisions: docs/handover/decisions.md
+open_questions: []
+
+tests:
+  python: {passed: 259, compiler_coverage: 0.94, floor: 0.90}
+  web_unit: {passed: 19}
+  client: {passed: 4}
+  e2e: {passed: 23, skipped: 1}
+  measured_at: end of phase 2
+
+commands:
+  install: make install
+  lint: make lint
+  test: make test
+  e2e: "pnpm --filter @easychain/web build && pnpm --filter @easychain/web e2e"
+  golden: make golden
+  schema: make schema
+
+pins:
+  langgraph: 1.2.12
+  langchain: 1.4.3
+  langchain-core: 1.6.6
+  langchain-openai: 1.6.7
+  langchain-anthropic: 1.7.5
+  langchain-ollama: 1.1.0

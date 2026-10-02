@@ -140,6 +140,10 @@ tests run on SQLite and, when Postgres is installed (or `EASYCHAIN_TEST_POSTGRES
 on Postgres too. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for adding a step type.
 
+**Picking the project up?** Start with [AGENTS.md](AGENTS.md) and
+[docs/handover](docs/handover/README.md): the current status, every decision made so far, the
+traps already found, and how to set up a machine.
+
 ## Roadmap
 
 | Phase | Scope | Status |
