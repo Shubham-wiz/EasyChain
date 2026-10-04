@@ -13,6 +13,7 @@ conversation.
 | [build-prompt.md](build-prompt.md) | A summary of the build prompt: the phases, their "Done when", and the rules |
 | [lessons.md](lessons.md) | Bugs, traps and their fixes, so they aren't found twice |
 | [environment.md](environment.md) | Setting up a fresh machine: toolchain, Postgres for tests, Playwright, Docker |
+| [../ROADMAP.md](../ROADMAP.md) | The plan for everything that's left (Phases 4–6, milestone by milestone) |
 
 Read them in this order:
 

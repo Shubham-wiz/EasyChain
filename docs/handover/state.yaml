@@ -6,7 +6,8 @@ version: 0.3.0
 updated: 2026-10-02
 
 push:
-  state: blocked
+  state: blocked_for_cloud_sessions
+  workaround: "owner given a zip of the repo (full history, origin set) to push with: git push -u origin main"
   reason: "HTTP 403: the Claude GitHub App has no access to Shubham-wiz/EasyChain"
   fix: "Connect GitHub at https://claude.ai/connect-github and install the Claude GitHub App on the repo, then: git push -u origin claude/tender-fermat-4kj4k6"
 
@@ -44,6 +45,8 @@ phases:
     state: not_started
 
 decisions: docs/handover/decisions.md
+roadmap: docs/ROADMAP.md
+docs_index: docs/README.md
 waiting_for_review: true
 open_questions:
   - "Phase 4 Done when: confirm the proposal in docs/phases/phase-3.md, or provide the original brief"

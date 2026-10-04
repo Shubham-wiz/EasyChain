@@ -56,7 +56,9 @@ examples/                  example flows
 ```
 
 [ARCHITECTURE.md](ARCHITECTURE.md) explains the design, and its section 10 lists each place
-where the build deliberately differs from the build prompt, and why.
+where the build deliberately differs from the build prompt, and why. [docs/README.md](docs/README.md)
+lists every document, [docs/ROADMAP.md](docs/ROADMAP.md) is the plan for what's left, and
+`python/README.md` and `apps/web/README.md` describe each half of the code.
 
 ## Commands
 

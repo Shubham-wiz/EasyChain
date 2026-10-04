@@ -70,17 +70,22 @@ The Phase 3 report asks three questions (also in `state.yaml` under `open_questi
 
 ## Next (after review)
 
-Phase 4, in the order planned in [phase-3.md](../phases/phase-3.md#phase-4-plan-autopilot-and-teams):
-sandboxes for Code steps first, then the Deep Agent step with Helpers, Skills, multi-agent
-patterns, the describe-it copilot, and the Research assistant and Inbox triage templates.
+The full plan is in [docs/ROADMAP.md](../ROADMAP.md).
+
+1. **Step 0:** the owner pushes the code, and the first CI run on GitHub is made green.
+2. **Phase 4**, in this order: sandboxes for Code steps, the Deep Agent step, Helpers, Skills,
+   multi-agent patterns, the describe-it copilot, then the Research assistant and Inbox triage
+   templates.
 
 ## Blocked
 
-- **Push to GitHub** (HTTP 403). Fix: connect GitHub at https://claude.ai/connect-github and
-  install the Claude GitHub App on `Shubham-wiz/EasyChain`. Then run
-  `git push -u origin claude/tender-fermat-4kj4k6`. Until then the owner has a git bundle of the
-  branch: `git clone -b claude/tender-fermat-4kj4k6 easychain.bundle EasyChain`, then
-  `git remote set-url origin https://github.com/Shubham-wiz/EasyChain` and push.
+- **Push to GitHub from cloud sessions** (HTTP 403). The GitHub account is connected and the
+  Claude GitHub App is installed, but cloud sessions still aren't linked to
+  `Shubham-wiz/EasyChain`. Fix: in claude.ai → Connectors → GitHub, **Check repository status**
+  for the repo, and give the app access to it, or re-link the installation.
+- **Workaround in use:** the owner was given a zip of the repo, with full history and `origin`
+  set, to push themselves (`git push -u origin main`). The repo on GitHub was empty at the time.
+  CI has therefore never run on GitHub.
 
 ## Known gaps carried forward
 

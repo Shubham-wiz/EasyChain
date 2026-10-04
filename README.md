@@ -146,7 +146,7 @@ python/              the `easychain` Python package: spec, compiler, runtime, AP
   tests/                     unit, golden, behaviour, server and export tests
 spec/flow.schema.json        published JSON Schema for flow files
 examples/                    example flows
-docs/                        flow spec, step pages, phase reports
+docs/                        user guides, step pages, phase reports, roadmap, handover (index: docs/README.md)
 ```
 
 ## Development
@@ -169,9 +169,12 @@ on Postgres too. See
 
 **Picking the project up?** Start with [AGENTS.md](AGENTS.md) and
 [docs/handover](docs/handover/README.md): the current status, every decision made so far, the
-traps already found, and how to set up a machine.
+traps already found, and how to set up a machine. Every document is listed in
+[docs/README.md](docs/README.md); the plan for what's left is [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Roadmap
+
+The detailed plan, milestone by milestone, is in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 | Phase | Scope | Status |
 |---|---|---|
