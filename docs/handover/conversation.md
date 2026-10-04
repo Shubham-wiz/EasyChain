@@ -70,3 +70,16 @@ These led to:
 
 After the owner fixed the app's access, the branch was pushed with all its history.
 
+---
+
+**5. Removing AI attribution:**
+
+> remove from git thats its made by claude why is it showing that
+
+> Tell me too if you want the branch renamed from claude/… to main. yes
+
+The `Co-Authored-By: Claude` and session-link lines were removed from every commit message. The
+code didn't change, but every commit got a new ID. The cleaned history was published as `main`,
+replacing `claude/tender-fermat-4kj4k6`. The rule is in AGENTS.md, CLAUDE.md and decisions
+R.1–R.2.
+

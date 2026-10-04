@@ -7,7 +7,7 @@ _Last updated: 2026-10-02 (end of Phase 3, waiting for review)._
 Phases 0 to 3 are built, tested and reported, and each met its "Done when". Phase 3 (Agents and
 knowledge) ended with its [report](../phases/phase-3.md) and three questions for Phase 4; work
 is **stopped for review**, as the build rules say. All work is committed on the branch
-`claude/tender-fermat-4kj4k6` and pushed to GitHub (see [GitHub](#github) below).
+`main` and pushed to GitHub (see [GitHub](#github) below).
 
 ## Phases
 
@@ -21,27 +21,27 @@ is **stopped for review**, as the build rules say. All work is committed on the 
 | 5. Platform | Test Sets and Checks, Test Runs, CI gate, dashboards, model gateway, Publish, environments, roles, SSO | Not started | |
 | 6. Ecosystem | LangGraph.js export, custom module registry, import, collaboration, prompt optimisation, Helm | Not started | |
 
-## Commits on `claude/tender-fermat-4kj4k6`
+## Commits on `main`
 
 | Commit | What |
 |---|---|
-| `dbbdb46` | Phase 0: flow spec, compiler, runtime, CLI and API server |
-| `0c87fc4` | Phase 1: visual editor (React Flow canvas, inspector, run panel) with e2e tests |
-| `472ea32` | Packaging, CI, performance and accessibility checks, docs and phase report |
-| `c27b270` | Phase 2 compiler and runtime: For Each, Ask a Human, Jump, Sub-flows, run policies |
-| `ea99268` | Phase 2 durability: run database, job queue, workers, Inbox, triggers and notifications |
-| `2904329` | Phase 2 web app: Ask a Human, Inbox, Save Points, breakpoints, triggers, Flow Data panel |
-| `a176712` | Phase 2 packaging, docs and report: client package, Compose with Postgres and workers |
-| `48afafb` | Handover pack: AGENTS.md, CLAUDE.md, docs/handover |
-| `09c1d47` | Phase 3 groundwork: stand-in tool calling, offline embeddings, more providers |
-| `16f9dda` | Agent step and structured replies |
-| `06608d2` | Knowledge Bases: ingestion, hybrid search, citations, search step |
-| `513e665` | Memory, Database query, MCP tools and OpenAPI import |
-| `09faba5` | Support bot over docs and SQL analyst templates, with passing Test Sets |
-| `8082c15` | Handover: Phase 3 progress, decisions and lessons |
-| `fd9f701` | Web: Agent tools on the canvas, Knowledge page, MCP and API import |
-| `7ba21d7` | Web tests for Phase 3, and fixes they found |
-| `6697af7` | Phase 3 docs, report and handover; version 0.3.0 |
+| `fb46f3d` | Phase 0: flow spec, compiler, runtime, CLI and API server |
+| `9bbbc7f` | Phase 1: visual editor (React Flow canvas, inspector, run panel) with e2e tests |
+| `a0aa6b7` | Packaging, CI, performance and accessibility checks, docs and phase report |
+| `ecdd94b` | Phase 2 compiler and runtime: For Each, Ask a Human, Jump, Sub-flows, run policies |
+| `29b60a4` | Phase 2 durability: run database, job queue, workers, Inbox, triggers and notifications |
+| `f47996d` | Phase 2 web app: Ask a Human, Inbox, Save Points, breakpoints, triggers, Flow Data panel |
+| `ec696ee` | Phase 2 packaging, docs and report: client package, Compose with Postgres and workers |
+| `ab4204f` | Handover pack: AGENTS.md, CLAUDE.md, docs/handover |
+| `80c6a09` | Phase 3 groundwork: stand-in tool calling, offline embeddings, more providers |
+| `3fde5e8` | Agent step and structured replies |
+| `ac5a9ea` | Knowledge Bases: ingestion, hybrid search, citations, search step |
+| `02eb77e` | Memory, Database query, MCP tools and OpenAPI import |
+| `ec5bfb0` | Support bot over docs and SQL analyst templates, with passing Test Sets |
+| `010517f` | Handover: Phase 3 progress, decisions and lessons |
+| `8106053` | Web: Agent tools on the canvas, Knowledge page, MCP and API import |
+| `6c59356` | Web tests for Phase 3, and fixes they found |
+| `a1a028e` | Phase 3 docs, report and handover; version 0.3.0 |
 
 `git log --oneline` is the authoritative list. This table is updated as phases land.
 
@@ -76,15 +76,14 @@ The full plan is in [docs/ROADMAP.md](../ROADMAP.md).
 
 ## GitHub
 
-- **Pushed.** The branch `claude/tender-fermat-4kj4k6` is on GitHub with its full history. It
-  was the first branch pushed to the empty repo, so it is currently the default branch.
+- **Pushed.** `main` is on GitHub with the full history. It replaced the first branch,
+  `claude/tender-fermat-4kj4k6`. That branch name is retired, and so are its commit IDs: the
+  history was rewritten to drop AI attribution lines (decision R.1). The code is identical.
   - Earlier pushes failed with HTTP 403 because the Claude GitHub App hadn't been given access
     to this repo.
   - The owner fixed that in the app's repository access settings. If it ever comes back, see
     lessons.md.
-- **CI has not run yet.** `.github/workflows/ci.yml` runs on pushes to `main` and on pull
-  requests only. To start it, either create `main` from this branch or open a pull request.
-  That is the owner's call.
+- **CI** runs on every push to `main` and on pull requests.
 
 ## Known gaps carried forward
 

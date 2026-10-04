@@ -1,14 +1,15 @@
 # Machine-readable project state. Keep in step with status.md.
 project: Easy Chain
 repo: Shubham-wiz/EasyChain
-branch: claude/tender-fermat-4kj4k6
+branch: main
 version: 0.3.0
 updated: 2026-10-02
 
 push:
   state: pushed
-  branch_on_github: claude/tender-fermat-4kj4k6   # currently the default branch (first pushed)
-  ci: "not run yet: ci.yml triggers on push to main and on pull requests"
+  branch_on_github: main
+  retired_branch: claude/tender-fermat-4kj4k6   # replaced by main after the history rewrite (R.1)
+  ci: "runs on push to main and on pull requests"
   past_issue: "HTTP 403 until the Claude GitHub App was given access to the repo (fixed by the owner)"
 
 phases:

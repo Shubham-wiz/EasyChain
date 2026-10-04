@@ -8,6 +8,7 @@ asked again.
 
 | # | Question | Decision | Who |
 |---|---|---|---|
+| R.2 | Branch | Work happens on `main`. The first branch, `claude/tender-fermat-4kj4k6`, was replaced by `main` when the history was rewritten for R.1, and then deleted. | owner: "yes" to renaming it to `main` |
 | R.1 | AI attribution in git | No `Co-Authored-By: Claude…`, session links or "generated with" lines in commit messages or pull request descriptions. Commits are authored as `Easy Chain Dev <19shubhamdwivedi@gmail.com>`. The existing history was rewritten to remove the trailers. | owner: "remove from git that it's made by claude" |
 
 ## Phase 3

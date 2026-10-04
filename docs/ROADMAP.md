@@ -27,10 +27,9 @@ At the end of Phase 3 the tests were:
 
 ## Step 0: for the owner, before more building
 
-1. ~~**Push the code.**~~ Done. The branch `claude/tender-fermat-4kj4k6` is on GitHub with its
-   full history.
-2. **Start and watch the first CI run.** CI runs on pushes to `main` and on pull requests, so
-   create `main` from the branch or open a pull request.
+1. ~~**Push the code.**~~ Done. `main` is on GitHub with the full history.
+2. **Watch the first CI run.** CI runs on every push to `main`, and the first one started when
+   `main` was pushed.
    CI runs these jobs:
    - lint;
    - Python tests on Postgres with pgvector;

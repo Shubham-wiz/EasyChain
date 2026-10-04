@@ -27,7 +27,7 @@ Read them in this order:
 
 ```bash
 git clone <repo> && cd EasyChain
-git checkout claude/tender-fermat-4kj4k6      # the development branch
+git checkout main                             # the development branch
 make install && make lint && make test        # should be green
 ```
 
