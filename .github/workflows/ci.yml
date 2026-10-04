@@ -120,8 +120,14 @@ jobs:
           python-version: "3.12"
       - run: uv sync --frozen --extra providers
         working-directory: python
-      - name: Put the runner's Postgres on PATH (the tests start their own throwaway server)
-        run: Add-Content $env:GITHUB_PATH $env:PGBIN
+      - name: Start the runner's Postgres (no pgvector); the tests make their own databases in it
+        run: |
+          $svc = Get-Service -Name "postgresql*" | Select-Object -First 1
+          Set-Service -Name $svc.Name -StartupType Manual
+          Start-Service -Name $svc.Name
+          $user = if ($env:PGUSER) { $env:PGUSER } else { "postgres" }
+          $password = if ($env:PGPASSWORD) { $env:PGPASSWORD } else { "root" }
+          "EASYCHAIN_TEST_POSTGRES_URL=postgresql://${user}:${password}@localhost:5432/postgres" | Add-Content $env:GITHUB_ENV
       - name: Tests
         working-directory: python
         run: uv run pytest

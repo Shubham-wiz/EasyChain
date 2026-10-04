@@ -82,6 +82,8 @@ whenever something takes more than a few minutes to understand.
 | The test suite hung starting Postgres | `subprocess.run(pg_ctl start, capture_output=True)`: the server inherits the pipes and Windows waits for it to exit | Send the server's output to `DEVNULL` (it logs to a file) (`tests/pg.py`) |
 | `os.geteuid` / `signal.SIGKILL` missing | POSIX-only | `hasattr(os, "geteuid")`; `proc.kill()` instead of `SIGKILL` |
 | `pnpm` couldn't be started from Node (`EINVAL`) | Node only runs `.cmd` files through a shell | `scripts/tasks.mjs` spawns with `shell: true` on Windows and stops process trees with `taskkill /T` |
+| `initdb` failed on GitHub's Windows runner | The runner's environment (runs as an administrator) | CI starts the runner's own Postgres service and sets `EASYCHAIN_TEST_POSTGRES_URL`; `tests/pg.py` now shows initdb's own message |
+| An axe check hung, or found contrast problems neither theme has | It measured colours mid-transition after a theme toggle; waiting for *all* animations never ends (spinners loop) | Wait only for animations with a finite number of iterations (`e2e/quality.spec.ts`) |
 | uv picked Python 3.13 | No `.python-version` | `python/.python-version` pins 3.12, the version CI and Docker use |
 | `easychain dev` crashed on Windows (`BaseSelectorEventLoop.close() missing … 'self'`) | uvicorn treats a custom `loop` value as the loop factory itself (it isn't called with `use_subprocess`) | `_platform.uvicorn_loop()` names `new_event_loop`; the Windows CI job starts `easychain dev` |
 

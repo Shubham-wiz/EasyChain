@@ -66,7 +66,15 @@ test("the canvas stays responsive with 300 steps", async ({ page, request }) => 
 async function axe(page: Page) {
   // Let colour transitions (after a theme toggle) finish; otherwise axe measures colours halfway
   // between the two themes and reports contrast problems neither theme has.
-  await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
+  // (Spinners loop for ever, so only animations that end are waited for.)
+  await page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
+        .map((a) => a.finished),
+    ),
+  );
   const results = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
     .exclude(".react-flow__minimap") // decorative overview, duplicated by the canvas itself
@@ -78,7 +86,8 @@ async function axe(page: Page) {
 
 test("home and editor have no serious accessibility violations", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByText("Start from a template")).toBeVisible();
+  // With no flows yet, the empty state says it too.
+  await expect(page.getByText("Start from a template").first()).toBeVisible();
   expect(await axe(page)).toEqual([]);
 
   await page.getByTestId("template-summarise-url").getByRole("button", { name: "Use template" }).click();

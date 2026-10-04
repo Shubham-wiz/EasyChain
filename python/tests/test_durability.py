@@ -155,9 +155,11 @@ def pg_base() -> Iterator[str | None]:
 
 
 @pytest.fixture(params=["sqlite", "postgres"])
-def database_url(request: pytest.FixtureRequest, tmp_path: Path, pg_base: str | None) -> str:
+def database_url(request: pytest.FixtureRequest, tmp_path: Path) -> str:
     if request.param == "sqlite":
         return f"sqlite:///{tmp_path / 'easychain.db'}"
+    # Started only for the Postgres variants, so a Postgres problem never fails the SQLite ones.
+    pg_base = request.getfixturevalue("pg_base")
     if pg_base is None:
         pytest.skip("Postgres isn't available here")
     return pg.new_database(pg_base)

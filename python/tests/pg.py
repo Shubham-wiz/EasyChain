@@ -80,11 +80,18 @@ def server() -> Iterator[str]:
     port = _free_port()
     if _is_root():
         shutil.chown(folder, "postgres", "postgres")
-    subprocess.run(
+    made = subprocess.run(
         _as_postgres([initdb, "-D", str(data), "-U", "postgres", "--auth=trust", "-E", "UTF8"]),
-        check=True,
         capture_output=True,
+        text=True,
+        errors="replace",
     )
+    if made.returncode != 0:
+        raise RuntimeError(
+            f"initdb couldn't create a throwaway Postgres (exit {made.returncode}):\n"
+            f"{made.stderr or made.stdout}\nSet EASYCHAIN_TEST_POSTGRES_URL to use a running "
+            "server instead."
+        )
     log = folder / "log.txt"
     subprocess.run(
         _as_postgres(
