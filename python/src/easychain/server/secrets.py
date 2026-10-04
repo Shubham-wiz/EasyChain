@@ -19,6 +19,15 @@ from cryptography.fernet import Fernet, InvalidToken
 
 NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
 
+NEW_KEY_HINT = (
+    'Make one with: python -c "from cryptography.fernet import Fernet; '
+    'print(Fernet.generate_key().decode())"'
+)
+
+
+class VaultLocked(ValueError):
+    """The saved secrets can't be read with this key, so they must not be overwritten."""
+
 
 class SecretStore:
     def __init__(self, home: Path):
@@ -28,13 +37,30 @@ class SecretStore:
         self._values: dict[str, str] = {}
         self._env_before: dict[str, str | None] = {}
         self._mtime: float | None = None
-        self._fernet = Fernet(self._key())
+        # Why the saved secrets can't be read (wrong key, damaged file); None when they can.
+        self.problem: str | None = None
+        self._fernet = self._make_fernet()
         self._load()
+
+    def _make_fernet(self) -> Fernet:
+        key = self._key()
+        try:
+            return Fernet(key)
+        except ValueError:
+            where = (
+                "EASYCHAIN_SECRET_KEY"
+                if os.environ.get("EASYCHAIN_SECRET_KEY")
+                else str(self.home / "secret.key")
+            )
+            raise ValueError(
+                f"The secrets key in {where} isn't a valid key: it must be 32 random bytes in "
+                f"URL-safe base64 (44 characters), not a password. {NEW_KEY_HINT}"
+            ) from None
 
     def _key(self) -> bytes:
         env_key = os.environ.get("EASYCHAIN_SECRET_KEY")
         if env_key:
-            return env_key.encode()
+            return env_key.strip().encode()
         key_path = self.home / "secret.key"
         if key_path.exists():
             return key_path.read_bytes().strip()
@@ -62,24 +88,46 @@ class SecretStore:
         try:
             data = json.loads(self._fernet.decrypt(self.path.read_bytes()))
         except (InvalidToken, ValueError):
-            # Wrong key or damaged file: start empty rather than crash, keep the file.
+            # Wrong key or damaged file: keep running, but never write over the file, or every
+            # secret in it would be lost for good.
+            self.problem = (
+                f"The saved secrets in {self.path} can't be read with this key. If "
+                "EASYCHAIN_SECRET_KEY was set or changed, set it back to the key they were saved "
+                f"with (or unset it to use {self.home / 'secret.key'}). To start again without "
+                "them, move secrets.enc somewhere else and restart."
+            )
             return
+        self.problem = None
+        # Secrets deleted by another process go away here too.
+        for name in set(self._values) - set(data):
+            del self._values[name]
+            self._unexport(name)
         for name, value in data.items():
             self._values[name] = value
             self._export(name, value)
 
     def _save(self) -> None:
+        if self.problem:
+            raise VaultLocked(self.problem)
         self.home.mkdir(parents=True, exist_ok=True)
         token = self._fernet.encrypt(json.dumps(self._values).encode())
         tmp = self.path.with_suffix(".tmp")
         tmp.write_bytes(token)
         tmp.chmod(0o600)
         tmp.replace(self.path)
+        self._mtime = self.path.stat().st_mtime
 
     def _export(self, name: str, value: str) -> None:
         if name not in self._env_before:
             self._env_before[name] = os.environ.get(name)
         os.environ[name] = value
+
+    def _unexport(self, name: str) -> None:
+        previous = self._env_before.pop(name, None)
+        if previous is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = previous
 
     def names(self) -> list[dict[str, str]]:
         with self._lock:
@@ -107,19 +155,19 @@ class SecretStore:
         if not value:
             raise ValueError("The secret is empty.")
         with self._lock:
+            if self.problem:
+                raise VaultLocked(self.problem)
             self._values[name] = value
             self._export(name, value)
             self._save()
 
     def delete(self, name: str) -> bool:
         with self._lock:
+            if self.problem:
+                raise VaultLocked(self.problem)
             if name not in self._values:
                 return False
             del self._values[name]
-            previous = self._env_before.pop(name, None)
-            if previous is None:
-                os.environ.pop(name, None)
-            else:
-                os.environ[name] = previous
+            self._unexport(name)
             self._save()
             return True

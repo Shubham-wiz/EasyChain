@@ -281,6 +281,13 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
   or exports, and are redacted from run events.
 - **Network exposure.** `easychain dev` binds to 127.0.0.1 by default. The Docker image binds to
   0.0.0.0 inside the container, and the compose file publishes it on localhost's port 8000.
+- **Other sites' pages** (`server/hostguard.py`). The API answers only to known host names
+  (`localhost`, `127.0.0.1`, `::1`, `*.localhost`, plus `EASYCHAIN_ALLOWED_HOSTS` and the host of
+  `EASYCHAIN_PUBLIC_URL`), which stops DNS rebinding. Requests that change things (and
+  WebSockets) carrying another site's `Origin` are refused, which stops cross-site form posts.
+  Trigger addresses (`/api/hooks/…`) are exempt: they check their own token.
+- **Secrets vault.** If `secrets.enc` can't be decrypted with the current key, the vault refuses
+  to write rather than replace it, and says how to recover.
 - **Expressions** in Decisions are parsed and limited to comparisons, boolean logic, arithmetic and
   a list of safe functions and methods. Dunder attributes, imports, calls by keyword and
   comprehensions are rejected.
@@ -339,7 +346,7 @@ LangChain, LangGraph and provider packages are pinned exactly in `python/pyproje
 `langchain-anthropic==1.7.5`, `langchain-ollama==1.1.0`, `langchain-text-splitters==1.1.2`,
 `langchain-mcp-adapters==0.3.2`, and the provider packages in the `providers` and `vertex`
 extras) and locked in `uv.lock`. Exported
-`requirements.txt` files use the same pins. To upgrade: bump the pins, run `make test`
+`requirements.txt` files use the same pins. To upgrade: bump the pins, run `pnpm test`
 (golden + template Test Sets), review golden diffs, then ship.
 
 ## 10. Deviations from the build prompt, and why

@@ -33,7 +33,8 @@ and how to start and follow runs from other apps.
 | `EASYCHAIN_WORKER` | `inline` | `off`: the API only queues; run `easychain worker` processes |
 | `EASYCHAIN_HOME` | `~/.easychain` | secrets vault, uploads, the SQLite database |
 | `EASYCHAIN_WORKSPACE` | `$EASYCHAIN_HOME/flows` | the flow files |
-| `EASYCHAIN_PUBLIC_URL` | | where notification links point |
+| `EASYCHAIN_PUBLIC_URL` | | where notification links point (its host name is also allowed) |
+| `EASYCHAIN_ALLOWED_HOSTS` | `localhost`, `127.0.0.1`, `::1`, `*.localhost` | more host names the API answers to, e.g. behind a reverse proxy (`*` for any) |
 
 Use Postgres when more than one worker runs. SQLite allows one writer at a time, which suits one
 person on one machine.

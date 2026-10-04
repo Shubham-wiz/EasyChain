@@ -167,7 +167,8 @@ See [docs/knowledge.md](../docs/knowledge.md) and [docs/agents.md](../docs/agent
 | `EASYCHAIN_SECRET_KEY` | Key for the secrets vault (otherwise `secret.key` in the data folder). |
 | `EASYCHAIN_PUBLIC_URL` | Base URL for links in notifications. |
 | `EASYCHAIN_WEB_DIST` | Folder with the built web app to serve. |
-| `EASYCHAIN_MCP_SERVERS` | MCP servers for exported code (JSON, same shape as the settings). |
+| `EASYCHAIN_MCP_SERVERS` | MCP servers for exported code: JSON `{"<server id>": {"transport": …, "url" or "command": …}}` (see docs/steps/mcp_tool.md). |
+| `EASYCHAIN_ALLOWED_HOSTS` | More host names the API answers to (comma-separated; `*.example.com`; `*` for any), e.g. behind a reverse proxy. |
 | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, … | Provider keys (or set them in the app; they go in the vault). |
 
 ## Tests

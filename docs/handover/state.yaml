@@ -3,13 +3,14 @@ project: Easy Chain
 repo: Shubham-wiz/EasyChain
 branch: main
 version: 0.3.0
-updated: 2026-10-02
+updated: 2026-10-04
+platforms: [linux, windows, macos]   # decision R.4; CI tests linux and windows
 
 push:
   state: pushed
   branch_on_github: main
-  retired_branch: claude/tender-fermat-4kj4k6   # replaced by main after the history rewrite (R.1)
-  ci: "runs on push to main and on pull requests"
+  retired_branch: claude/tender-fermat-4kj4k6   # replaced by main (R.1), deleted (R.3)
+  ci: "runs on push to main and on pull requests; Linux and Windows jobs"
   past_issue: "HTTP 403 until the Claude GitHub App was given access to the repo (fixed by the owner)"
 
 phases:
@@ -33,11 +34,17 @@ phases:
     report: docs/phases/phase-3.md
     done_when: "The Support bot over docs and SQL analyst templates pass their Test Sets"
     evidence: "python/tests/test_templates.py; support-bot 12/12, sql-analyst 10/10 (stand-in AI, scripted model turns, no key)"
+  - id: review
+    name: Fixes from the 2026-10-04 code review
+    state: in_progress
+    tracker: docs/handover/review.md
   - id: 4
     name: Autopilot and teams
-    state: next_after_review
-    plan: docs/phases/phase-3.md#phase-4-plan-autopilot-and-teams
-    done_when_proposed: "A Research assistant template (Deep Agent + Helpers) passes a 10-case Test Set, and Code steps can't escape their sandbox"
+    state: next
+    plan: docs/ROADMAP.md#phase-4-autopilot-and-teams
+    done_when: "A Research assistant template (Deep Agent + Helpers) passes a 10-case Test Set, and Code steps can't escape their sandbox"
+    sandbox: "Docker, gVisor where installed (decision 4.2)"
+    copilot_model: "any model the user has a key for (decision 4.3)"
   - id: 5
     name: Platform
     state: not_started
@@ -48,28 +55,26 @@ phases:
 decisions: docs/handover/decisions.md
 roadmap: docs/ROADMAP.md
 docs_index: docs/README.md
-waiting_for_review: true
-open_questions:
-  - "Phase 4 Done when: confirm the proposal in docs/phases/phase-3.md, or provide the original brief"
-  - "Sandbox backend for Code steps: Docker/gVisor locally (recommended), or a hosted sandbox such as E2B"
-  - "Describe-it copilot model: any model the user has a key for (recommended), or require a capable one"
+waiting_for_review: false
+open_questions: []
 
 tests:
-  measured_at: end of phase 3
-  python: {passed: 320, skipped: 0}
-  web_unit: {passed: 32}
+  measured_at: 2026-10-04, after the Windows support and review fixes
+  python: {passed: 345, skipped: 0, on: "Windows 11 with SQLite and Postgres 18 (no pgvector); Linux in CI"}
+  web_unit: {passed: 36}
   client: {passed: 4}
-  e2e: {passed: 31, skipped_unless_SCREENSHOTS: 1}
+  e2e: {passed: 31, skipped_unless_SCREENSHOTS: 1, on: "Linux (CI)"}
   template_test_sets: {support-bot: "12/12", sql-analyst: "10/10", others: all pass}
+  python_end_of_phase_3: {passed: 320}
   python_end_of_phase_2: {passed: 259, compiler_coverage: 0.94}
 
-commands:
-  install: make install
-  lint: make lint
-  test: make test
-  e2e: "pnpm --filter @easychain/web build && pnpm --filter @easychain/web e2e"
-  golden: make golden
-  schema: make schema
+commands:   # scripts/tasks.mjs; work on Windows, macOS and Linux (make <task> runs the same)
+  install: pnpm run setup
+  lint: pnpm lint
+  test: pnpm test
+  e2e: pnpm e2e
+  golden: pnpm golden
+  schema: pnpm schema
 
 pins:
   langgraph: 1.2.12

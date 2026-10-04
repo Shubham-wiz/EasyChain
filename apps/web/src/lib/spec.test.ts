@@ -107,6 +107,29 @@ describe("editing", () => {
     expect(exitLabels(spec.steps[2])).toEqual(["Sure", "No"]);
   });
 
+  it("keeps each connection on its own exit when exits move or are deleted", () => {
+    let spec = blank();
+    spec = addStep(spec, { id: "x", type: "code", name: "X", description: "", settings: {} }, { x: 0, y: 0 });
+    spec = addStep(spec, { id: "d", type: "decision", name: "D", description: "", settings: { exits: [{ label: "A" }, { label: "B" }], otherwise: "Other" } }, { x: 0, y: 0 });
+    spec = connect(spec, "d", "x", "A");
+    spec = connect(spec, "d", "output", "B");
+    // Moving B above A: A still goes to x, B to output.
+    spec = updateSettings(spec, "d", { exits: [{ label: "B" }, { label: "A" }] });
+    expect(spec.connections).toContainEqual({ from: "d", to: "x", exit: "A" });
+    expect(spec.connections).toContainEqual({ from: "d", to: "output", exit: "B" });
+    // Deleting A deletes its connection.
+    spec = updateSettings(spec, "d", { exits: [{ label: "B" }] });
+    expect(spec.connections.filter((c) => c.from === "d")).toEqual([{ from: "d", to: "output", exit: "B" }]);
+  });
+
+  it("turns labelled connections plain when a step stops having exits", () => {
+    let spec = blank();
+    spec = addStep(spec, { id: "ask", type: "ask_human", name: "Ask", description: "", settings: { kind: "approve" } }, { x: 0, y: 0 });
+    spec = connect(spec, "ask", "output", "Approved");
+    spec = updateSettings(spec, "ask", { kind: "answer" });
+    expect(spec.connections).toContainEqual({ from: "ask", to: "output", exit: null });
+  });
+
   it("renames ids everywhere and inserts steps before others", () => {
     let spec = blank();
     spec = addStep(spec, { id: "ask", type: "ai_model", name: "Ask", description: "", settings: {} }, { x: 300, y: 0 }, { step: "input" });
@@ -148,6 +171,25 @@ describe("editing", () => {
     expect(ids).toEqual(["a_2", "b_2"]);
     expect(pasted.connections).toContainEqual({ from: "a_2", to: "b_2", exit: null });
     expect(pasted.canvas.steps.a_2).toEqual({ x: 140, y: 40 });
+  });
+
+  it("leaves Input's connections out of a paste", () => {
+    let spec = blank();
+    spec = addStep(spec, { id: "a", type: "code", name: "A", description: "", settings: {} }, { x: 100, y: 0 }, { step: "input" });
+    const { spec: pasted } = pasteSteps(spec, copySteps(spec, ["input", "a"]));
+    expect(pasted.connections.every((c) => c.from && c.to)).toBe(true);
+    expect(pasted.connections).toHaveLength(1);
+  });
+
+  it("gives a pasted agent the pasted copies of its tools", () => {
+    let spec = blank();
+    spec = addStep(spec, { id: "lookup", type: "http_request", name: "Lookup", description: "", settings: {} }, { x: 0, y: 0 });
+    spec = addStep(spec, { id: "other", type: "http_request", name: "Other", description: "", settings: {} }, { x: 0, y: 0 });
+    spec = addStep(spec, { id: "helper", type: "agent", name: "Helper", description: "", settings: { tools: ["lookup", "other"], addons: { approve_tools: ["lookup"] } } }, { x: 0, y: 0 });
+    const { spec: pasted } = pasteSteps(spec, copySteps(spec, ["helper", "lookup"]));
+    const agent = pasted.steps.find((s) => s.id === "helper_2")!;
+    expect(agent.settings.tools).toEqual(["lookup_2"]);
+    expect(agent.settings.addons.approve_tools).toEqual(["lookup_2"]);
   });
 
   it("lays out left to right", () => {

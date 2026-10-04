@@ -6,6 +6,7 @@ as ``response_format``. Each field's description goes to the model too.
 
 from __future__ import annotations
 
+import keyword
 from typing import TYPE_CHECKING, Any
 
 from .issues import Fix, Issue, error, warning
@@ -128,6 +129,17 @@ def check_schema(
                     )
                 )
             seen.add(f.name)
+            if keyword.iskeyword(f.name):
+                issues.append(
+                    error(
+                        "schema_python_word",
+                        f"`{f.name}`{where} is a word Python keeps for itself, so a field can't "
+                        "be called that.",
+                        step=step_id,
+                        setting=setting,
+                        hint=f"Rename it, for example to `{f.name}_value`.",
+                    )
+                )
             if f.type == "choice" and not f.options:
                 issues.append(
                     error(

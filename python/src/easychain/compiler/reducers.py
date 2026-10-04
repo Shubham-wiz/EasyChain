@@ -25,7 +25,13 @@ def check_combine(code: str) -> str | None:
     if len(funcs[0].args.args) != 2:
         return "combine takes exactly two arguments: combine(old, new)."
     for node in tree.body:
-        if not isinstance(node, ast.FunctionDef | ast.Import | ast.ImportFrom | ast.Expr):
+        docstring = (
+            isinstance(node, ast.Expr)
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str)
+        )
+        # Anything else would run as soon as the flow's code is loaded.
+        if not (isinstance(node, ast.FunctionDef | ast.Import | ast.ImportFrom) or docstring):
             return "Only imports and the combine function can be in an update rule."
     return None
 
@@ -33,7 +39,7 @@ def check_combine(code: str) -> str | None:
 def rename_combine(code: str, name: str, imports: Imports) -> str:
     """Rename combine() to ``name`` and move its imports to the module's import block."""
     tree = ast.parse(code)
-    lines = code.strip("\n").split("\n")
+    lines = code.split("\n")  # the same lines the parser counted (blank first lines included)
     drop: set[int] = set()
     for node in tree.body:
         if isinstance(node, ast.Import):

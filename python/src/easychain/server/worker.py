@@ -209,7 +209,8 @@ class Worker:
         spec, children = await hub.flow_from_version(run["version_id"])
         options = run.get("options") or {}
         action, payload = job["action"], dict(job.get("payload") or {})
-        if job["attempts"] > 1:
+        handed_back = bool(payload.pop("handed_back", False))
+        if job["attempts"] > 1 or handed_back:
             action, payload = await self._recover(run, spec, children, action, payload)
         checkpoint_id = payload.get("checkpoint_id")
         pause_after = list(options.get("pause_after") or [])
@@ -272,8 +273,12 @@ class Worker:
         await writer.flush()
 
     async def _release(self, job: dict[str, Any], run: dict[str, Any]) -> None:
+        # Hand the job back as it was (a fork, a new chat message, an answer…). The next worker
+        # works out how far it got, as after a crash (_recover): it carries on from this run's
+        # last Save Point, or does the job from the start if it hadn't got going.
         await self.db.finish_job(job["id"], self.name, "released")
-        await self.db.enqueue(run["id"], "continue", {})
+        payload = {**(job.get("payload") or {}), "handed_back": True}
+        await self.db.enqueue(run["id"], job["action"], payload)
         self.hub.bus.job_added()
 
     async def _finish(

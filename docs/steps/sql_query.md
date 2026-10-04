@@ -10,7 +10,7 @@ LangChain-stack term: a SQL tool (SQLAlchemy underneath).
 | Database | A SQLAlchemy URL: `postgresql://user:{secret:DB_PASSWORD}@host/db`, `mysql+pymysql://…`, `sqlite:///path/to/file.db`. `{home}` is the Easy Chain data folder (the sample shop database is `sqlite:///{home}/samples/shop.db`). |
 | Do | **Run a query**, or **Describe the tables** (their columns and a few rows, so an agent can write its own SQL). |
 | SQL | Put Flow Data in with `{field}`: values are sent as parameters, never pasted into the SQL, so they can't change it. A lone `{field}` runs the SQL that field holds (useful for an agent's tool). |
-| Read only | On by default. Queries run in a read-only transaction (and only `SELECT`-style statements are allowed), so nothing can be changed by mistake, even by an agent. |
+| Read only | On by default. Only `SELECT`-style statements are allowed, and on SQLite, Postgres and MySQL they run in a read-only transaction, so nothing can be changed by mistake, even by an agent. PRAGMAs that change settings are refused. Other databases get a strict check of the SQL only: connect as a user that can only read. With read-only off, every change is committed, including `INSERT … RETURNING`. On Postgres a query may run for 60 seconds. |
 | Most rows *(More options)* | Stops a query from returning too much (default 100). |
 | Save as | The rows, as a list of `{column: value}`; or the description of the tables. |
 

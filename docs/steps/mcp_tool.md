@@ -41,8 +41,17 @@ In **Settings → MCP servers**, add a server with a name, an id and how to reac
     save_as: found
 ```
 
-Exported code reads the servers from the `EASYCHAIN_MCP_SERVERS` environment variable (JSON,
-the same shape as the settings), so no secret is written into the export.
+Exported code reads how to reach each server from the `EASYCHAIN_MCP_SERVERS` environment
+variable, so no secret is written into the export. It is JSON with one entry per server id, in
+the shape `langchain-mcp-adapters` takes:
+
+```json
+{
+  "docs": {"transport": "streamable_http", "url": "https://example.com/mcp",
+           "headers": {"Authorization": "Bearer …"}},
+  "files": {"transport": "stdio", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]}
+}
+```
 
 ## Errors you might see
 

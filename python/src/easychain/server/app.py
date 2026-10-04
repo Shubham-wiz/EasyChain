@@ -50,10 +50,11 @@ from . import notify
 from .cron import CronError, next_fire
 from .cron import describe as describe_cron
 from .db import Database, checkpoint_url
+from .hostguard import HostGuard, allowed_hosts
 from .hub import Busy, Hub, Invalid, NotFound
 from .integrations_api import add_integration_routes
 from .knowledge_api import add_knowledge_routes, use_database
-from .secrets import SecretStore
+from .secrets import SecretStore, VaultLocked
 from .store import FlowNotFound, FlowStore
 from .worker import Worker
 from .worker import fire as fire_trigger
@@ -182,6 +183,8 @@ def create_app(
     workspace_path = Path(workspace or os.environ.get("EASYCHAIN_WORKSPACE") or home_path / "flows")
     flows = FlowStore(workspace_path)
     vault = SecretStore(home_path)
+    if vault.problem:
+        log.warning(vault.problem)
     web_dir = _web_dir(static_dir)
     db_url = database_url or default_database_url(home_path)
     inline_worker = (
@@ -245,6 +248,8 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    # Added last, so it runs first: other sites' pages never reach the API (see hostguard.py).
+    app.add_middleware(HostGuard, hosts=allowed_hosts())
 
     # ── meta ────────────────────────────────────────────────────────────────
 
@@ -986,13 +991,19 @@ def create_app(
     def set_secret(name: str, body: SecretValue) -> dict[str, Any]:
         try:
             vault.set(name, body.value.strip())
+        except VaultLocked as exc:
+            raise HTTPException(409, detail={"message": str(exc)}) from exc
         except ValueError as exc:
             raise HTTPException(422, detail={"message": str(exc)}) from exc
         return {"name": name, "saved": True}
 
     @app.delete("/api/secrets/{name}")
     def delete_secret(name: str) -> dict[str, Any]:
-        if not vault.delete(name):
+        try:
+            deleted = vault.delete(name)
+        except VaultLocked as exc:
+            raise HTTPException(409, detail={"message": str(exc)}) from exc
+        if not deleted:
             raise HTTPException(404, detail={"message": "No secret with that name is saved here."})
         return {"name": name, "deleted": True}
 

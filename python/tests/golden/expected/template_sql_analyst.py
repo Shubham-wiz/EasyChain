@@ -107,6 +107,47 @@ def sql_value(value: Any) -> Any:
     return value
 
 
+def sql_without_strings(statement: str) -> str:
+    """The SQL with its quoted text and comments blanked out, so checks only see the SQL itself."""
+    return re.sub(
+        r"'(?:[^']|'')*'|\"(?:[^\"]|\"\")*\"|--[^\n]*|/\*.*?\*/", " ", statement, flags=re.S
+    )
+
+
+def check_read_only_sql(statement: str, dialect: str) -> None:
+    """Refuse SQL that could change data or settings in a read-only query."""
+    code = sql_without_strings(statement).strip().lower()
+    if not re.match(r"(select|with|explain|show|describe|pragma|values)\b", code):
+        raise ValueError(
+            "This query is read-only, so it can only read data (SELECT). "
+            "Turn off read-only to change data."
+        )
+    if code.startswith("pragma") and (
+        "=" in code
+        or not re.match(
+            r"pragma\s+(\w+\.)?(table_info|table_xinfo|table_list|index_list|index_info|"
+            r"index_xinfo|foreign_key_list|database_list|collation_list|function_list|"
+            r"pragma_list|module_list|compile_options|user_version|schema_version|encoding|"
+            r"page_count|page_size|freelist_count)\b",
+            code,
+        )
+    ):
+        raise ValueError(
+            "A read-only query can only use PRAGMAs that describe the database "
+            "(like table_info), not ones that change settings."
+        )
+    if dialect not in ("sqlite", "postgresql", "mysql", "mariadb") and re.search(
+        r"\b(insert|update|delete|merge|upsert|replace|create|alter|drop|truncate|rename|"
+        r"grant|revoke|call|exec|execute|copy|attach|detach|vacuum|lock|set)\b",
+        code,
+    ):
+        # Easy Chain can't make a read-only transaction on this database, so be strict.
+        raise ValueError(
+            "This query is read-only, so it can only read data. On this kind of database, "
+            "also connect as a user that can only read."
+        )
+
+
 def run_sql(
     connection: str,
     sql: str,
@@ -114,42 +155,50 @@ def run_sql(
     *,
     read_only: bool = True,
     max_rows: int = 100,
+    timeout_s: int = 60,
 ) -> list[dict[str, Any]]:
     """Run one SQL statement; rows come back as a list of {column: value}.
 
-    Read-only queries run in a read-only transaction, so they can't change anything even if
-    the SQL tries to.
+    Read-only queries run in a read-only transaction (SQLite, Postgres, MySQL), so they can't
+    change anything even if the SQL tries to. Other changes are committed, including ones that
+    return rows (INSERT … RETURNING).
     """
     statement = sql.strip().rstrip(";").strip()
     if not statement:
         raise ValueError("There is no SQL to run.")
-    if ";" in statement:
+    if ";" in sql_without_strings(statement):
         raise ValueError("Run one SQL statement at a time.")
-    if read_only and not re.match(
-        r"(?is)^(select|with|explain|show|describe|pragma|values)\b", statement
-    ):
-        raise ValueError(
-            "This query is read-only, so it can only read data (SELECT). "
-            "Turn off read-only to change data."
-        )
     engine = sql_engine(connection)
+    dialect = engine.dialect.name
+    if read_only:
+        check_read_only_sql(statement, dialect)
+    # A plain read is fetched as it is read, so max_rows also limits what leaves the database.
+    stream = {"stream_results": bool(re.match(r"(?is)(select|values)\b", statement))}
     with engine.connect() as conn:
-        sqlite = conn.dialect.name == "sqlite"
+        sqlite = dialect == "sqlite"
         try:
             if read_only and sqlite:
                 conn.exec_driver_sql("PRAGMA query_only = ON")
-            elif read_only and conn.dialect.name == "postgresql":
+            elif read_only and dialect in ("postgresql", "mysql", "mariadb"):
                 conn.exec_driver_sql("SET TRANSACTION READ ONLY")
+            if dialect == "postgresql":
+                conn.exec_driver_sql(f"SET LOCAL statement_timeout = {int(timeout_s * 1000)}")
             if params:
-                result = conn.execute(sa.text(statement), params)
+                result = conn.execute(sa.text(statement), params, execution_options=stream)
             else:
-                result = conn.exec_driver_sql(statement)
+                result = conn.exec_driver_sql(statement, execution_options=stream)
             if not result.returns_rows:
                 changed = result.rowcount
                 conn.commit()
                 return [{"rows_changed": changed}]
-            rows = result.mappings().fetchmany(max_rows)
-            return [{k: sql_value(v) for k, v in row.items()} for row in rows]
+            rows = [
+                {k: sql_value(v) for k, v in row.items()}
+                for row in result.mappings().fetchmany(max_rows)
+            ]
+            result.close()
+            if not read_only:
+                conn.commit()
+            return rows
         finally:
             if read_only and sqlite:
                 conn.rollback()

@@ -6,6 +6,7 @@ offers a one-click fix where one exists.
 
 from __future__ import annotations
 
+import keyword
 import re
 
 from ..spec.models import FlowSpec
@@ -78,6 +79,20 @@ def _check_structure(an: FlowAnalysis) -> list[Issue]:
                         f"Rename it to `{_single_underscores(step.id)}`",
                         {"to": _single_underscores(step.id)},
                     ),
+                )
+            )
+    for name, info in an.fields.items():
+        if keyword.iskeyword(name):
+            where = info.written_by[0] if info.written_by else None
+            if where is None and an.input_step is not None:
+                where = an.input_step.id
+            issues.append(
+                error(
+                    "field_python_word",
+                    f"`{name}` is a word Python keeps for itself, so Flow Data can't have a field "
+                    "with that name.",
+                    step=where,
+                    hint=f"Rename it everywhere it is used, for example to `{name}_value`.",
                 )
             )
     node_steps = [s for s in an.reachable if an.handlers[s].has_node]

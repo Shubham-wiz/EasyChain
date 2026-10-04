@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
 
 SPEC_VERSION = 1
 
@@ -73,9 +73,19 @@ class RunPolicy(_Model):
     )
 
 
+def one_line(value: str) -> str:
+    """A label on one line: line breaks and runs of spaces become single spaces."""
+    return " ".join(value.split())
+
+
+# Names are labels on one line. (They also appear in comments of the generated code, where a line
+# break would start a line of code.)
+Label = Annotated[str, AfterValidator(one_line)]
+
+
 class _StepBase(_Model):
     id: Ident = Field(description="Unique id; also the LangGraph node name.")
-    name: str = Field(default="", description="Label shown on the canvas.")
+    name: Label = Field(default="", description="Label shown on the canvas.")
     description: str = ""
     run: RunPolicy = Field(default_factory=RunPolicy)
 
@@ -750,7 +760,7 @@ class FlowSpec(_Model):
     """An Easy Chain flow (a LangGraph StateGraph)."""
 
     version: Literal[1] = SPEC_VERSION
-    name: str = Field(min_length=1, max_length=120)
+    name: Label = Field(min_length=1, max_length=120)
     description: str = ""
     settings: FlowSettings = Field(default_factory=FlowSettings)
     data: list[DataField] = Field(default_factory=list, description="Flow Data fields.")

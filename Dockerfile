@@ -1,7 +1,8 @@
 # One image with everything: the built web app served by the Python API server, and the
 # worker (`easychain worker`).
 #   docker compose up        (Postgres + API + worker)
-#   docker build -t easychain . && docker run -p 8000:8000 easychain   (one container, SQLite)
+#   docker build -t easychain . && docker run -p 127.0.0.1:8000:8000 easychain   (one container, SQLite)
+# Easy Chain has no login yet, so publish the port on this machine only (127.0.0.1).
 
 FROM node:22-slim AS web
 WORKDIR /src

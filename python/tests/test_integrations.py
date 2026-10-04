@@ -77,6 +77,38 @@ def test_run_sql_reads_safely(shop):
     assert "customer_id references customers.id" in schema
 
 
+def test_changes_that_return_rows_are_saved(shop):
+    added = run_sql(
+        shop,
+        "INSERT INTO products (id, name, category, price) VALUES (99, 'Mug', 'gear', 9) "
+        "RETURNING id",
+        read_only=False,
+    )
+    assert added == [{"id": 99}]
+    assert run_sql(shop, "SELECT name FROM products WHERE id = 99") == [{"name": "Mug"}]
+
+
+def test_read_only_queries_cant_change_settings(shop):
+    for pragma in ("PRAGMA ignore_check_constraints = ON", "PRAGMA foreign_keys = OFF"):
+        with pytest.raises(ValueError, match="PRAGMA"):
+            run_sql(shop, pragma)
+    with pytest.raises(ValueError, match="PRAGMA"):
+        run_sql(shop, "PRAGMA writable_schema")
+    assert run_sql(shop, "PRAGMA table_info(products)")[0]["name"] == "id"
+    # Semicolons and keywords inside quoted text are just text.
+    assert run_sql(shop, "SELECT 'a;b' AS t") == [{"t": "a;b"}]
+
+
+def test_read_only_is_strict_where_there_is_no_read_only_transaction():
+    from easychain.integrations.sql import check_read_only_sql
+
+    check_read_only_sql("SELECT name FROM t WHERE note = 'please delete'", "mssql")
+    with pytest.raises(ValueError, match="read-only"):
+        check_read_only_sql("WITH x AS (SELECT 1) DELETE FROM orders", "mssql")
+    # SQLite, Postgres and MySQL have a read-only transaction, which stops such a write.
+    check_read_only_sql("WITH x AS (SELECT 1) DELETE FROM orders", "mysql")
+
+
 @pytest.mark.skipif(not pg.available(), reason="Postgres isn't installed")
 def test_run_sql_read_only_on_postgres():
     with pg.server() as url:
@@ -85,6 +117,10 @@ def test_run_sql_read_only_on_postgres():
         assert run_sql(url, "SELECT body FROM notes") == [{"body": "hi"}]
         with pytest.raises(Exception, match="read-only transaction"):
             run_sql(url, "WITH x AS (DELETE FROM notes RETURNING 1) SELECT * FROM x")
+        # A change that returns rows is committed.
+        added = run_sql(url, "INSERT INTO notes VALUES (2, 'yo') RETURNING id", read_only=False)
+        assert added == [{"id": 2}]
+        assert run_sql(url, "SELECT COUNT(*) AS n FROM notes") == [{"n": 2}]
         SQL_ENGINES.clear()
 
 

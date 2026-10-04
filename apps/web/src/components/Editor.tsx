@@ -1,6 +1,6 @@
 import { ReactFlowProvider } from "@xyflow/react";
 import { Loader2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { copySteps, pasteSteps, type Clipboard } from "../lib/spec";
 import type { FlowSpec } from "../lib/types";
@@ -32,10 +32,17 @@ function useBackgroundSync() {
   const spec = useFlow((s) => s.spec);
   const flowId = useFlow((s) => s.flowId);
   const saveState = useFlow((s) => s.saveState);
+  // Edits waiting for the save timer.
+  const pending = useRef<{ flowId: string; spec: FlowSpec } | null>(null);
 
   useEffect(() => {
-    if (!spec || !flowId || saveState !== "unsaved") return;
+    if (!spec || !flowId || saveState !== "unsaved") {
+      pending.current = null;
+      return;
+    }
+    pending.current = { flowId, spec };
     const t = setTimeout(async () => {
+      pending.current = null;
       useFlow.getState().setSaveState("saving");
       try {
         await api.saveFlow(flowId, spec);
@@ -47,6 +54,25 @@ function useBackgroundSync() {
     }, 700);
     return () => clearTimeout(t);
   }, [spec, flowId, saveState]);
+
+  // Leaving the flow (another flow, another page, closing the tab) saves pending edits now
+  // instead of dropping them with the timer.
+  useEffect(() => {
+    const flush = (keepalive: boolean) => {
+      const waiting = pending.current;
+      if (!waiting) return;
+      pending.current = null;
+      api.saveFlow(waiting.flowId, waiting.spec, { keepalive }).catch(() => {
+        /* the page is going away; nothing left to tell */
+      });
+    };
+    const onPageHide = () => flush(true);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      flush(false);
+    };
+  }, [flowId]);
 
   useEffect(() => {
     if (!spec) return;

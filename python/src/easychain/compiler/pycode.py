@@ -66,6 +66,12 @@ def py_literal(value: Any, indent: int = 0) -> str:
 def docstring(text: str, spaces: int = 4) -> str:
     """A docstring block at the given indentation."""
     text = text.strip().replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
+    if text.endswith('"'):
+        # `"""…"spam""""` would end the string one quote early. (A quote after an odd number
+        # of backslashes is already escaped.)
+        before = text[:-1]
+        if (len(before) - len(before.rstrip("\\"))) % 2 == 0:
+            text = before + '\\"'
     pad = " " * spaces
     width = 96 - spaces
     if any(len(line) > width for line in text.split("\n")):
@@ -206,10 +212,26 @@ class Names:
         "run_sql",
         "describe_database",
         "SQL_ENGINES",
+        # Imported by step code (helper code's own names come from helper_names()).
+        "interrupt",
+        "Command",
+        "Send",
+        "RetryPolicy",
+        "CachePolicy",
+        "RemoveMessage",
+        "InMemoryStore",
+        "asyncio",
     }
 
+    @classmethod
+    def reserved(cls) -> set[str]:
+        """RESERVED plus every name the helper code defines or imports (``quote``, ``run_once``…)."""
+        from .helpers import helper_names
+
+        return cls.RESERVED | helper_names()
+
     def __init__(self) -> None:
-        self._used: set[str] = set(self.RESERVED)
+        self._used: set[str] = self.reserved()
 
     def claim(self, base: str) -> str:
         name = base if base.isidentifier() and not keyword.iskeyword(base) else f"{base}_"

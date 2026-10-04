@@ -94,8 +94,8 @@ export const api = {
   flow: (id: string) => request<{ id: string; spec: FlowSpec }>(`/api/flows/${id}`),
   createFlow: (body: { template?: string; name?: string; spec?: FlowSpec; yaml?: string }) =>
     request<{ id: string; spec: FlowSpec }>("/api/flows", { method: "POST", ...json(body) }),
-  saveFlow: (id: string, spec: FlowSpec) =>
-    request<{ saved: boolean }>(`/api/flows/${id}`, { method: "PUT", ...json(spec) }),
+  saveFlow: (id: string, spec: FlowSpec, opts: { keepalive?: boolean } = {}) =>
+    request<{ saved: boolean }>(`/api/flows/${id}`, { method: "PUT", ...json(spec), keepalive: opts.keepalive }),
   deleteFlow: (id: string) => request<{ deleted: boolean }>(`/api/flows/${id}`, { method: "DELETE" }),
   flowYaml: (id: string) => request<string>(`/api/flows/${id}/yaml`),
   check: (spec: FlowSpec, flowId?: string | null) =>

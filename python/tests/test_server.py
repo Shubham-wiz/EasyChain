@@ -231,6 +231,55 @@ def test_secrets_are_write_only_and_encrypted(client, tmp_path, monkeypatch):
     assert client.delete("/api/secrets/OPENAI_API_KEY").status_code == 404
 
 
+def test_a_wrong_key_never_overwrites_the_saved_secrets(tmp_path, monkeypatch):
+    from cryptography.fernet import Fernet
+
+    from easychain.server.secrets import SecretStore, VaultLocked
+
+    home = tmp_path / "vault"
+    SecretStore(home).set("OPENAI_API_KEY", "sk-keep-me")
+    saved = (home / "secrets.enc").read_bytes()
+
+    # Someone sets EASYCHAIN_SECRET_KEY after secrets were saved with secret.key.
+    monkeypatch.setenv("EASYCHAIN_SECRET_KEY", Fernet.generate_key().decode())
+    locked = SecretStore(home)
+    assert locked.problem and "can't be read with this key" in locked.problem
+    with pytest.raises(VaultLocked):
+        locked.set("ANTHROPIC_API_KEY", "sk-new")
+    with pytest.raises(VaultLocked):
+        locked.delete("OPENAI_API_KEY")
+    assert (home / "secrets.enc").read_bytes() == saved
+
+    app = TestClient(create_app(home=home, static_dir=tmp_path / "no-web", worker=False))
+    refused = app.put("/api/secrets/ANTHROPIC_API_KEY", json={"value": "sk-new"})
+    assert refused.status_code == 409 and "secrets.enc" in refused.json()["message"]
+
+    # With the right key back, everything is still there.
+    monkeypatch.delenv("EASYCHAIN_SECRET_KEY")
+    assert SecretStore(home).names() == [{"name": "OPENAI_API_KEY", "source": "vault"}]
+
+
+def test_a_password_is_not_taken_as_the_secrets_key(tmp_path, monkeypatch):
+    from easychain.server.secrets import SecretStore
+
+    monkeypatch.setenv("EASYCHAIN_SECRET_KEY", "my long passphrase")
+    with pytest.raises(ValueError, match="isn't a valid key"):
+        SecretStore(tmp_path / "vault")
+
+
+def test_secrets_deleted_elsewhere_are_dropped_on_reload(tmp_path):
+    from easychain.server.secrets import SecretStore
+
+    api = SecretStore(tmp_path / "v")
+    api.set("GITHUB_TOKEN", "ghp-1")
+    worker = SecretStore(tmp_path / "v")  # a worker process next to the API server
+    api.delete("GITHUB_TOKEN")
+    worker._mtime = -1  # file systems with coarse timestamps can hide the change
+    worker.reload()
+    assert worker.names() == []
+    assert "ghp-1" not in worker.values()
+
+
 def test_environment_keys_are_listed(client, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
     assert client.get("/api/secrets").json() == [

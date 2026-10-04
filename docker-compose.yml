@@ -14,7 +14,9 @@ x-easychain-env: &easychain-env
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   # A model server on your machine, e.g. Ollama (works on Docker Desktop):
   OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
-  # Set this to keep the secrets vault readable if the volume moves between machines.
+  # Set this to keep the secrets vault readable if the volume moves between machines. It must be
+  # a Fernet key (python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"),
+  # set before the first secret is saved: secrets saved with one key can't be read with another.
   EASYCHAIN_SECRET_KEY: ${EASYCHAIN_SECRET_KEY:-}
   # Links in notifications point here.
   EASYCHAIN_PUBLIC_URL: ${EASYCHAIN_PUBLIC_URL:-http://localhost:8000}

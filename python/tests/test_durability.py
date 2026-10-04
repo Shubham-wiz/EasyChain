@@ -26,6 +26,7 @@ from easychain.server.app import create_app
 from easychain.server.db import Database, checkpoint_url
 from easychain.server.hub import Hub
 from easychain.server.store import FlowStore
+from easychain.server.worker import Worker
 from easychain.spec import dumps_spec, parse_spec
 
 from . import pg
@@ -341,6 +342,29 @@ async def test_side_effect_interrupted_by_a_crash_is_not_applied_twice(
         assert len({c["key"] for c in log["calls"]}) == 1, "with the same Idempotency-Key"
         assert len(log["applied"]) == 1, "so the payment happened once"
         assert run["output"]["receipt"]["replayed"] is True
+    finally:
+        await _close(hub)
+
+
+async def test_a_job_handed_back_on_shutdown_keeps_what_it_was_asked_to_do(
+    database_url: str, workspace: Path
+):
+    hub = await _hub(database_url, workspace)
+    try:
+        run_id = await hub.start_run(
+            hub.flows.get("approval"), flow_id="approval", inputs={"draft": "Hello"}
+        )
+        # A worker takes the job and is stopped before the run makes its first Save Point.
+        job = await hub.db.lease("worker-a", 30)
+        await Worker(hub, name="worker-a")._release(job, await hub.db.get_run(run_id))
+
+        again = await hub.db.lease("worker-b", 30)
+        assert again["action"] == "start", "not turned into a bare 'continue'"
+        assert again["payload"]["handed_back"] is True
+        await Worker(hub, name="worker-b")._process(again)
+        run = await hub.db.get_run(run_id)
+        assert run["status"] == "paused", run
+        assert run["pending"]["reason"] == "ask_human"
     finally:
         await _close(hub)
 

@@ -409,3 +409,24 @@ HELPERS = {
         *_knowledge_helpers(),
     )
 }
+
+
+def helper_names() -> set[str]:
+    """Every module-level name helper code defines or imports, so steps can't take them."""
+    import ast
+
+    names: set[str] = set()
+    for helper in HELPERS.values():
+        for node in ast.parse(helper.code).body:
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+                names.add(node.name)
+            elif isinstance(node, ast.AnnAssign | ast.Assign):
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                names.update(t.id for t in targets if isinstance(t, ast.Name))
+        for module in helper.imports:
+            module, _, alias = module.partition(" as ")
+            names.add(alias or module.split(".")[0])
+        for _module, imported in helper.from_imports:
+            name, _, alias = imported.partition(" as ")
+            names.add(alias or name)
+    return names

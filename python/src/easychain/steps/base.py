@@ -125,7 +125,8 @@ class StepHandler:
         return StepCode()
 
     def title(self, step: Any) -> str:
-        return f"{self.label} · {step.name or step.id}"
+        # One line: titles also go into comments of the generated code.
+        return " ".join(f"{self.label} · {step.name or step.id}".split())
 
 
 def template_value(text: str, ctx: EmitContext) -> str:

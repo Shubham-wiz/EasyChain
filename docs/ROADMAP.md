@@ -11,7 +11,7 @@ _Written at the end of Phase 3 (version 0.3.0). The live status is in
 | 1. Visual MVP | Canvas, inspector, run panel, chat, export, templates | ✅ Done ([report](phases/phase-0-1.md)) |
 | 2. Real runtime | Durable runs, workers, Ask a Human, Inbox, Save Points, time travel, triggers | ✅ Done ([report](phases/phase-2.md)) |
 | 3. Agents and knowledge | Agent + add-ons, MCP, OpenAPI import, structured replies, Knowledge Bases, memory, 14 providers | ✅ Done ([report](phases/phase-3.md)) |
-| 4. Autopilot and teams | Sandboxes, Deep Agents, Helpers, Skills, multi-agent patterns, describe-it copilot | Next |
+| 4. Autopilot and teams | Sandboxes, Deep Agents, Helpers, Skills, multi-agent patterns, describe-it copilot | Next, after the review fixes |
 | 5. Platform | Test Sets and Checks, Test Runs, CI gate, dashboards, model gateway, Publish, environments, roles, SSO, audit, tracing | Planned |
 | 6. Ecosystem | LangGraph.js export, custom step registry, import, collaboration, prompt optimisation, Helm | Planned |
 
@@ -28,32 +28,19 @@ At the end of Phase 3 the tests were:
 ## Step 0: for the owner, before more building
 
 1. ~~**Push the code.**~~ Done. `main` is on GitHub with the full history.
-2. **Watch the first CI run.** CI runs on every push to `main`, and the first one started when
-   `main` was pushed.
-   CI runs these jobs:
-   - lint;
-   - Python tests on Postgres with pgvector;
-   - web and client tests;
-   - Playwright;
-   - a Docker Compose smoke test.
-
-   Expect the first run to need small fixes for the CI environment (paths, browser install,
-   image pulls). Getting CI green is the first job of the next session.
-3. **Answer the three Phase 4 questions** (from the [Phase 3 report](phases/phase-3.md#questions-for-you)).
-   "Whatever you think is right" means the recommended option of each:
-   - **Phase 4's "Done when".** Recommended: the proposal below.
-   - **Sandbox backend.** Recommended: Docker, plus gVisor where it is installed. The
-     alternative is a hosted sandbox (E2B).
-   - **The copilot's model.** Recommended: any model you have a key for. The alternative is to
-     require a strong model.
-4. **Optional:** commit the original build brief as `docs/handover/build-prompt.original.md`.
-   The "Done when" for Phases 4–6 below are proposals reconstructed without it.
-5. **Before a release:** try the agent templates and the copilot with a real key. CI never calls
+2. ~~**Watch the first CI run.**~~ Done: it passed (Python on Postgres with pgvector, web and
+   client tests, Playwright, Docker Compose). CI now also runs on Windows (decision R.4).
+3. ~~**Answer the three Phase 4 questions.**~~ Done: the recommended options (decisions 4.1–4.3).
+4. ~~**Fix the code review's serious findings first**~~ (decision R.5): in progress, tracked in
+   [handover/review.md](handover/review.md).
+5. **Optional:** commit the original build brief as `docs/handover/build-prompt.original.md`.
+   The "Done when" for Phases 5–6 below are proposals reconstructed without it.
+6. **Before a release:** try the agent templates and the copilot with a real key. CI never calls
    paid models.
 
 ## Phase 4: Autopilot and teams
 
-**Proposed "Done when"**:
+**"Done when"** (decision 4.1):
 
 1. A **Research assistant** template passes its 10-case Test Set. It is a Deep Agent that plans
    with a to-do list, hands sub-tasks to two Helpers, and writes a report to its files.
@@ -154,7 +141,7 @@ These rules come from the build prompt, and [AGENTS.md](../AGENTS.md) has the de
 
 1. Work one phase at a time. Don't start a phase until the previous one meets its
    "Done when".
-2. Before each commit, run `make lint` and the relevant tests. Never commit failing tests.
+2. Before each commit, run `pnpm lint` and the relevant tests. Never commit failing tests.
    Never call paid APIs in tests.
 3. Keep [handover/status.md](handover/status.md) and [handover/state.yaml](handover/state.yaml)
    current, in the same commit as the work.

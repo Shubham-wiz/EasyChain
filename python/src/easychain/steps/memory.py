@@ -93,7 +93,7 @@ class MemoryHandler(StepHandler):
     ]
 
     def title(self, step: Any) -> str:
-        return f"Memory · {step.name or LABELS[step.settings.action]}"
+        return " ".join(f"Memory · {step.name or LABELS[step.settings.action]}".split())
 
     def text_field(self, step: Any, an: Any) -> str | None:
         if step.settings.text:

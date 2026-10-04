@@ -19,7 +19,7 @@ from ..providers import PROVIDERS, split_model
 from ..spec.models import SPEC_VERSION, FlowSpec
 from .analysis import FlowAnalysis, Resolver
 from .helpers import HELPERS
-from .issues import CompileError, Issue
+from .issues import CompileError, Issue, error
 from .pycode import Imports, Names, docstring, py_literal, py_str
 
 _BASE_TYPES = {
@@ -40,7 +40,7 @@ DEFAULT_MAX_STEPS = 25
 
 
 def section(title: str) -> str:
-    line = f"# ── {title} "
+    line = f"# ── {' '.join(title.split())} "  # one line: it is a comment
     return line + "─" * max(4, 79 - len(line))
 
 
@@ -243,7 +243,23 @@ def compile_flow(
     errors = [i for i in issues if i.level == "error"]
     if errors and not allow_errors:
         raise CompileError(errors)
-    return _emit_module(spec, an, issues)
+    compiled = _emit_module(spec, an, issues)
+    # The checks should stop anything Python can't read; if one slips through, say so here
+    # rather than as a crash when the run starts.
+    try:
+        compile(compiled.source, f"{compiled.module_name}.py", "exec")
+    except SyntaxError as exc:
+        line = (exc.text or "").strip()
+        problem = error(
+            "generated_code_invalid",
+            f"Easy Chain made code that Python can't read (line {exc.lineno}: {exc.msg}).",
+            hint=f"The line is `{line[:120]}`. A name or text in the flow probably clashes with "
+            "Python; rename the step or field it mentions. Please report this as a bug too.",
+        )
+        if not allow_errors:
+            raise CompileError([problem]) from None
+        compiled.issues.append(problem)
+    return compiled
 
 
 # ── one flow ─────────────────────────────────────────────────────────────────
@@ -381,7 +397,7 @@ def _emit_module(spec: FlowSpec, an: FlowAnalysis, issues: list[Issue]) -> Compi
         if s not in an.reachable and an.handlers[s].has_node and s not in an.tool_of
     ]
     if unreachable:
-        names = ", ".join(f"{s.name or s.id} ({s.id})" for s in unreachable)
+        names = " ".join(", ".join(f"{s.name or s.id} ({s.id})" for s in unreachable).split())
         parts.append(f"# Not connected to Input, so not included: {names}")
     parts.append(section("Flow") + "\n\n\n" + root.build)
     parts.append("graph = build_graph()")

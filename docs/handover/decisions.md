@@ -8,8 +8,19 @@ asked again.
 
 | # | Question | Decision | Who |
 |---|---|---|---|
-| R.2 | Branch | Work happens on `main`. The first branch, `claude/tender-fermat-4kj4k6`, was replaced by `main` when the history was rewritten for R.1, and then deleted. | owner: "yes" to renaming it to `main` |
+| R.5 | Fix the code review first | The review of 2026-10-04 ([review.md](review.md)) is worked through before Phase 4: data-loss and security findings first, each fix with a test. | owner: "OK go on" to the proposal |
+| R.4 | Windows and Linux | Easy Chain runs from source on **both Windows and Linux** (and macOS). CI tests Linux and Windows. Developer commands are `pnpm <task>` (`scripts/tasks.mjs`), so `make` isn't needed; what differs between systems lives in `easychain/_platform.py`. | owner: "we need it to be platform independent, Linux and Windows both can run it" |
+| R.3 | The retired branch | `claude/tender-fermat-4kj4k6` still carried the AI-attribution trailers on GitHub; it is deleted (the code is all on `main`). | owner: "OK go on" to deleting it |
+| R.2 | Branch | Work happens on `main`. The first branch, `claude/tender-fermat-4kj4k6`, was replaced by `main` when the history was rewritten for R.1 (it was only actually deleted later, R.3). | owner: "yes" to renaming it to `main` |
 | R.1 | AI attribution in git | No `Co-Authored-By: Claude…`, session links or "generated with" lines in commit messages or pull request descriptions. Commits are authored as `Easy Chain Dev <19shubhamdwivedi@gmail.com>`. The existing history was rewritten to remove the trailers. | owner: "remove from git that it's made by claude" |
+
+## Phase 4 (answers to the Phase 3 report's questions)
+
+| # | Question | Decision | Who |
+|---|---|---|---|
+| 4.1 | Phase 4 "Done when" | The proposal in decision 3.13: a **Research assistant** template (Deep Agent + Helpers + to-do list + files) passes a 10-case Test Set, and Code steps can't escape their sandbox (escape tests) | owner: "OK go on" to the recommended answers |
+| 4.2 | Sandbox backend for Code steps | **Docker** by default, with **gVisor** (`runsc`) where it is installed; hosted sandboxes (E2B, Modal) later as plugins. Must work with Docker Desktop on Windows too (R.4). | owner: same |
+| 4.3 | The describe-it copilot's model | **Any model the user has a key for**; with no key, the stand-in AI shows a canned example | owner: same |
 
 ## Phase 3
 

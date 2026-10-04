@@ -367,7 +367,8 @@ class CodeAnalysis:
                 and isinstance(node.args[0].value, str)
             ):
                 reads.add(node.args[0].value)
-        return reads
+        # Keys like "order-id" can't be Flow Data fields (or tool arguments), so they aren't reads.
+        return {name for name in reads if _IDENT.match(name)}
 
 
 _IDENT = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
@@ -482,11 +483,21 @@ class CodeHandler(StepHandler):
                         setting="code",
                     )
                 )
-        clash = info.top_level_names & (Names.RESERVED - {"data"})
+        reserved = Names.reserved()
+        # `import math` binds the very module the generated code imports under that name.
+        same_module = {
+            module
+            for _, _, specs in info.imports
+            for module, name, alias in specs
+            if name is None and alias in (None, module) and "." not in module
+        }
+        clash = (info.top_level_names - same_module) & (reserved - {"data"})
         for _, _, specs in info.imports:
             for module, name, alias in specs:
                 bound = alias or (name if name else module.split(".")[0])
-                if bound in Names.RESERVED and _SAFE_IMPORTS.get(bound) != (module, name):
+                if bound in same_module:
+                    continue
+                if bound in reserved and _SAFE_IMPORTS.get(bound) != (module, name):
                     clash.add(bound)
         if "*" in info.top_level_names:
             issues.append(

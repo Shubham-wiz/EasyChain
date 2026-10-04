@@ -88,19 +88,33 @@ export function updateSettings(spec: FlowSpec, id: string, patch: Record<string,
   const step = next.steps.find((s) => s.id === id);
   if (!step) return spec;
   step.settings = { ...step.settings, ...patch };
-  // Renaming an exit keeps its connection attached.
-  if (hasExits(step) && ("exits" in patch || "otherwise" in patch || "options" in patch || "kind" in patch)) {
-    const before = exitLabels(getStep(spec, id)!);
-    const after = exitLabels(step);
-    if (before.length === after.length) {
-      for (const conn of next.connections) {
-        if (conn.from !== id || conn.exit == null) continue;
-        const idx = before.indexOf(conn.exit);
-        if (idx !== -1 && after[idx] !== conn.exit) conn.exit = after[idx];
-      }
-    }
+  const old = getStep(spec, id)!;
+  if (
+    (hasExits(old) || hasExits(step)) &&
+    ("exits" in patch || "otherwise" in patch || "options" in patch || "kind" in patch)
+  ) {
+    next.connections = reattachExits(next.connections, id, exitLabels(old), exitLabels(step));
   }
   return next;
+}
+
+/**
+ * Keep a step's connections on the right exits after its exits change. Connections follow
+ * labels, not positions: an exit that only moved keeps its connection, a renamed exit takes
+ * its connection along, and a deleted exit's connection goes too.
+ */
+function reattachExits(connections: Connection[], id: string, before: string[], after: string[]): Connection[] {
+  const removed = before.filter((label) => !after.includes(label));
+  const added = after.filter((label) => !before.includes(label));
+  const renamed = removed.length === added.length;
+  return connections.flatMap((conn) => {
+    if (conn.from !== id || conn.exit == null) return [conn];
+    if (after.length === 0) return [{ ...conn, exit: null }]; // now a step with one way out
+    if (after.includes(conn.exit)) return [conn];
+    const idx = removed.indexOf(conn.exit);
+    if (renamed && idx !== -1) return [{ ...conn, exit: added[idx] }];
+    return [];
+  });
 }
 
 export const EACH_ITEM = "Each item";
@@ -351,11 +365,15 @@ export interface Clipboard {
 }
 
 export function copySteps(spec: FlowSpec, ids: string[]): Clipboard {
-  const keep = new Set(ids);
+  // A flow has one Input step, so it is never copied (nor are its connections).
+  const steps = spec.steps.filter((s) => ids.includes(s.id) && s.type !== "input");
+  const keep = new Set(steps.map((s) => s.id));
   return {
-    steps: clone(spec.steps.filter((s) => keep.has(s.id) && s.type !== "input")),
+    steps: clone(steps),
     connections: clone(spec.connections.filter((c) => keep.has(c.from) && keep.has(c.to))),
-    positions: Object.fromEntries(ids.filter((id) => spec.canvas.steps[id]).map((id) => [id, spec.canvas.steps[id]])),
+    positions: Object.fromEntries(
+      [...keep].filter((id) => spec.canvas.steps[id]).map((id) => [id, spec.canvas.steps[id]]),
+    ),
   };
 }
 
@@ -373,7 +391,20 @@ export function pasteSteps(spec: FlowSpec, clip: Clipboard, offset = 40): { spec
     next.canvas.steps[id] = { x: pos.x + offset, y: pos.y + offset };
   }
   for (const conn of clip.connections) {
+    if (!remap[conn.from] || !remap[conn.to]) continue;
     next.connections.push({ ...conn, from: remap[conn.from], to: remap[conn.to] });
+  }
+  // A pasted agent uses the pasted copies of its tools; tools that weren't copied stay with the
+  // original agent (a step is the tool of one agent).
+  for (const id of Object.values(remap)) {
+    const step = next.steps.find((s) => s.id === id)!;
+    if (step.type !== "agent") continue;
+    const copied = (list: string[] | undefined) => (list ?? []).filter((t) => remap[t]).map((t) => remap[t]);
+    step.settings = {
+      ...step.settings,
+      tools: copied(step.settings.tools),
+      addons: { ...(step.settings.addons ?? {}), approve_tools: copied(step.settings.addons?.approve_tools) },
+    };
   }
   return { spec: next, ids: Object.values(remap) };
 }

@@ -59,7 +59,8 @@ described on the [step page](steps/agent.md#add-ons).
 
 Then tick the server's tools in an agent's **MCP tools**, or call one tool from an
 [MCP tool step](steps/mcp_tool.md). In exported code the servers come from the
-`EASYCHAIN_MCP_SERVERS` environment variable (JSON: `{"servers": [...], "allowed_commands": [...]}`).
+`EASYCHAIN_MCP_SERVERS` environment variable: JSON with one connection per server id, as on the
+[MCP tool step page](steps/mcp_tool.md).
 
 ## Import an API
 
