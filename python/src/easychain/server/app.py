@@ -737,6 +737,8 @@ def create_app(
             answers = {waiting[0]["id"]: req.answer}
         after = await last_event_id(run_id)
         try:
+            # Check first, so a refused answer doesn't close its Inbox item.
+            await hub().check_resumable(run_id)
             for interrupt_id in answers:
                 for item in await hub().db.list_inbox(status="open"):
                     if item["run_id"] == run_id and item["interrupt_id"] == interrupt_id:

@@ -168,11 +168,17 @@ class Hub:
                 return {"rollback": sorted(active)}
         return {}
 
-    async def resume(self, run_id: str, answers: dict[str, Any]) -> None:
-        """Answer one or more waiting Ask a Human steps ({interrupt_id: answer})."""
+    async def check_resumable(self, run_id: str) -> dict[str, Any]:
+        """The run, if it is waiting for an answer and can take one; else Invalid."""
         run = await self._run(run_id)
         if run["status"] != "paused":
             raise Invalid("This run isn't waiting for an answer.")
+        await self._check_newest(run)
+        return run
+
+    async def resume(self, run_id: str, answers: dict[str, Any]) -> None:
+        """Answer one or more waiting Ask a Human steps ({interrupt_id: answer})."""
+        await self.check_resumable(run_id)
         await self.db.enqueue(run_id, "resume", {"resume": answers})
         self.bus.job_added()
 
@@ -183,8 +189,20 @@ class Hub:
             raise Invalid("This run is already going.")
         if run["status"] == "paused" and (run.get("pending") or {}).get("reason") == "ask_human":
             raise Invalid("This run is waiting for an answer in the Inbox.")
+        await self._check_newest(run)
         await self.db.enqueue(run_id, "continue", {"step": step} if step else {})
         self.bus.job_added()
+
+    async def _check_newest(self, run: dict[str, Any]) -> None:
+        """Answers and "continue" act on the conversation's latest Save Point, which belongs to its
+        newest run; an older run carrying on would work on another run's state."""
+        newest = await self.db.list_runs(thread_id=run["thread_id"], limit=1)
+        if newest and newest[0]["id"] != run["id"]:
+            raise Invalid(
+                "A newer run has happened in this conversation since this one, so this one can't "
+                "carry on. Continue the newest run, or start again from one of this run's Save "
+                "Points."
+            )
 
     async def fork(
         self,
@@ -212,11 +230,12 @@ class Hub:
         )
 
     async def answer(self, item_id: str, answer: Any, by: str | None = None) -> dict[str, Any]:
+        found = await self.db.get_inbox(item_id)
+        if found is None:
+            raise NotFound("That Inbox item doesn't exist.")
+        await self._check_newest(await self._run(found["run_id"]))
         item = await self.db.answer_inbox(item_id, answer, by)
         if item is None:
-            found = await self.db.get_inbox(item_id)
-            if found is None:
-                raise NotFound("That Inbox item doesn't exist.")
             raise Invalid("Someone already answered this, or the run was stopped.")
         run = await self._run(item["run_id"])
         if run["status"] == "paused":

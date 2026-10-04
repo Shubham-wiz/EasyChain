@@ -29,6 +29,7 @@ import contextlib
 import hashlib
 import json
 import os
+import re
 import threading
 import time
 import uuid
@@ -363,8 +364,10 @@ def _tool_decisions(value: Any, answer: Any) -> Any:
         return answer
     if isinstance(answer, dict) and "decisions" in answer:
         return answer
-    answer = answer if isinstance(answer, dict) else {"action": "approve"}
-    action = answer.get("action", "approve")
+    if not isinstance(answer, dict):
+        answer = {"action": "approve" if answer is True or answer == "approve" else "reject"}
+    # Only a clear "approve" lets the tool run; anything else is a no.
+    action = "approve" if answer.get("action") == "approve" else "reject"
     decisions = []
     for request in value.get("action_requests") or []:
         if action == "reject":
@@ -980,8 +983,18 @@ async def _prepare_action(
             raise _NotResumable("not_waiting", "This run isn't waiting for an answer.")
         waiting = {intr.id: intr.value for intr in snapshot.interrupts}
         resume = opts.resume
-        if isinstance(resume, dict) and resume and all(k in waiting for k in resume):
-            resume = {k: _tool_decisions(waiting[k], v) for k, v in resume.items()}
+        if isinstance(resume, dict) and resume and any(k in waiting for k in resume):
+            # Each answer goes to the question it was given for. Answers to questions that
+            # aren't waiting any more (the conversation moved on) are left out.
+            resume = {k: _tool_decisions(waiting[k], v) for k, v in resume.items() if k in waiting}
+        elif (
+            isinstance(resume, dict) and resume and all(_INTERRUPT_ID.match(str(k)) for k in resume)
+        ):
+            raise _NotResumable(
+                "not_waiting",
+                "The question this answers isn't waiting any more: the conversation has moved "
+                "on (for example, a newer run continued it). Answer its newest question instead.",
+            )
         elif len(waiting) == 1:
             resume = _tool_decisions(next(iter(waiting.values())), resume)
         return Command(resume=resume), dict(snapshot.values)
@@ -993,6 +1006,8 @@ async def _prepare_action(
 
 
 _ALREADY_DONE = object()
+# LangGraph interrupt ids: an xxh3-128 hex digest of the task's namespace.
+_INTERRUPT_ID = re.compile(r"^[0-9a-f]{32}$")
 
 
 def _interrupt_step(value: Any) -> dict[str, Any]:

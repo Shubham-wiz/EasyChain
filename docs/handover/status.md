@@ -43,9 +43,8 @@ Compose, and **Windows** (Python suite, CLI and worker, web checks, the app serv
 
 ## Next
 
-1. Finish the review's "fix first" list ([review.md](review.md)): Inbox answers applied to the
-   wrong pause (#7) and For Each answers lost (#8). Then the rest of review.md, most serious
-   first.
+1. Work through the rest of [review.md](review.md), most serious first (the "fix first" list
+   is done).
 2. Then **Phase 4**, in this order: sandboxes for Code steps (Docker, gVisor where installed;
    Docker Desktop on Windows), the Deep Agent step, Helpers, Skills, multi-agent patterns, the
    describe-it copilot, then the Research assistant and Inbox triage templates.
@@ -54,8 +53,9 @@ Compose, and **Windows** (Python suite, CLI and worker, web checks, the app serv
 
 - `main` is on GitHub with the full history; CI runs on every push to `main` and on pull
   requests.
-- The first branch, `claude/tender-fermat-4kj4k6`, still had the AI-attribution trailers; it is
-  deleted (decision R.3).
+- The first branch, `claude/tender-fermat-4kj4k6`, still has the AI-attribution trailers. Its
+  deletion is approved (decision R.3); the owner runs
+  `git push origin --delete claude/tender-fermat-4kj4k6`. Check with `git ls-remote origin`.
 - Earlier pushes failed with HTTP 403 until the Claude GitHub App was given access to this repo;
   see lessons.md if it comes back.
 

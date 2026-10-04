@@ -66,6 +66,22 @@ if _platform.IS_WINDOWS:
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
+def pytest_terminal_summary(terminalreporter: Any) -> None:
+    """On GitHub Actions, show each failure as an annotation on the run's page."""
+    if not os.environ.get("GITHUB_ACTIONS"):
+        return
+    for report in terminalreporter.stats.get("failed", []) + terminalreporter.stats.get(
+        "error", []
+    ):
+        path, line, _ = report.location
+        text = str(report.longrepr)[-3000:]
+        text = text.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+        title = report.nodeid.replace(",", ";").replace("::", " ")
+        terminalreporter.write_line(
+            f"::error file=python/{path},line={(line or 0) + 1},title={title}::{text}"
+        )
+
+
 @pytest.fixture(scope="session")
 def fake_server() -> Any:
     with FakeOpenAI() as fake:

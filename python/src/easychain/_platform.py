@@ -29,13 +29,9 @@ def run[T](main: Coroutine[Any, Any, T]) -> T:
     return asyncio.run(main, loop_factory=new_event_loop if IS_WINDOWS else None)
 
 
-def uvicorn_loop_factory(use_subprocess: bool = False) -> Callable[[], asyncio.AbstractEventLoop]:
-    """Loop factory for uvicorn on Windows (``loop="easychain._platform:uvicorn_loop_factory"``)."""
-    return asyncio.SelectorEventLoop
-
-
 def uvicorn_loop() -> str:
-    return "easychain._platform:uvicorn_loop_factory" if IS_WINDOWS else "auto"
+    """uvicorn's ``loop`` setting: a custom value names the loop factory itself."""
+    return "easychain._platform:new_event_loop" if IS_WINDOWS else "auto"
 
 
 def on_stop(loop: asyncio.AbstractEventLoop, callback: Callable[[], None]) -> None:

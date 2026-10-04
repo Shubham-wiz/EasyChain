@@ -20,8 +20,8 @@ proven only with the scripted stand-in AI.
 | 4 | **Database query writes that return rows were rolled back** (`INSERT … RETURNING`) | `integrations/sql.py` | Done |
 | 5 | **Read-only SQL holes**: settings PRAGMAs leaked into later writes; other databases only had a prefix regex | `integrations/sql.py` | Done: only describing PRAGMAs; MySQL gets a read-only transaction; other databases a strict keyword check |
 | 6 | **Worker shutdown lost jobs** (re-queued as a bare `continue`) | `server/worker.py` | Done: handed back as they were; the next worker works out how far they got |
-| 7 | **An Inbox answer can be applied to the wrong pause**, and an answer without `action` means approve | `runtime/runner.py`, `server/hub.py`, `steps/flow_control.py` | Open |
-| 8 | **A second Inbox answer for For Each items is lost** | `server/hub.py`, `server/db.py` | Open |
+| 7 | **An Inbox answer can be applied to the wrong pause**, and an answer without `action` means approve | `runtime/runner.py`, `server/hub.py`, `steps/flow_control.py` | Done: answers go only to the question they were given for; an older run can't take answers or continue once a newer run happened in its conversation; a tool approval needs a clear "approve" |
+| 8 | **A second Inbox answer for For Each items is lost** | `server/hub.py`, `server/db.py` | Done: answers given while the run was busy are used when it pauses again; nobody is asked twice |
 | 9 | **No Host or Origin check** (DNS rebinding, cross-site form posts); the Dockerfile hint published the port on all interfaces | `server/app.py`, `Dockerfile` | Done: `server/hostguard.py`, `EASYCHAIN_ALLOWED_HOSTS`; `-p 127.0.0.1:8000:8000` |
 | 10 | Web: **copy/paste with the Input step** made a connection with no source; a pasted agent pointed at the original tools | `apps/web/src/lib/spec.ts` | Done |
 | 11 | Web: **moving Decision exits swapped their destinations**; a deleted exit left a dead connection; Ask a Human switched to "answer" kept labelled connections | `apps/web/src/lib/spec.ts` | Done: connections follow labels |
@@ -74,7 +74,7 @@ Open:
 
 ### Runtime, server and workers (open)
 
-- `/resume` marks Inbox items answered before checking the run's status.
+- Done: `/resume` checks the run before marking Inbox items answered.
 - The SSE stream closes after 1 s of quiet, before slow notifications and `run_finished`.
 - A crash between `update_run(ok)` and `finish_job` skips after-flow triggers and notifications;
   the exception path never writes `run_finished`.

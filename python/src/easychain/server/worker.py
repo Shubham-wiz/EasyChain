@@ -310,14 +310,33 @@ class Worker:
             }
         asking = status == "paused" and final.get("reason") == "ask_human"
         items: list[str] = []
+        given: dict[str, Any] = {}
+        waiting = final.get("interrupts") or []
         if asking:
+            # A question that is still listed may already have its answer:
+            # - given while the run was busy (another For Each item's answer, say), so not sent
+            #   with this job: send it now instead of asking again;
+            # - sent with this job, but LangGraph keeps listing a For Each item until its
+            #   siblings are answered too (it has stored the answer): don't ask again.
+            # A question asked again later has a new id, so it is never answered by an old reply.
+            sent = (job.get("payload") or {}).get("resume") or {}
+            answered = await db.inbox_answers(run["id"], [i["id"] for i in waiting])
+            unanswered = [i for i in waiting if i["id"] not in answered]
+            if any(k not in sent for k in answered):
+                given, waiting = answered, unanswered
+            elif unanswered:
+                waiting = unanswered
+            # Otherwise every listed question was answered and sent, yet is back: ask again.
             # Inbox items exist before the run shows as paused.
-            named = [{**i, "step_name": _step_name(spec, i)} for i in final.get("interrupts") or []]
+            named = [{**i, "step_name": _step_name(spec, i)} for i in waiting]
             items = await db.open_inbox_items(run, named)
         await db.update_run(run["id"], **values)
         await db.finish_job(job["id"], self.name, "done")
-        if asking:
-            await self._notify(run, spec, items, final.get("interrupts") or [])
+        if given:
+            await db.enqueue(run["id"], "resume", {"resume": given})
+            self.hub.bus.job_added()
+        if asking and items:
+            await self._notify(run, spec, items, waiting)
         if status in FINISHED and run.get("flow_id"):
             await self._after_flow(run, status, final.get("output") or {})
 

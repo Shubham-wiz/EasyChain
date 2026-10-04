@@ -48,6 +48,7 @@ whenever something takes more than a few minutes to understand.
 
 | Symptom | Cause | Fix |
 |---|---|---|
+| A For Each item's Inbox answer was asked again | LangGraph keeps listing a parallel item's interrupt (with the answer stored) until its siblings are answered | The worker doesn't reopen questions that already have an answer, and sends answers given while the run was busy (`worker._finish`). Questions asked again later get new interrupt ids. |
 | `greenlet` missing at runtime | SQLAlchemy async needs the extra | Depend on `sqlalchemy[asyncio]` |
 | Token events vanished before a slow tail read them | Old tokens were deleted eagerly | Drop old tokens lazily (`drop_old_tokens`, run from the schedule loop) |
 | "Interrupt" double texting was slow to cancel | Cancel waited for the next heartbeat | An in-process `running` stop map on the EventBus, and a heartbeat interval of `min(lease/3, 2s)` |
@@ -82,6 +83,7 @@ whenever something takes more than a few minutes to understand.
 | `os.geteuid` / `signal.SIGKILL` missing | POSIX-only | `hasattr(os, "geteuid")`; `proc.kill()` instead of `SIGKILL` |
 | `pnpm` couldn't be started from Node (`EINVAL`) | Node only runs `.cmd` files through a shell | `scripts/tasks.mjs` spawns with `shell: true` on Windows and stops process trees with `taskkill /T` |
 | uv picked Python 3.13 | No `.python-version` | `python/.python-version` pins 3.12, the version CI and Docker use |
+| `easychain dev` crashed on Windows (`BaseSelectorEventLoop.close() missing … 'self'`) | uvicorn treats a custom `loop` value as the loop factory itself (it isn't called with `use_subprocess`) | `_platform.uvicorn_loop()` names `new_event_loop`; the Windows CI job starts `easychain dev` |
 
 ## Environment
 

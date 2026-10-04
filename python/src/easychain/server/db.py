@@ -683,6 +683,18 @@ class Database:
                 ids.append(item_id)
         return ids
 
+    async def inbox_answers(self, run_id: str, interrupt_ids: list[str]) -> dict[str, Any]:
+        """Answers already given for these waiting questions of a run ({interrupt_id: answer})."""
+        if not interrupt_ids:
+            return {}
+        query = sa.select(inbox.c.interrupt_id, inbox.c.answer).where(
+            inbox.c.run_id == run_id,
+            inbox.c.status == "answered",
+            inbox.c.interrupt_id.in_(interrupt_ids),
+        )
+        async with self.reader.connect() as conn:
+            return {r.interrupt_id: r.answer for r in await conn.execute(query)}
+
     async def list_inbox(
         self, status: str | None = "open", limit: int = 200
     ) -> list[dict[str, Any]]:
