@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from . import __version__
+from . import __version__, _platform
 from .compiler import CompileError, compile_flow, validate
 from .spec import SpecError, dumps_spec, load_spec
 
@@ -103,7 +103,7 @@ def cmd_new(args: argparse.Namespace) -> int:
             }
         )
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(dumps_spec(spec), encoding="utf-8")
+    path.write_text(dumps_spec(spec), encoding="utf-8", newline="\n")
     print(f"Created {path}")
     return 0
 
@@ -130,7 +130,7 @@ def cmd_compile(args: argparse.Namespace) -> int:
         _err(str(exc))
         return 1
     if args.output:
-        Path(args.output).write_text(compiled.source, encoding="utf-8")
+        Path(args.output).write_text(compiled.source, encoding="utf-8", newline="\n")
         print(f"Wrote {args.output}")
     else:
         sys.stdout.write(compiled.source)
@@ -208,7 +208,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             events = stream_run(spec, None, options)
         return printer.finish(final)
 
-    return asyncio.run(go())
+    return _platform.run(go())
 
 
 def _ask_in_terminal(request: dict[str, Any]) -> Any:
@@ -309,9 +309,11 @@ class _RunPrinter:
 
 
 def cmd_worker(args: argparse.Namespace) -> int:
-    """Run jobs from the queue until stopped (Ctrl+C or SIGTERM hands running jobs back)."""
+    """Run jobs from the queue until stopped.
+
+    Ctrl+C, SIGTERM (or Ctrl+Break on Windows) hands running jobs back to the queue.
+    """
     import logging
-    import signal
 
     from .runtime.resources import open_resources
     from .server.app import default_database_url
@@ -345,9 +347,7 @@ def cmd_worker(args: argparse.Namespace) -> int:
             schedules=not args.no_schedules,
         )
         stop = asyncio.Event()
-        loop = asyncio.get_running_loop()
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            loop.add_signal_handler(sig, stop.set)
+        _platform.on_stop(asyncio.get_running_loop(), stop.set)
         print(f"Easy Chain worker {worker.name} ({db.dialect}) waiting for jobs", flush=True)
         try:
             await worker.run(stop)
@@ -356,14 +356,14 @@ def cmd_worker(args: argparse.Namespace) -> int:
             await db.close()
         return 0
 
-    return asyncio.run(go())
+    return _platform.run(go())
 
 
 def cmd_test(args: argparse.Namespace) -> int:
     from .testsets import run_test_set
 
     variables = dict(v.split("=", 1) for v in args.var or [])
-    results = asyncio.run(run_test_set(args.file, variables, stand_in=args.stand_in))
+    results = _platform.run(run_test_set(args.file, variables, stand_in=args.stand_in))
     passed = sum(r.passed for r in results)
     for r in results:
         print(f"{'✓' if r.passed else '✗'} {r.name}")
@@ -378,7 +378,7 @@ def cmd_schema(args: argparse.Namespace) -> int:
 
     text = flow_json_schema_text()
     if args.output:
-        Path(args.output).write_text(text, encoding="utf-8")
+        Path(args.output).write_text(text, encoding="utf-8", newline="\n")
         print(f"Wrote {args.output}")
     else:
         sys.stdout.write(text)
@@ -412,6 +412,7 @@ def cmd_dev(args: argparse.Namespace) -> int:
         host=args.host,
         port=args.port,
         reload=args.reload,
+        loop=_platform.uvicorn_loop(),
         log_level="warning" if not args.verbose else "info",
     )
     return 0
@@ -500,6 +501,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _platform.utf8_console()
     args = build_parser().parse_args(argv)
     return int(args.func(args) or 0)
 

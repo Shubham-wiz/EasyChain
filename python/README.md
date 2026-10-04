@@ -18,9 +18,11 @@ uv run easychain dev               # API + built web app on http://127.0.0.1:800
 uv run easychain worker --database-url postgresql://…   # extra workers on a shared Postgres
 ```
 
-`easychain dev` serves the built web app from `EASYCHAIN_WEB_DIST` (or
-`src/easychain/server/static`), so run `pnpm --filter @easychain/web build` first. During web
-development, run `make dev` from the repo root instead: API on :8000, Vite on :5173.
+`easychain dev` serves the built web app from `EASYCHAIN_WEB_DIST`, else from
+`src/easychain/server/static` (where `pnpm build` copies it, and where the Docker image has it),
+else, in a git checkout, straight from `apps/web/dist`. So run `pnpm build` in the repo root
+first. During web development, run `pnpm dev` from the repo root instead: API on :8000, Vite
+on :5173.
 
 ## The CLI
 
@@ -62,7 +64,7 @@ src/easychain/
 
 `models.py` defines every step's settings, Flow Data fields, connections and canvas positions.
 Defaults are left out when a flow is saved, so a default can't change under a saved flow
-without bumping the spec `version`. After changing it, run `make schema` to regenerate
+without bumping the spec `version`. After changing it, run `pnpm schema` to regenerate
 [`spec/flow.schema.json`](../spec/flow.schema.json).
 
 ### `steps/`: one handler per step type
@@ -100,7 +102,7 @@ the checklist in [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 Generated code imports only LangGraph, LangChain, provider packages and a few libraries it
 lists in its header and `requirements.txt`. Golden files in `tests/golden/expected/` pin it:
-run `make golden` after an intended change and read the diff.
+run `pnpm golden` after an intended change and read the diff.
 
 ### `runtime/`: running a flow
 

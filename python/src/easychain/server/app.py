@@ -152,6 +152,18 @@ def blank_flow(name: str = "My flow") -> FlowSpec:
     )
 
 
+def _web_dir(static_dir: str | Path | None) -> Path:
+    """Where the built web app is: the given folder, the package's copy, or a source checkout's."""
+    chosen = static_dir or os.environ.get("EASYCHAIN_WEB_DIST")
+    if chosen:
+        return Path(chosen)
+    if (STATIC_DIR / "index.html").exists():
+        return STATIC_DIR
+    # Running from a git checkout: serve what `pnpm build` produced, without copying it.
+    checkout = Path(__file__).resolve().parents[4] / "apps" / "web" / "dist"
+    return checkout if (checkout / "index.html").exists() else STATIC_DIR
+
+
 def default_database_url(home: Path) -> str:
     return os.environ.get("EASYCHAIN_DATABASE_URL") or f"sqlite:///{home / 'easychain.db'}"
 
@@ -170,7 +182,7 @@ def create_app(
     workspace_path = Path(workspace or os.environ.get("EASYCHAIN_WORKSPACE") or home_path / "flows")
     flows = FlowStore(workspace_path)
     vault = SecretStore(home_path)
-    web_dir = Path(static_dir or os.environ.get("EASYCHAIN_WEB_DIST") or STATIC_DIR)
+    web_dir = _web_dir(static_dir)
     db_url = database_url or default_database_url(home_path)
     inline_worker = (
         worker if worker is not None else os.environ.get("EASYCHAIN_WORKER", "inline") != "off"
@@ -1009,8 +1021,8 @@ def create_app(
         @app.get("/", include_in_schema=False)
         def no_web() -> PlainTextResponse:
             return PlainTextResponse(
-                "Easy Chain API is running. The web app isn't built yet: run `make web` "
-                "(or `pnpm --dir apps/web build`), or use `make dev` for the dev server.\n"
+                "Easy Chain API is running. The web app isn't built yet: run `pnpm build` "
+                "in the repo root, or use `pnpm dev` for the dev server.\n"
             )
 
     return app

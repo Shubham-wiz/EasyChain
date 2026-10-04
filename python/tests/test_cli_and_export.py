@@ -28,7 +28,7 @@ def test_new_validate_compile_and_run(tmp_path, capsys):
 
     out = tmp_path / "hello.py"
     assert main(["compile", str(flow), "-o", str(out)]) == 0
-    assert "StateGraph" in out.read_text()
+    assert "StateGraph" in out.read_text(encoding="utf-8")
     assert main(["compile", str(flow)]) == 0
     assert "def ask_ai" in capsys.readouterr().out
 
@@ -56,11 +56,11 @@ def test_new_from_template_and_errors(tmp_path, capsys):
     with pytest.raises(SystemExit):
         main(["validate", str(tmp_path / "missing.flow.yaml")])
     bad = tmp_path / "bad.flow.yaml"
-    bad.write_text("name: x\nsteps:\n- id: Bad\n  type: input\n")
+    bad.write_text("name: x\nsteps:\n- id: Bad\n  type: input\n", encoding="utf-8")
     with pytest.raises(SystemExit):
         main(["validate", str(bad)])
     broken = tmp_path / "broken.flow.yaml"
-    broken.write_text("name: x\nsteps: []\n")
+    broken.write_text("name: x\nsteps: []\n", encoding="utf-8")
     assert main(["validate", str(broken)]) == 1
     assert main(["compile", str(broken)]) == 1
     assert main(["export", str(broken), "-o", str(tmp_path / "out")]) == 1
@@ -73,7 +73,9 @@ def test_templates_schema_and_test_commands(tmp_path, capsys, fake_openai):
     assert main(["templates"]) == 0
     assert "summarise-url" in capsys.readouterr().out
     assert main(["schema", "-o", str(tmp_path / "s.json")]) == 0
-    assert json.loads((tmp_path / "s.json").read_text())["title"] == "Easy Chain flow"
+    assert (
+        json.loads((tmp_path / "s.json").read_text(encoding="utf-8"))["title"] == "Easy Chain flow"
+    )
     assert main(["schema"]) == 0
     capsys.readouterr()
     assert main(["test", str(TEMPLATES / "reply-to-feedback.tests.yaml")]) == 0
@@ -93,7 +95,8 @@ def test_templates_schema_and_test_commands(tmp_path, capsys, fake_openai):
     failing.write_text(
         f"flow: {TEMPLATES / 'reply-to-feedback.flow.yaml'}\nstand_in: true\ncases:\n"
         "- name: wrong\n  inputs: {feedback: 'I love it'}\n  expect:\n    output.kind: Complaint\n"
-        "    output.reply: {max_length: 3, min_length: 1, matches: 'zzz', equals: 'q', bogus: 1}\n"
+        "    output.reply: {max_length: 3, min_length: 1, matches: 'zzz', equals: 'q', bogus: 1}\n",
+        encoding="utf-8",
     )
     assert main(["test", str(failing)]) == 1
     out = capsys.readouterr().out
@@ -137,7 +140,7 @@ def _run_exported(
     out.mkdir()
     files = export_files(spec)
     for name, content in files.items():
-        (out / name).write_text(content)
+        (out / name).write_text(content, encoding="utf-8")
     script = next(name for name in files if name.endswith(".py"))
     # Run with a clean environment: only LangChain packages are importable as usual,
     # and the easychain package is explicitly hidden to prove it isn't needed.
@@ -146,7 +149,7 @@ def _run_exported(
         for k, v in os.environ.items()
         if not k.startswith(("OPENAI", "ANTHROPIC", "EASYCHAIN"))
     }
-    clean.update(env)
+    clean.update(env, PYTHONIOENCODING="utf-8")
     hide = "import sys; sys.modules['easychain'] = None; import runpy; sys.argv = sys.argv[1:]; runpy.run_path(sys.argv[0], run_name='__main__')"
     result = subprocess.run(
         [sys.executable, "-c", hide, script, *args],
@@ -155,6 +158,7 @@ def _run_exported(
         input=stdin,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=120,
     )
     assert result.returncode == 0, result.stderr

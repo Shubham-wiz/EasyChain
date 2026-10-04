@@ -241,9 +241,9 @@ def test_environment_keys_are_listed(client, monkeypatch):
 def test_serves_built_web_app(tmp_path):
     web = tmp_path / "web"
     (web / "assets").mkdir(parents=True)
-    (web / "index.html").write_text("<html>app</html>")
-    (web / "assets" / "app.js").write_text("console.log(1)")
-    (web / "favicon.svg").write_text("<svg/>")
+    (web / "index.html").write_text("<html>app</html>", encoding="utf-8")
+    (web / "assets" / "app.js").write_text("console.log(1)", encoding="utf-8")
+    (web / "favicon.svg").write_text("<svg/>", encoding="utf-8")
     client = TestClient(create_app(home=tmp_path / "home", static_dir=web))
     assert client.get("/").text == "<html>app</html>"
     assert client.get("/flows/abc").text == "<html>app</html>"

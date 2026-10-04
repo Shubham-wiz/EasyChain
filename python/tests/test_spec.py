@@ -85,7 +85,7 @@ def test_bad_yaml_is_reported():
 def test_json_schema_validates_every_template():
     schema = flow_json_schema()
     for path in TEMPLATES.glob("*.flow.yaml"):
-        jsonschema.validate(yaml.safe_load(path.read_text()), schema)
+        jsonschema.validate(yaml.safe_load(path.read_text(encoding="utf-8")), schema)
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate({"name": "x", "steps": [{"id": "a", "type": "nope"}]}, schema)
 
@@ -93,4 +93,4 @@ def test_json_schema_validates_every_template():
 def test_published_schema_is_up_to_date():
     published = ROOT / "spec" / "flow.schema.json"
     assert published.exists(), "run `make schema` to generate spec/flow.schema.json"
-    assert json.loads(published.read_text()) == json.loads(flow_json_schema_text())
+    assert json.loads(published.read_text(encoding="utf-8")) == json.loads(flow_json_schema_text())

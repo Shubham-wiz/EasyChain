@@ -167,8 +167,13 @@ def workspace(tmp_path: Path) -> Path:
     folder = tmp_path / "flows"
     folder.mkdir()
     for flow_id, data in (("chaos", CHAOS), ("crash-inside", CRASH_INSIDE), ("approval", APPROVAL)):
-        (folder / f"{flow_id}.flow.yaml").write_text(dumps_spec(parse_spec(data)))
+        (folder / f"{flow_id}.flow.yaml").write_text(dumps_spec(parse_spec(data)), encoding="utf-8")
     return folder
+
+
+def ask_to_stop(proc: subprocess.Popen[bytes]) -> None:
+    """What `docker stop` or Ctrl+C does: the worker hands its jobs back and exits."""
+    proc.send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGTERM)
 
 
 class Workers:
@@ -200,18 +205,20 @@ class Workers:
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            # On Windows a worker is asked to stop with Ctrl+Break, sent to its own group.
+            creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
         )
         self.procs.append(proc)
         return proc
 
     def kill(self, proc: subprocess.Popen[bytes]) -> None:
-        proc.send_signal(signal.SIGKILL)
+        proc.kill()  # SIGKILL, or TerminateProcess on Windows: no chance to clean up
         proc.wait(10)
 
     def stop_all(self) -> None:
         for proc in self.procs:
             if proc.poll() is None:
-                proc.send_signal(signal.SIGTERM)
+                ask_to_stop(proc)
                 try:
                     proc.wait(15)
                 except subprocess.TimeoutExpired:
@@ -268,7 +275,7 @@ async def test_killed_worker_resumes_from_the_last_step_without_repeating_side_e
         )
 
         async def slow_started() -> bool:
-            return marker.exists() and marker.read_text().count("slow") == 1
+            return marker.exists() and marker.read_text(encoding="utf-8").count("slow") == 1
 
         await _wait_for(slow_started)
         events = await _events(hub, run_id)
@@ -292,7 +299,7 @@ async def test_killed_worker_resumes_from_the_last_step_without_repeating_side_e
         assert started.count("send_first") == 1, "a finished step never runs again"
         assert started.count("slow") == 2, "the interrupted step runs again"
         assert started.count("send_second") == 1
-        assert marker.read_text().count("slow") == 2
+        assert marker.read_text(encoding="utf-8").count("slow") == 2
         log = _effects(fake_server)
         assert [a["body"]["message"] for a in log["applied"]] == ["first", "second"]
         assert len(log["calls"]) == 2, "no request was sent twice"
@@ -355,7 +362,7 @@ async def test_paused_approval_is_resumed_a_day_later(
         run = await _wait_for(paused)
         assert run["pending"]["reason"] == "ask_human"
         # Everything stops: the worker goes away and nothing is left in memory.
-        worker.send_signal(signal.SIGTERM)
+        ask_to_stop(worker)
         worker.wait(15)
         # A day passes.
         day = 24 * 3600

@@ -49,7 +49,7 @@ python/                    the product: compiler, runtime, API server, workers, 
 apps/web/                  React 19 + TypeScript + Vite + Zustand + React Flow editor
   e2e/                     Playwright journeys (run against the real app + fake model server)
 packages/client/           @easychain/client: TypeScript client and React hook for the runs API
-spec/flow.schema.json      published JSON Schema (generated: `make schema`)
+spec/flow.schema.json      published JSON Schema (generated: `pnpm schema`)
 docs/                      user docs (flow spec, steps, runs, agents, knowledge), phase reports,
                            handover notes
 examples/                  example flows
@@ -63,14 +63,18 @@ lists every document, [docs/ROADMAP.md](docs/ROADMAP.md) is the plan for what's 
 ## Commands
 
 ```bash
-make install        # cd python && uv sync; pnpm install
-make dev            # API :8000 + web dev server :5173
-make test           # pytest (+coverage) + web unit tests + client tests
-make lint           # ruff check + ruff format --check + tsc (web, client)
-make e2e            # builds the web app, runs Playwright against the real app
-make schema         # regenerate spec/flow.schema.json after changing spec/models.py
-make golden         # regenerate compiler golden files; review the diff
+pnpm run setup      # cd python && uv sync; pnpm install
+pnpm dev            # API :8000 + web dev server :5173
+pnpm test           # pytest (+coverage) + web unit tests + client tests
+pnpm lint           # ruff check + ruff format --check + tsc (web, client)
+pnpm e2e            # builds the web app, runs Playwright against the real app
+pnpm schema         # regenerate spec/flow.schema.json after changing spec/models.py
+pnpm golden         # regenerate compiler golden files; review the diff
 ```
+
+These tasks live in `scripts/tasks.mjs` and work on Windows, macOS and Linux; `make <task>`
+runs the same ones. Code must run on both Linux and Windows (CI tests both): see
+"Windows and Linux" under the rules below.
 
 Running parts of the suite:
 
@@ -96,7 +100,7 @@ including Postgres for the tests, the Playwright browser, and Docker notes.
   `^[a-z][a-z0-9_]*$`. A step id may not equal a Flow Data field, because LangGraph forbids a
   node and a state key sharing a name.
 - **Generated code is a product.** Golden files pin it. After a compiler change, run
-  `make golden` and read the diff. The exported code must run with no Easy Chain runtime.
+  `pnpm golden` and read the diff. The exported code must run with no Easy Chain runtime.
 - **Compiler coverage stays at or above 90%.** CI enforces this for `compiler/` and `steps/`.
 - **Pinned versions.** LangGraph, LangChain and the provider packages are pinned exactly in
   `python/pyproject.toml` and locked in `uv.lock`. Upgrade them deliberately (ARCHITECTURE §9).
@@ -109,6 +113,12 @@ including Postgres for the tests, the Playwright browser, and Docker notes.
   no "generated with" footers in commit messages or pull requests (owner's decision R.1 in
   [decisions.md](docs/handover/decisions.md)). Commit as `Easy Chain Dev
   <19shubhamdwivedi@gmail.com>`.
+- **Windows and Linux.** Easy Chain runs from source on both, and CI tests both. Read and write
+  text files with `encoding="utf-8"`. Don't use POSIX-only calls (`os.geteuid`, `fork`,
+  `loop.add_signal_handler`, `signal.SIGKILL`); what has to differ lives in
+  `easychain/_platform.py` (event loop, stop signals, console encoding). Close SQLite
+  connections before moving or deleting their file. Tests start processes with
+  `sys.executable` and stop them with `proc.kill()`.
 - **Side effects run at most once.** Anything that changes the outside world goes through
   `run_once` with an idempotency key (see `compiler/helpers.py` and [docs/runs.md](docs/runs.md)).
 

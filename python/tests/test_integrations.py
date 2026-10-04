@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
 import subprocess
 import sys
@@ -303,6 +304,37 @@ async def test_local_mcp_servers_must_be_approved():
     assert final["status"] == "error"
     assert final["error"]["kind"] == "mcp_not_allowed"
     assert "approved list" in final["error"]["message"]
+
+
+def test_local_mcp_servers_get_only_their_own_secrets(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-not-for-mcp")
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp-for-mcp")
+    server = {**_stdio_server(), "env": {"TOKEN": "{secret:GITHUB_TOKEN}"}}
+    conn = mcp_module.connections({"servers": [server], "allowed_commands": [sys.executable]})
+    assert conn["facts"]["env"] == {"TOKEN": "ghp-for-mcp"}
+
+
+def test_a_broken_mcp_command_is_reported_not_raised():
+    server = {**_stdio_server(), "command": 'npx "unclosed'}
+    conn = mcp_module.connections({"servers": [server], "allowed_commands": ["npx"]})
+    assert "can't be read" in conn["facts"]["error"]
+
+
+def test_mcp_commands_split_like_this_systems_shell():
+    if os.name == "nt":
+        assert mcp_module.split_command(r'C:\Tools\srv.exe --root "C:\My Files"') == [
+            r"C:\Tools\srv.exe",
+            "--root",
+            r"C:\My Files",
+        ]
+    else:
+        assert mcp_module.split_command("npx -y '@scope/server' --dir 'My Files'") == [
+            "npx",
+            "-y",
+            "@scope/server",
+            "--dir",
+            "My Files",
+        ]
 
 
 def _free_port() -> int:

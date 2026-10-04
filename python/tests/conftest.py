@@ -1,18 +1,20 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from easychain import _platform
 from easychain.spec import FlowSpec, parse_spec
 from easychain.testing.fake_openai import FakeOpenAI
 
 ROOT = Path(__file__).resolve().parents[2]
 TEMPLATES = Path(__file__).resolve().parents[1] / "src" / "easychain" / "templates"
 
-# Keys and endpoints from the developer's shell must never leak into tests.
+# Keys, endpoints and databases from the developer's shell must never leak into tests.
 _ENV_TO_CLEAR = [
     "OPENAI_API_KEY",
     "OPENAI_BASE_URL",
@@ -24,19 +26,44 @@ _ENV_TO_CLEAR = [
     "EASYCHAIN_SECRET_KEY",
     "EASYCHAIN_WORKSPACE",
     "EASYCHAIN_HOME",
+    "EASYCHAIN_DATABASE_URL",
+    "EASYCHAIN_KNOWLEDGE_URL",
+    "EASYCHAIN_MCP_SERVERS",
+    "EASYCHAIN_WORKER",
+    "EASYCHAIN_SAVEPOINTS",
+    "EASYCHAIN_WEB_DIST",
+    "EASYCHAIN_CORS_ORIGINS",
+    "EASYCHAIN_PUBLIC_URL",
+    "EASYCHAIN_ALLOWED_HOSTS",
+    "EASYCHAIN_HOST",
     "LANGSMITH_TRACING",
     "LANGCHAIN_TRACING_V2",
 ]
 
 
+@pytest.fixture(scope="session")
+def _test_home(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    return tmp_path_factory.mktemp("easychain-home")
+
+
 @pytest.fixture(autouse=True)
-def clean_env(monkeypatch: pytest.MonkeyPatch) -> Any:
+def clean_env(monkeypatch: pytest.MonkeyPatch, _test_home: Path) -> Any:
     for name in _ENV_TO_CLEAR:
         monkeypatch.delenv(name, raising=False)
+    # Nothing a test does may land in the developer's own ~/.easychain.
+    monkeypatch.setenv("EASYCHAIN_HOME", str(_test_home))
+    # TestClient calls the app as http://testserver.
+    monkeypatch.setenv("EASYCHAIN_ALLOWED_HOSTS", "testserver")
     yield
     # The secrets vault writes keys into os.environ; don't let them reach the next test.
     for name in _ENV_TO_CLEAR:
         os.environ.pop(name, None)
+
+
+if _platform.IS_WINDOWS:
+    # Async tests, and the app inside TestClient, run on the same kind of event loop as
+    # Easy Chain does on Windows (psycopg's async mode can't use the default one).
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 @pytest.fixture(scope="session")

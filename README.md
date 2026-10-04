@@ -26,12 +26,16 @@ docker compose up        # Postgres + API + a worker; open http://localhost:8000
 docker compose up --scale worker=3   # more workers; stopping or killing one is safe
 ```
 
-**From source** (needs [uv](https://docs.astral.sh/uv/) and [pnpm](https://pnpm.io/), Node 20+):
+**From source** on Windows, macOS or Linux (needs [uv](https://docs.astral.sh/uv/) and
+[pnpm](https://pnpm.io/), Node 20+):
 
 ```bash
-make install
-make dev                 # API on :8000, web app on http://localhost:5173
+pnpm run setup           # Python 3.12 environment + web dependencies
+pnpm dev                 # API on :8000, web app on http://localhost:5173
 ```
+
+`make install` and `make dev` do the same where `make` is installed. Windows notes are in
+[docs/handover/environment.md](docs/handover/environment.md#windows).
 
 Then pick a template and press **Try it**. No API key yet? Switch on the **stand-in AI** in the
 Run panel to see the flow work with placeholder answers, or add your key under **Settings → Keys
@@ -152,13 +156,16 @@ docs/                        user guides, step pages, phase reports, roadmap, ha
 ## Development
 
 ```bash
-make test        # Python tests + web and client unit tests
-make e2e         # Playwright: build, run, debug, export, Ask a Human, Inbox, Save Points, triggers,
+pnpm test        # Python tests + web and client unit tests
+pnpm e2e         # Playwright: build, run, debug, export, Ask a Human, Inbox, Save Points, triggers,
                  # agents and tool approval, Knowledge Bases and citations, MCP, API import, a11y
-make worker      # a separate worker process (run the server with EASYCHAIN_WORKER=off)
-make lint        # ruff + TypeScript
-make golden      # regenerate compiler golden files after an intended change
+pnpm worker      # a separate worker process (run the server with EASYCHAIN_WORKER=off)
+pnpm lint        # ruff + TypeScript
+pnpm golden      # regenerate compiler golden files after an intended change
 ```
+
+These run `scripts/tasks.mjs`, so they work the same on Windows, macOS and Linux (`make test`
+and so on also work where `make` is installed). CI runs the tests on Linux and on Windows.
 
 The end-to-end and template tests use a small fake OpenAI-compatible server
 (`python -m easychain.testing.fake_openai`, with tool calls, structured replies and embeddings)

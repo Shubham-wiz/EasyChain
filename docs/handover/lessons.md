@@ -69,6 +69,20 @@ whenever something takes more than a few minutes to understand.
 | Playwright strict-mode violations | Labels like "Add", "Triggers" and "email" appear more than once | Use `{ exact: true }`, or scope to a dialog or region |
 | `__dirname` is not defined in an e2e spec | ESM | Use `process.cwd()` |
 
+## Windows
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `psycopg.InterfaceError: Psycopg cannot use the 'ProactorEventLoop'` | Windows' default event loop; psycopg's async mode needs a selector loop | Every entry point uses `easychain._platform` (`run`, `uvicorn_loop`); tests set the selector loop policy in `conftest.py` (also for `TestClient`) |
+| `easychain worker` crashed with `NotImplementedError` | `loop.add_signal_handler` doesn't exist on Windows | `_platform.on_stop` uses plain signal handlers there; Ctrl+Break (`SIGBREAK`) also stops a worker. Tests start workers with `CREATE_NEW_PROCESS_GROUP` and send `CTRL_BREAK_EVENT` |
+| The sample shop database was never built (`WinError 32`), and the templates broke | `with sqlite3.connect()` commits but doesn't close; Windows can't move or delete an open file | `contextlib.closing(...)` around each connection (`templates/samples`) |
+| `UnicodeEncodeError: 'charmap'` / garbled golden files | Text files and redirected output default to the ANSI code page (cp1252) | Always pass `encoding="utf-8"`; the CLI reconfigures stdout/stderr to UTF-8 (`_platform.utf8_console`); child processes in tests get `PYTHONIOENCODING=utf-8` |
+| Golden files and scripts got CRLF line endings | Git's `autocrlf`, and `write_text` translating `\n` on Windows | `.gitattributes` (`eol=lf`); write generated files with `newline="\n"` |
+| The test suite hung starting Postgres | `subprocess.run(pg_ctl start, capture_output=True)`: the server inherits the pipes and Windows waits for it to exit | Send the server's output to `DEVNULL` (it logs to a file) (`tests/pg.py`) |
+| `os.geteuid` / `signal.SIGKILL` missing | POSIX-only | `hasattr(os, "geteuid")`; `proc.kill()` instead of `SIGKILL` |
+| `pnpm` couldn't be started from Node (`EINVAL`) | Node only runs `.cmd` files through a shell | `scripts/tasks.mjs` spawns with `shell: true` on Windows and stops process trees with `taskkill /T` |
+| uv picked Python 3.13 | No `.python-version` | `python/.python-version` pins 3.12, the version CI and Docker use |
+
 ## Environment
 
 | Symptom | Cause | Fix |

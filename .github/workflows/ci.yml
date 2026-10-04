@@ -104,6 +104,60 @@ jobs:
             apps/web/test-results
           retention-days: 7
 
+  windows:
+    # Easy Chain runs from source on Windows too. This job runs the Python suite (SQLite and the
+    # runner's own Postgres, which has no pgvector), the CLI and worker, and the web checks.
+    name: Windows (Python, CLI, web)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.8.17"
+          python-version: "3.12"
+      - run: uv sync --frozen --extra providers
+        working-directory: python
+      - name: Put the runner's Postgres on PATH (the tests start their own throwaway server)
+        run: Add-Content $env:GITHUB_PATH $env:PGBIN
+      - name: Tests
+        working-directory: python
+        run: uv run pytest
+      - name: The CLI runs a flow and a worker starts and stops
+        working-directory: python
+        run: |
+          $env:EASYCHAIN_HOME = Join-Path $env:RUNNER_TEMP "easychain-home"
+          uv run easychain run ../examples/hello.flow.yaml --input "question=What is LangGraph?" --stand-in > out.json
+          Get-Content out.json
+          uv run easychain validate ../examples/hello.flow.yaml > validate.txt
+          Get-Content validate.txt
+          $worker = Start-Process uv -ArgumentList "run","easychain","worker" -PassThru -NoNewWindow
+          Start-Sleep -Seconds 8
+          if ($worker.HasExited) { throw "The worker exited early (code $($worker.ExitCode))." }
+          Stop-Process -Id $worker.Id -Force
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm --filter @easychain/web test
+      - run: pnpm --filter @easychain/client test
+      - name: The web app builds and the server serves it
+        working-directory: python
+        run: |
+          pnpm --dir .. build
+          $server = Start-Process uv -ArgumentList "run","easychain","dev","--port","8123" -PassThru -NoNewWindow
+          $ok = $false
+          foreach ($i in 1..60) {
+            try { $page = Invoke-WebRequest http://127.0.0.1:8123/ -UseBasicParsing; $ok = $true; break } catch { Start-Sleep 1 }
+          }
+          Stop-Process -Id $server.Id -Force
+          if (-not $ok -or $page.Content -notmatch "<title>Easy Chain</title>") { throw "The app didn't serve the web page." }
+
   docker:
     name: Docker image and Compose (Postgres + worker)
     runs-on: ubuntu-latest

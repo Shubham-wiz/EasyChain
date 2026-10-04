@@ -28,7 +28,7 @@ Read them in this order:
 ```bash
 git clone <repo> && cd EasyChain
 git checkout main                             # the development branch
-make install && make lint && make test        # should be green
+pnpm run setup && pnpm lint && pnpm test      # should be green (Windows, macOS or Linux)
 ```
 
 Then carry on from **Next** in [status.md](status.md). When you finish a piece of work, update

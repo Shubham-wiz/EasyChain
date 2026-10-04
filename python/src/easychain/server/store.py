@@ -61,7 +61,7 @@ class FlowStore:
         path = self._path(flow_id)
         with self._lock:
             tmp = path.with_suffix(".tmp")
-            tmp.write_text(dumps_spec(spec), encoding="utf-8")
+            tmp.write_text(dumps_spec(spec), encoding="utf-8", newline="\n")
             tmp.replace(path)
 
     def create(self, spec: FlowSpec) -> str:
@@ -71,7 +71,9 @@ class FlowStore:
             while (self.workspace / f"{flow_id}.flow.yaml").exists():
                 flow_id = f"{base}-{n}"
                 n += 1
-            (self.workspace / f"{flow_id}.flow.yaml").write_text(dumps_spec(spec), encoding="utf-8")
+            (self.workspace / f"{flow_id}.flow.yaml").write_text(
+                dumps_spec(spec), encoding="utf-8", newline="\n"
+            )
         return flow_id
 
     def delete(self, flow_id: str) -> None:

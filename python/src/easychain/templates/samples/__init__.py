@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -22,15 +23,19 @@ def ensure_samples(easychain_home: Path | None = None) -> Path:
     version = re.search(r"sample_version: (\d+)", script)
     wanted = int(version.group(1)) if version else 1
     target = folder / "shop.db"
+    # `with sqlite3.connect()` commits but doesn't close; Windows can't replace or delete a file
+    # that is still open, so each connection is closed explicitly.
     if target.exists():
-        with sqlite3.connect(target) as conn:
-            if conn.execute("PRAGMA user_version").fetchone()[0] == wanted:
-                return target
-        target.unlink()
+        with closing(sqlite3.connect(target)) as conn:
+            current = conn.execute("PRAGMA user_version").fetchone()[0]
+        if current == wanted:
+            return target
     tmp = folder / f".shop-{os.getpid()}.db"
-    with sqlite3.connect(tmp) as conn:
+    tmp.unlink(missing_ok=True)  # left over from a build that was cut off
+    with closing(sqlite3.connect(tmp)) as conn:
         conn.executescript(script)
         conn.execute(f"PRAGMA user_version = {wanted}")
+        conn.commit()
     tmp.replace(target)
     return target
 

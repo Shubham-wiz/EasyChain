@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import subprocess
 import sys
 import time
@@ -163,6 +164,15 @@ def knowledge_url(request, tmp_path, monkeypatch):
     search_module.KNOWLEDGE_ENGINES.pop(url, None)
 
 
+def _pgvector_installed(url: str) -> bool:
+    """Postgres without pgvector is supported too (embeddings are stored as bytes)."""
+    import psycopg
+
+    with psycopg.connect(url) as conn:
+        row = conn.execute("SELECT 1 FROM pg_available_extensions WHERE name = 'vector'")
+        return row.fetchone() is not None
+
+
 def _filled(store: KnowledgeStore, name: str = "Help") -> str:
     kb = store.create_base(name, "keywords", 0, chunk_size=200, chunk_overlap=20)
     for filename, data in (("help.md", HELP), ("prices.csv", b"plan,price\nStarter,10\nTeam,25\n")):
@@ -174,7 +184,7 @@ def _filled(store: KnowledgeStore, name: str = "Help") -> str:
 
 def test_hybrid_search_finds_and_cites_passages(knowledge_url):
     store = KnowledgeStore().setup()
-    if knowledge_url.startswith("postgresql"):
+    if knowledge_url.startswith("postgresql") and _pgvector_installed(knowledge_url):
         assert store.pgvector, "pgvector should be used when the extension is there"
     kb = _filled(store)
     assert store.get_base(kb)["dims"] == 256
@@ -451,12 +461,15 @@ def test_exported_code_searches_on_its_own(tmp_path, monkeypatch):
     compiled = compile_flow(spec)
     assert "sqlalchemy>=2.0.36" in compiled.requirements and "numpy>=2" in compiled.requirements
     module = tmp_path / f"{compiled.module_name}.py"
-    module.write_text(compiled.source)
-    env = {"EASYCHAIN_KNOWLEDGE_URL": url, "PATH": "/usr/bin:/bin"}
+    module.write_text(compiled.source, encoding="utf-8")
+    env = {"EASYCHAIN_KNOWLEDGE_URL": url, "PATH": os.defpath, "PYTHONIOENCODING": "utf-8"}
+    if os.name == "nt":
+        env["SYSTEMROOT"] = os.environ["SYSTEMROOT"]  # Python can't start on Windows without it
     result = subprocess.run(
         [sys.executable, str(module), json.dumps({"question": "delete my account"})],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=env,
         cwd=Path(module).parent,
         timeout=120,

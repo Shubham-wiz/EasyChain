@@ -8,11 +8,20 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "pnpm --filter @easychain/web dev",
-    "build": "pnpm --filter @easychain/web build",
-    "test": "pnpm --filter @easychain/web test",
-    "typecheck": "pnpm --filter @easychain/web typecheck",
-    "e2e": "pnpm --filter @easychain/web e2e"
+    "setup": "node scripts/tasks.mjs install",
+    "dev": "node scripts/tasks.mjs dev",
+    "build": "node scripts/tasks.mjs build",
+    "server": "node scripts/tasks.mjs server",
+    "worker": "node scripts/tasks.mjs worker",
+    "test": "node scripts/tasks.mjs test",
+    "e2e": "node scripts/tasks.mjs e2e",
+    "lint": "node scripts/tasks.mjs lint",
+    "format": "node scripts/tasks.mjs format",
+    "schema": "node scripts/tasks.mjs schema",
+    "golden": "node scripts/tasks.mjs golden",
+    "docker": "node scripts/tasks.mjs docker",
+    "clean": "node scripts/tasks.mjs clean",
+    "typecheck": "pnpm --filter @easychain/web typecheck && pnpm --filter @easychain/client typecheck"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

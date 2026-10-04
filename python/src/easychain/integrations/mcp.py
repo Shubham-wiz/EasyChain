@@ -62,28 +62,50 @@ def _secrets(value: str) -> str:
     )
 
 
-def command_of(server: dict[str, Any]) -> str:
-    return shlex.split(server.get("command") or "")[0] if server.get("command") else ""
+def split_command(command: str) -> list[str]:
+    """Split a command line the way this system's shell would.
+
+    Windows paths keep their backslashes (``C:\\Tools\\server.exe``); quotes group words with
+    spaces on both systems.
+    """
+    if os.name != "nt":
+        return shlex.split(command)
+    lexer = shlex.shlex(command, posix=False)
+    lexer.whitespace_split = True
+    return [p[1:-1] if len(p) > 1 and p[0] == p[-1] and p[0] in "\"'" else p for p in lexer]
+
+
+def _same_command(a: str, b: str) -> bool:
+    return a.lower() == b.lower() if os.name == "nt" else a == b
 
 
 def connection(server: dict[str, Any], allowed_commands: list[str]) -> dict[str, Any]:
     """A langchain-mcp-adapters connection for one server from Settings → MCP servers."""
     transport = server.get("transport") or "http"
+    name = server.get("name") or server.get("id")
     if transport == "stdio":
-        parts = shlex.split(server.get("command") or "")
-        if not parts:
-            raise McpNotAllowed(f"The MCP server “{server.get('name')}” has no command to run.")
-        if parts[0] not in allowed_commands:
+        try:
+            parts = split_command(server.get("command") or "")
+        except ValueError as exc:
             raise McpNotAllowed(
-                f"The MCP server “{server.get('name') or server.get('id')}” runs `{parts[0]}` on "
+                f"The command of the MCP server “{name}” can't be read ({exc}). "
+                "Check its quotes in Settings → MCP servers."
+            ) from None
+        if not parts:
+            raise McpNotAllowed(f"The MCP server “{name}” has no command to run.")
+        if not any(_same_command(parts[0], allowed) for allowed in allowed_commands):
+            raise McpNotAllowed(
+                f"The MCP server “{name}” runs `{parts[0]}` on "
                 "this machine, and that command isn't on the approved list (Settings → MCP "
                 "servers, in Pro mode)."
             )
+        # Only the server's own variables: the MCP client adds the basics (PATH, HOME and
+        # so on), and Easy Chain's other secrets stay out of a third-party process.
         return {
             "transport": "stdio",
             "command": parts[0],
             "args": parts[1:] + list(server.get("args") or []),
-            "env": {**os.environ, **{k: _secrets(v) for k, v in (server.get("env") or {}).items()}},
+            "env": {k: _secrets(v) for k, v in (server.get("env") or {}).items()},
         }
     out: dict[str, Any] = {
         "transport": "sse" if transport == "sse" else "streamable_http",

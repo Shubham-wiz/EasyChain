@@ -3,9 +3,12 @@
 ## Set up
 
 ```bash
-make install        # uv sync (Python 3.12) + pnpm install
-make dev            # API on :8000 + web dev server on http://localhost:5173
+pnpm run setup      # uv sync (Python 3.12) + pnpm install
+pnpm dev            # API on :8000 + web dev server on http://localhost:5173
 ```
+
+The `pnpm` tasks (in `scripts/tasks.mjs`) work on Windows, macOS and Linux. Where `make` is
+installed, `make install`, `make dev` and so on run the same tasks.
 
 No API key is needed for development: use the stand-in AI in the Run panel, or run the fake
 OpenAI-compatible server and point the app at it:
@@ -18,24 +21,26 @@ OPENAI_API_KEY=sk-test OPENAI_BASE_URL=http://127.0.0.1:8765/v1 uv run easychain
 ## Checks
 
 ```bash
-make lint           # ruff (check + format) and TypeScript
-make test           # pytest (with coverage) + vitest
-make e2e            # Playwright (builds the web app, starts the app and the fake server)
+pnpm lint           # ruff (check + format) and TypeScript
+pnpm test           # pytest (with coverage) + vitest
+pnpm e2e            # Playwright (builds the web app, starts the app and the fake server)
 ```
 
-CI runs all of these, plus a Docker build. Compiler code (`compiler/`, `steps/`) must stay at
-or above 90% coverage.
+CI runs all of these on Linux, the Python and web tests again on Windows, plus a Docker build.
+Code must work on both: read and write text files with `encoding="utf-8"`, don't rely on POSIX
+signals or `os.geteuid`, and put anything that has to differ in `easychain/_platform.py`.
+Compiler code (`compiler/`, `steps/`) must stay at or above 90% coverage.
 
 ## Golden files
 
 `python/tests/golden/expected/*.py` pins the exact code each flow compiles to. After an intended
-compiler change, run `make golden` and review the diff like any other code: it is what users
+compiler change, run `pnpm golden` and review the diff like any other code: it is what users
 will export.
 
 ## Adding a step type
 
 1. **Settings model**: add `XSettings` and `XStep` to `python/src/easychain/spec/models.py`,
-   include it in the `Step` union and `STEP_MODELS`, then run `make schema`.
+   include it in the `Step` union and `STEP_MODELS`, then run `pnpm schema`.
 2. **Handler**: subclass `StepHandler` in `python/src/easychain/steps/`. It needs a plain-language
    `label` and `summary`, the LangChain/LangGraph `technical` term, a `form` (each field with help
    text and an example), `reads`/`writes`, `check` (messages written for people, each pinned to

@@ -40,9 +40,13 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
+def _is_root() -> bool:
+    return hasattr(os, "geteuid") and os.geteuid() == 0  # there is no root on Windows
+
+
 def _as_postgres(cmd: list[str]) -> list[str]:
     """initdb and postgres refuse to run as root; run them as the postgres user."""
-    if os.geteuid() == 0 and shutil.which("runuser"):
+    if _is_root() and shutil.which("runuser"):
         return ["runuser", "-u", "postgres", "--", *cmd]
     return cmd
 
@@ -52,7 +56,7 @@ def available() -> bool:
         return True
     if not (_bin("initdb") and _bin("pg_ctl")):
         return False
-    if os.geteuid() == 0:
+    if _is_root():
         try:
             import pwd
 
@@ -74,7 +78,7 @@ def server() -> Iterator[str]:
     folder = Path(tempfile.mkdtemp(prefix="easychain-pg-"))
     data = folder / "data"
     port = _free_port()
-    if os.geteuid() == 0:
+    if _is_root():
         shutil.chown(folder, "postgres", "postgres")
     subprocess.run(
         _as_postgres([initdb, "-D", str(data), "-U", "postgres", "--auth=trust", "-E", "UTF8"]),
@@ -91,13 +95,18 @@ def server() -> Iterator[str]:
                 "-l",
                 str(log),
                 "-o",
-                f"-p {port} -k {folder} -c listen_addresses=127.0.0.1 -c fsync=off",
+                # Windows has no Unix socket folder by default; elsewhere it goes in the temp folder.
+                f"-p {port}{'' if os.name == 'nt' else f' -k {folder}'} "
+                "-c listen_addresses=127.0.0.1 -c fsync=off",
                 "-w",
                 "start",
             ]
         ),
         check=True,
-        capture_output=True,
+        # Not captured: the server keeps the output handles open, and on Windows reading them
+        # would wait for the server to exit. Its messages go to the log file instead.
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
     try:
         base = f"postgresql://postgres@127.0.0.1:{port}/postgres"

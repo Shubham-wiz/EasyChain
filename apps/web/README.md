@@ -13,7 +13,7 @@ and dagre for auto-layout.
 
 ```bash
 pnpm install                          # from the repo root
-make dev                              # API on :8000 + this app on http://localhost:5173
+pnpm dev                              # API on :8000 + this app on http://localhost:5173
 # or just the app, against an API somewhere else:
 EASYCHAIN_API=http://127.0.0.1:8000 pnpm --filter @easychain/web dev
 pnpm --filter @easychain/web build    # production build into dist/ (served by `easychain dev`)

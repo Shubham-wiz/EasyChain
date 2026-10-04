@@ -115,6 +115,6 @@ def export_to_dir(
     written = []
     for name, content in export_files(spec, resolve, flow_id).items():
         path = out / name
-        path.write_text(content, encoding="utf-8")
+        path.write_text(content, encoding="utf-8", newline="\n")
         written.append(path)
     return written

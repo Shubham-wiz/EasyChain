@@ -89,7 +89,7 @@ def dumps_spec(spec: FlowSpec) -> str:
 
 
 def save_spec(spec: FlowSpec, path: str | Path) -> None:
-    Path(path).write_text(dumps_spec(spec), encoding="utf-8")
+    Path(path).write_text(dumps_spec(spec), encoding="utf-8", newline="\n")
 
 
 def spec_json(spec: FlowSpec) -> dict[str, Any]:
