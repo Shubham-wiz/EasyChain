@@ -105,6 +105,10 @@ including Postgres for the tests, the Playwright browser, and Docker notes.
   turns; tool results, limits and approvals stay real.
 - **Adding a step type** follows a checklist in [CONTRIBUTING.md](CONTRIBUTING.md): the model,
   the handler, a golden case, behaviour tests, checks, an icon, and a docs page.
+- **Commits carry no AI attribution.** No `Co-Authored-By` lines for AI tools, no session links,
+  no "generated with" footers in commit messages or pull requests (owner's decision R.1 in
+  [decisions.md](docs/handover/decisions.md)). Commit as `Easy Chain Dev
+  <19shubhamdwivedi@gmail.com>`.
 - **Side effects run at most once.** Anything that changes the outside world goes through
   `run_once` with an idempotency key (see `compiler/helpers.py` and [docs/runs.md](docs/runs.md)).
 

@@ -7,10 +7,7 @@ _Last updated: 2026-10-02 (end of Phase 3, waiting for review)._
 Phases 0 to 3 are built, tested and reported, and each met its "Done when". Phase 3 (Agents and
 knowledge) ended with its [report](../phases/phase-3.md) and three questions for Phase 4; work
 is **stopped for review**, as the build rules say. All work is committed on the branch
-`claude/tender-fermat-4kj4k6`. **Pushing to GitHub is blocked:** the Claude GitHub App has no
-access to `Shubham-wiz/EasyChain` (HTTP 403), so the commits exist only in the working copy that
-made them (and in the git bundle handed to the owner) until access is granted and the branch is
-pushed.
+`claude/tender-fermat-4kj4k6` and pushed to GitHub (see [GitHub](#github) below).
 
 ## Phases
 

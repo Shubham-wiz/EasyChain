@@ -74,4 +74,4 @@ whenever something takes more than a few minutes to understand.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `docker compose up` failed pulling `postgres:16-alpine` | Docker Hub rate limit (HTTP 429) in the build sandbox, with the ECR mirror blocked | Test the image with `--network host` against a host Postgres. CI runs the full stack. |
-| `git push` returned HTTP 403 | The Claude GitHub App has no access to the repository | The owner connects GitHub and installs the app (see [status.md](status.md#blocked)) |
+| `git push` returned HTTP 403 | The Claude GitHub App has no access to the repository | The owner connects GitHub and installs the app (see [status.md](status.md#github) and "GitHub access" above) |

@@ -4,6 +4,12 @@ Newest first. Each entry says who decided (**owner** = the project owner; **buil
 during the build and open to review) and why. Questions already answered here should not be
 asked again.
 
+## Working rules
+
+| # | Question | Decision | Who |
+|---|---|---|---|
+| R.1 | AI attribution in git | No `Co-Authored-By: Claude…`, session links or "generated with" lines in commit messages or pull request descriptions. Commits are authored as `Easy Chain Dev <19shubhamdwivedi@gmail.com>`. The existing history was rewritten to remove the trailers. | owner: "remove from git that it's made by claude" |
+
 ## Phase 3
 
 | # | Question | Decision | Who |
