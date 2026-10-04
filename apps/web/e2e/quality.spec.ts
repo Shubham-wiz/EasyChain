@@ -64,6 +64,9 @@ test("the canvas stays responsive with 300 steps", async ({ page, request }) => 
 });
 
 async function axe(page: Page) {
+  // Let colour transitions (after a theme toggle) finish; otherwise axe measures colours halfway
+  // between the two themes and reports contrast problems neither theme has.
+  await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
   const results = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
     .exclude(".react-flow__minimap") // decorative overview, duplicated by the canvas itself

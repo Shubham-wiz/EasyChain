@@ -11,6 +11,34 @@ and the review's serious findings get fixed first. Windows support is done (CI n
 and the data-loss and security fixes are being worked through; review.md tracks which are done.
 The Phase 4 questions are answered (decisions 4.1–4.3), so Phase 4 starts after the review fixes.
 
+## Pick up here
+
+_Written 2026-10-04 so work can carry on from another machine or session._
+
+1. **Set up:** clone, `pnpm run setup`, then `pnpm lint` and `pnpm test` (Windows, macOS or
+   Linux). Read [AGENTS.md](../../AGENTS.md), this page, [review.md](review.md) and
+   [decisions.md](decisions.md).
+2. **CI is not all green yet.** On the last pushes, Python (Linux), Web and Docker passed. Two
+   jobs failed and are the first thing to fix:
+   - **End-to-end (Playwright)** failed on GitHub. The cause wasn't visible: job logs need admin
+     rights, so CI now posts each failing test as an annotation on the run's page (Playwright's
+     `github` reporter). On Windows the suite passes locally except two accessibility checks,
+     which measured colours during the theme-switch animation; `e2e/quality.spec.ts` now waits
+     for animations first.
+   - **Windows (Python, CLI, web)**: the Python suite fails on GitHub's Windows runner but passes
+     on Windows 11 locally (349 tests). The run's annotations name the failing tests
+     (`pytest_terminal_summary` in `tests/conftest.py`). The runner's Postgres (`$PGBIN`, no
+     pgvector) and Ctrl+Break handling are the first suspects.
+   To read annotations without admin rights:
+   `curl -s https://api.github.com/repos/Shubham-wiz/EasyChain/check-runs/<job id>/annotations`
+   (job ids: `…/actions/runs/<run id>/jobs`).
+3. **Then** the rest of [review.md](review.md) (everything under "Other findings"), most serious
+   first, each fix with a test.
+4. **Then Phase 4** ([ROADMAP.md](../ROADMAP.md#phase-4-autopilot-and-teams)); its questions are
+   answered (decisions 4.1–4.3).
+5. **For the owner:** delete the old branch: `git push origin --delete claude/tender-fermat-4kj4k6`
+   (decision R.3).
+
 ## Phases
 
 | Phase | Scope | State | Report |
