@@ -27,10 +27,10 @@ At the end of Phase 3 the tests were:
 
 ## Step 0: for the owner, before more building
 
-1. **Push the code.** Unzip the archive and `git push -u origin main`. Or fix the Claude GitHub
-   App link so cloud sessions can push. In the app's settings, **Check repository status** for
-   `Shubham-wiz/EasyChain` must say it has access.
-2. **Watch the first CI run.** Nothing has run on GitHub yet, because nothing could be pushed.
+1. ~~**Push the code.**~~ Done. The branch `claude/tender-fermat-4kj4k6` is on GitHub with its
+   full history.
+2. **Start and watch the first CI run.** CI runs on pushes to `main` and on pull requests, so
+   create `main` from the branch or open a pull request.
    CI runs these jobs:
    - lint;
    - Python tests on Postgres with pgvector;

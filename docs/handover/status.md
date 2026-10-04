@@ -77,15 +77,17 @@ The full plan is in [docs/ROADMAP.md](../ROADMAP.md).
    multi-agent patterns, the describe-it copilot, then the Research assistant and Inbox triage
    templates.
 
-## Blocked
+## GitHub
 
-- **Push to GitHub from cloud sessions** (HTTP 403). The GitHub account is connected and the
-  Claude GitHub App is installed, but cloud sessions still aren't linked to
-  `Shubham-wiz/EasyChain`. Fix: in claude.ai → Connectors → GitHub, **Check repository status**
-  for the repo, and give the app access to it, or re-link the installation.
-- **Workaround in use:** the owner was given a zip of the repo, with full history and `origin`
-  set, to push themselves (`git push -u origin main`). The repo on GitHub was empty at the time.
-  CI has therefore never run on GitHub.
+- **Pushed.** The branch `claude/tender-fermat-4kj4k6` is on GitHub with its full history. It
+  was the first branch pushed to the empty repo, so it is currently the default branch.
+  - Earlier pushes failed with HTTP 403 because the Claude GitHub App hadn't been given access
+    to this repo.
+  - The owner fixed that in the app's repository access settings. If it ever comes back, see
+    lessons.md.
+- **CI has not run yet.** `.github/workflows/ci.yml` runs on pushes to `main` and on pull
+  requests only. To start it, either create `main` from this branch or open a pull request.
+  That is the owner's call.
 
 ## Known gaps carried forward
 

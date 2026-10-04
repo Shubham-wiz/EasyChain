@@ -45,3 +45,28 @@ Read as three requests:
 Phase 3 was completed under this instruction. Report: [phase-3.md](../phases/phase-3.md). It
 ends with three questions for Phase 4: its "Done when" (the original brief isn't in the repo),
 the sandbox backend, and the copilot's model. Work stopped there for review.
+
+---
+
+**4. About pushing and handover files**, after the Phase 3 report:
+
+> u havent pushed anythingin git
+
+> give me a zip of everything ill push it myself
+
+> give me readmes of the whole thing, plan of what to do as well
+
+> why cant u push to git i still dont understand this ?
+
+> done check again
+
+These led to:
+
+- a zip of the repo with its full history;
+- READMEs for the Python package and the web app;
+- a docs index ([docs/README.md](../README.md)) and the plan for Phases 4–6
+  ([docs/ROADMAP.md](../ROADMAP.md));
+- an explanation of the 403: the Claude GitHub App hadn't been given access to this repo.
+
+After the owner fixed the app's access, the branch was pushed with all its history.
+

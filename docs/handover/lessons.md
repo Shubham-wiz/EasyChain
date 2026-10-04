@@ -38,6 +38,12 @@ whenever something takes more than a few minutes to understand.
 | `easychain test sql-analyst.tests.yaml` gave 9/10 by hand | One case posts to `${base_url}/effects`; without `--var base_url` and the fake server the request fails | Start `python -m easychain.testing.fake_openai --port N` and pass `--var base_url=http://127.0.0.1:N` |
 | The "Tools" label sat on top of the tool lines | It was centred under the Agent's bottom handle, where the lines leave | It sits beside the handle now |
 
+## GitHub access
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `git push` gets HTTP 403: "Claude doesn't have GitHub access to OWNER/REPO" while the GitHub account shows as connected and the app as installed | The Claude GitHub App was installed with access to selected repositories only, and this repo wasn't one of them | On GitHub, go to Settings → Applications → Claude → Configure → Repository access, and add the repo (or allow all repositories). Then check claude.ai → Connectors → GitHub → **Check repository status**. |
+
 ## Database, queue and workers
 
 | Symptom | Cause | Fix |

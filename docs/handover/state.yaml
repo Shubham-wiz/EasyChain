@@ -6,10 +6,10 @@ version: 0.3.0
 updated: 2026-10-02
 
 push:
-  state: blocked_for_cloud_sessions
-  workaround: "owner given a zip of the repo (full history, origin set) to push with: git push -u origin main"
-  reason: "HTTP 403: the Claude GitHub App has no access to Shubham-wiz/EasyChain"
-  fix: "Connect GitHub at https://claude.ai/connect-github and install the Claude GitHub App on the repo, then: git push -u origin claude/tender-fermat-4kj4k6"
+  state: pushed
+  branch_on_github: claude/tender-fermat-4kj4k6   # currently the default branch (first pushed)
+  ci: "not run yet: ci.yml triggers on push to main and on pull requests"
+  past_issue: "HTTP 403 until the Claude GitHub App was given access to the repo (fixed by the owner)"
 
 phases:
   - id: 0
