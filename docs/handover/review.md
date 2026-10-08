@@ -115,12 +115,22 @@ Open:
 - A dropped event stream leaves the run panel on "Running"; the client leaves the stream open.
 - `aria-live` on streamed tokens; field errors not linked with `aria-describedby`.
 
-### Tests and docs (open unless marked)
+### Tests and docs
 
-- Phase 3's "Done when" is proven only with the scripted stand-in AI (`testsets.py` forces it
-  when a Test Set sets `stand_in: true`, and both template Test Sets do).
-- Test Sets drop unused answers and never check that a pause happened.
-- The "day later" durability test is really a restart test.
+Done:
+
+- Test Sets fail a case whose `answers` weren't all asked for, so an approval case can't pass
+  without the run pausing.
+- `easychain test --real-model` runs a Test Set with the flow's real model even when the file
+  says `stand_in: true` (the template Test Sets' notes said this happened by itself; it didn't).
+- The "day later" durability test now also runs the workers' clean-up of old run data on the
+  day-old run, and no longer checks its own timestamp edit.
+- Tests no longer touch the developer's own `~/.easychain` or database; the web build docs;
+  `EASYCHAIN_SECRET_KEY` documented.
+
+Open:
+
+- Phase 3's "Done when" is still proven only with the scripted stand-in AI in CI. Run
+  `easychain test python/src/easychain/templates/sql-analyst.tests.yaml --real-model` (and the
+  support bot's) with a key before a release.
 - Some Playwright checks can't fail (Replay, "panning", "build under 300 s").
-- Done: tests no longer touch the developer's own `~/.easychain` or database; the web build
-  docs; `EASYCHAIN_SECRET_KEY` documented.

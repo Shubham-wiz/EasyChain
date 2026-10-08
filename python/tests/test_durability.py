@@ -1,8 +1,10 @@
 """Phase 2 "Done when": killing a worker mid-run and restarting resumes from the last step
 with no duplicate side effects, and a paused approval can be resumed a day later.
 
-Workers run as real processes (``easychain worker``) and are killed with SIGKILL. Each test
-runs against SQLite and, when available, Postgres.
+Workers run as real processes (``easychain worker``) and are killed outright (SIGKILL, or
+TerminateProcess on Windows). "A day later" means: every process stopped and replaced, the run's
+timestamps a day old, and the workers' clean-up of old run data done in between. Each test runs
+against SQLite and, when available, Postgres.
 """
 
 from __future__ import annotations
@@ -390,7 +392,8 @@ async def test_paused_approval_is_resumed_a_day_later(
         # Everything stops: the worker goes away and nothing is left in memory.
         ask_to_stop(worker)
         worker.wait(15)
-        # A day passes.
+        # A day passes. Nothing about a paused run expires with time; what a day brings is the
+        # workers' clean-up of old run data, which runs below on the day-old run.
         day = 24 * 3600
         await hub.db.update_run(
             run_id, created_at=run["created_at"] - day, started_at=run["started_at"] - day
@@ -404,6 +407,7 @@ async def test_paused_approval_is_resumed_a_day_later(
                     .where(inbox.c.id == item["id"])
                     .values(created_at=item["created_at"] - day)
                 )
+        await hub.db.drop_old_tokens(time.time() - 600)  # what a worker does every few minutes
     finally:
         await _close(hub)
 
@@ -418,7 +422,6 @@ async def test_paused_approval_is_resumed_a_day_later(
     with TestClient(app) as client:
         [item] = client.get("/api/inbox").json()
         assert item["run_id"] == run_id
-        assert time.time() - item["created_at"] > 23 * 3600
         assert item["request"]["question"] == "Send “Hello”?"
         answer = {"action": "approve", "value": "Hello again", "comment": "Looks good"}
         assert client.post(f"/api/inbox/{item['id']}/answer", json=answer).json()["answered"]

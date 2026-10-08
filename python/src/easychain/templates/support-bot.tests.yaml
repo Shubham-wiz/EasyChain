@@ -1,6 +1,7 @@
 # Test Set for the Support bot over docs. The stand-in AI answers from the passages the help
 # centre search finds, so these cases check the search, the citations, the hand-over to a
-# colleague and the chat memory without an API key. With a key, the same cases run a real model.
+# colleague and the chat memory without an API key. To run the same cases with the flow's real
+# model, use `easychain test support-bot.tests.yaml --real-model` (needs its key).
 flow: support-bot.flow.yaml
 stand_in: true
 cases:

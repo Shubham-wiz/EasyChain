@@ -363,7 +363,8 @@ def cmd_test(args: argparse.Namespace) -> int:
     from .testsets import run_test_set
 
     variables = dict(v.split("=", 1) for v in args.var or [])
-    results = _platform.run(run_test_set(args.file, variables, stand_in=args.stand_in))
+    stand_in = True if args.stand_in else False if args.real_model else None
+    results = _platform.run(run_test_set(args.file, variables, stand_in=stand_in))
     passed = sum(r.passed for r in results)
     for r in results:
         print(f"{'✓' if r.passed else '✗'} {r.name}")
@@ -462,7 +463,15 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("test", help="run a Test Set file against its flow")
     p.add_argument("file")
     p.add_argument("--var", action="append", metavar="NAME=VALUE")
-    p.add_argument("--stand-in", action="store_true")
+    which = p.add_mutually_exclusive_group()
+    which.add_argument(
+        "--stand-in", action="store_true", help="use the stand-in AI (and the cases' scripts)"
+    )
+    which.add_argument(
+        "--real-model",
+        action="store_true",
+        help="use the flow's real model even if the file says stand_in: true (needs a key)",
+    )
     p.set_defaults(func=cmd_test)
 
     p = sub.add_parser("schema", help="print the flow spec JSON Schema")

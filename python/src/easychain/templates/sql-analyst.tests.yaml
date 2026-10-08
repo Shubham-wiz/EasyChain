@@ -2,7 +2,8 @@
 # scripts the queries a model would write; everything else is real: the tools run against the
 # sample shop database, the answer and the SQL come from what the tools returned, read-only is
 # enforced by the database, approvals pause in the Inbox, and limits stop a runaway agent.
-# With a key, a real model writes the SQL and the scripts are ignored.
+# `easychain test sql-analyst.tests.yaml --real-model` runs them with the flow's real model (it
+# needs its key): the model writes the SQL and the scripts are ignored.
 flow: sql-analyst.flow.yaml
 stand_in: true
 cases:

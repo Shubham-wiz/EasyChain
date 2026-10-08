@@ -151,6 +151,12 @@ async def run_case(spec: FlowSpec, case: dict[str, Any], stand_in: bool) -> Case
             options.action, options.resume = "resume", resume
             final, more = await run_flow(spec, None, options)
             events += more
+    if answers:
+        # Each answer stands for a pause the case expects; one left over means the run never
+        # asked for it (it didn't pause, or paused fewer times).
+        failures.append(
+            f"answers: {len(answers)} answer(s) weren't used; the run didn't ask for them"
+        )
     expect = dict(case.get("expect") or {})
     expected_status = expect.pop("status", "ok")
     if final.get("status") != expected_status:
@@ -192,8 +198,10 @@ async def run_case(spec: FlowSpec, case: dict[str, Any], stand_in: bool) -> Case
 
 
 async def run_test_set(
-    path: str | Path, variables: dict[str, str] | None = None, stand_in: bool = False
+    path: str | Path, variables: dict[str, str] | None = None, stand_in: bool | None = None
 ) -> list[CaseResult]:
+    """Run every case. ``stand_in`` True or False overrides the file's ``stand_in:``; None (the
+    default) follows the file."""
     from .templates.samples import ensure_samples
 
     ensure_samples()
@@ -208,5 +216,6 @@ async def run_test_set(
         from .templates.samples import ensure_sample_knowledge
 
         ensure_sample_knowledge()
-    stand_in = stand_in or bool(data.get("stand_in"))
+    if stand_in is None:
+        stand_in = bool(data.get("stand_in"))
     return [await run_case(spec, case, stand_in) for case in data.get("cases", [])]
