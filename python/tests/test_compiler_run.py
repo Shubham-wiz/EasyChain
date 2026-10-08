@@ -98,6 +98,7 @@ async def test_instructions_keep_literal_braces_and_examples():
 
 class _Recorder(BaseHTTPRequestHandler):
     seen: list[dict[str, Any]] = []
+    got: list[str] = []
 
     def do_POST(self) -> None:
         body = self.rfile.read(int(self.headers["Content-Length"]))
@@ -107,6 +108,7 @@ class _Recorder(BaseHTTPRequestHandler):
         self._reply(json.dumps({"hits": [{"title": "LangGraph"}]}), "application/json")
 
     def do_GET(self) -> None:
+        _Recorder.got.append(self.path)
         self._reply("User-agent: *\nDisallow: /private\n" * 50, "text/plain")
 
     def _reply(self, text: str, ctype: str) -> None:
@@ -126,6 +128,7 @@ def api_server():
     server = HTTPServer(("127.0.0.1", 0), _Recorder)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     _Recorder.seen.clear()
+    _Recorder.got.clear()
     yield f"http://127.0.0.1:{server.server_port}"
     server.shutdown()
 
@@ -172,6 +175,36 @@ async def test_url_values_are_encoded_and_json_bodies_stay_valid(api_server, mon
     assert req["body"] == {"query": question, "note": f"Asked: {question}!", "limit": 7}
 
 
+def _get_flow(url: str):
+    return make_spec(
+        [
+            input_step("base", {"name": "order_id", "required": False}, "q"),
+            {
+                "id": "fetch",
+                "type": "http_request",
+                "settings": {"url": url, "response": "text", "save_as": "page"},
+            },
+            output_step("page"),
+        ],
+        [("input", "fetch"), ("fetch", "output")],
+    )
+
+
+async def test_url_values_cant_change_the_address_called(api_server):
+    spec = _get_flow("{base}/orders/{order_id}/notes?q={q}")
+    # A value (say, one an agent picked as a tool argument) can't climb out of its path part.
+    inputs = {"base": api_server + "/api", "order_id": "../admin/delete", "q": "a/b"}
+    final, _ = await run(spec, inputs)
+    assert final["status"] == "ok", final
+    assert _Recorder.got == ["/api/orders/..%2Fadmin%2Fdelete/notes?q=a%2Fb"]
+
+    for bad in ("..", ".", ""):
+        final, _ = await run(spec, {**inputs, "order_id": bad})
+        assert final["status"] == "error", bad
+        assert "would call a different address" in final["error"]["message"]
+    assert len(_Recorder.got) == 1  # none of those requests was sent
+
+
 async def test_smart_summary_template_against_fake_pages(fake_openai):
     spec = load_spec(TEMPLATES / "smart-summary.flow.yaml")
     final, events = await run(spec, {"url": fake_openai.url + "/pages/langchain"})
@@ -198,6 +231,42 @@ async def test_reply_to_feedback_routes_with_stand_in(feedback, kind):
     assert final["status"] == "ok", final
     assert final["output"]["kind"] == kind
     assert routes(events) == {"what_kind": kind}
+
+
+@pytest.mark.parametrize(
+    "reply,kind",
+    [
+        ("Complaint", "Complaint"),
+        ("**praise**.", "Praise"),
+        ("Complaint: the app crashes.", "Complaint"),
+        ("Not a complaint", "Question"),
+        ("None of the above", "Question"),
+        ("I'd say it's praise", "Question"),
+        ("Complaints", "Question"),
+    ],
+)
+async def test_ai_decision_takes_an_exit_only_when_the_reply_names_it(reply, kind):
+    from easychain.runtime.standin import Script
+
+    spec = load_spec(TEMPLATES / "reply-to-feedback.flow.yaml")
+    final, events = await run(spec, {"feedback": "Thanks!"}, stand_in=True, script=Script([reply]))
+    assert final["status"] == "ok", final
+    assert routes(events) == {"what_kind": kind}
+
+
+def test_pick_exit_prefers_the_longest_name_and_never_matches_inside_a_word():
+    from easychain.compiler.helpers import HELPERS
+
+    namespace: dict[str, Any] = {}
+    exec("import re\n" + HELPERS["pick_exit"].code, namespace)
+    pick = namespace["pick_exit"]
+    exits = ["Refund", "No refund"]
+    assert pick("No refund.", exits, "Other") == "No refund"
+    assert pick("refund", exits, "Other") == "Refund"
+    assert pick("no", exits, "Other") == "Other"
+    assert pick("Nope", ["Yes", "No"], "Other") == "Other"
+    assert pick("No, it isn't", ["Yes", "No"], "Other") == "No"
+    assert pick("  ?  ", ["?", "!"], "Other") == "?"
 
 
 async def test_parallel_branches_run_both():

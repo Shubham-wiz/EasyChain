@@ -895,7 +895,9 @@ async def stream_run(
     if snapshot.values:
         last_values = snapshot.values
     output = _outputs(compiled, last_values)
-    if snapshot.next:
+    # A step that asks again (Ask a Human "choose" given an answer that isn't an option) has
+    # a stored answer, so LangGraph leaves it out of `next`; its new question still waits.
+    if snapshot.next or snapshot.interrupts:
         waiting = [
             {
                 "id": intr.id,

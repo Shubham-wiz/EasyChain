@@ -68,17 +68,31 @@ def fill(template: str, data: dict[str, Any]) -> str:
 
 
 def fill_url(template: str, data: dict[str, Any]) -> str:
-    """Like fill(), but URL-encodes values (except a placeholder that starts the URL)."""
-    query_at = template.find("?")
+    """Like fill(), but URL-encodes every value, "/" included, so no value can change which
+    address is called. A placeholder that starts the URL (a base address such as {base_url})
+    is used as it is. A value that would make a part of the path empty, "." or ".." is refused.
+    """
+    placeholder = r"\{(?:secret:)?[A-Za-z_][A-Za-z0-9_]*\}"
 
-    def value(match: re.Match[str]) -> str:
-        text = fill(match.group(0), data)
-        if match.start() == 0:
-            return text
-        in_query = query_at != -1 and match.start() > query_at
-        return quote(text, safe="" if in_query else "/")
+    def encoded(text: str) -> str:
+        return re.sub(placeholder, lambda m: quote(fill(m.group(0), data), safe=""), text)
 
-    return re.sub(r"\{(?:secret:)?[A-Za-z_][A-Za-z0-9_]*\}", value, template)
+    start = ""
+    first = re.match(placeholder, template)
+    if first:
+        start, template = fill(first.group(0), data), template[first.end() :]
+    path, mark, query = template.partition("?")
+    parts = []
+    for part in path.split("/"):
+        filled = encoded(part)
+        if filled != part and filled in ("", ".", ".."):
+            shown = f"“{filled}”" if filled else "empty"
+            raise ValueError(
+                f"{part} in the URL is {shown}, which would call a different address. "
+                "Give it a real value."
+            )
+        parts.append(filled)
+    return start + "/".join(parts) + mark + encoded(query)
 
 
 def fill_json(template: str, data: dict[str, Any]) -> str:

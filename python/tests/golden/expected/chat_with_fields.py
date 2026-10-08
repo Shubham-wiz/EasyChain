@@ -9,6 +9,7 @@ The compiled graph is `graph`; call `build_graph(checkpointer=...)` to keep Save
 """
 
 import json
+import re
 import sys
 from typing import Annotated, Any
 
@@ -52,13 +53,18 @@ INPUT_DEFAULTS: dict[str, Any] = {"level": "beginner"}
 
 
 def pick_exit(reply: str, exits: list[str], otherwise: str) -> str:
-    """Match an AI reply to one of a Decision's exit names (ignoring case)."""
-    text = reply.strip().strip(".!\"'`*").lower()
-    for name in exits:
-        if text == name.lower():
-            return name
-    for name in exits:
-        if name.lower() in text:
+    """Match an AI reply to one of a Decision's exit names.
+
+    The reply must be an exit name, or start with one ("Refund, because ..."), ignoring case,
+    spaces and punctuation. Longer names are tried first, so "No refund" isn't taken for "No".
+    Anything else ("None of the above", "Not a complaint") takes the otherwise exit.
+    """
+    said = re.findall(r"\w+", reply.lower())
+    for name in sorted(exits, key=lambda name: -len(re.findall(r"\w+", name))):
+        words = re.findall(r"\w+", name.lower())
+        if reply.strip().lower() == name.strip().lower() or (
+            words and said[: len(words)] == words
+        ):
             return name
     return otherwise
 

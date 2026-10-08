@@ -34,6 +34,11 @@ customer is unhappy or wants a refund"). The AI reads the field you choose (by d
 previous step saved) and replies with an exit name. The choice is saved in **Save the chosen exit
 as** (default `choice`).
 
+The reply counts as an exit when it is that exit's name, or starts with it (“Complaint: the app
+crashes”), whatever the case and punctuation. Longer names are tried first, so “No refund” is
+never taken for “No”. Any other reply, such as “None of the above” or “Not a complaint”, takes
+the **otherwise** exit; a name is never matched inside another word or later in a sentence.
+
 ## Example
 
 ```yaml

@@ -189,6 +189,8 @@ class AskHumanHandler(StepHandler):
             question = f"{ctx.helper('fill')}({py_str(s.question)}, data)"
         else:
             question = py_str(s.question)
+        if s.kind == "choose":
+            question = f"problem + {question}"
         request = [
             f'            "step": {py_str(step.id)},',
             f'            "kind": {py_str(s.kind)},',
@@ -212,13 +214,39 @@ class AskHumanHandler(StepHandler):
             "approve": f'approves or rejects; saves "{APPROVED}" or "{REJECTED}" as `{s.save_as}`',
             "edit": f"edits `{s.field}` and approves or rejects; saves the decision as `{s.save_as}`",
             "answer": f"answers; saves the answer as `{s.save_as}`",
-            "choose": f"picks an option; saves it as `{s.save_as}`",
+            "choose": f"picks an option; saves it as `{s.save_as}`. An answer that isn't one of "
+            "the options is asked again",
         }[s.kind]
-        lines = [
+        head = [
             f"def {fn}(data: {ctx.data_class}) -> dict[str, Any]:",
             docstring(
                 f"{self.title(step)}\n\nPauses the run (a LangGraph interrupt) until a person {what}."
             ),
+        ]
+        if s.kind == "choose":
+            pick = ctx.helper("pick_option")
+            lines = [
+                *head,
+                '    problem = ""  # says why when an answer has to be given again',
+                "    while True:",
+                "        answer = interrupt(",
+                "            {",
+                *("    " + line for line in request),
+                "            }",
+                "        )",
+                "        if not isinstance(answer, dict):  # resumed with a bare value",
+                '            answer = {"value": answer}',
+                '        value = str(answer.get("value") or "")',
+                f"        choice = {pick}(value, {options_const})",
+                "        if choice is not None:",
+                f'            return {{{save}: choice, {comment}: str(answer.get("comment") or "")}}',
+                "        # Not one of the options: ask again (LangGraph matches answers to asks in order).",
+                "        problem = f\"“{' '.join(value.split())[:60]}” isn't one of the options. \"",
+            ]
+            definitions.append("\n".join(lines))
+            return self._with_router(step, ctx, definitions, fn, options_const)
+        lines = [
+            *head,
             "    answer = interrupt(",
             "        {",
             *request,
@@ -229,12 +257,6 @@ class AskHumanHandler(StepHandler):
         ]
         if s.kind == "answer":
             lines.append(f'    return {{{save}: str(answer.get("value") or "")}}')
-        elif s.kind == "choose":
-            pick = ctx.helper("pick_exit")
-            lines += [
-                f'    choice = {pick}(str(answer.get("value") or ""), {options_const}, {options_const}[0])',
-                f'    return {{{save}: choice, {comment}: str(answer.get("comment") or "")}}',
-            ]
         else:
             lines += [
                 '    approved = answer.get("action", "approve") == "approve"',
@@ -250,7 +272,13 @@ class AskHumanHandler(StepHandler):
                 ]
             lines.append("    return update")
         definitions.append("\n".join(lines))
+        return self._with_router(step, ctx, definitions, fn, options_const)
 
+    def _with_router(
+        self, step: Any, ctx: Any, definitions: list[str], fn: str, options_const: str | None
+    ) -> StepCode:
+        s = step.settings
+        save = py_str(s.save_as)
         if not self.exits(step):
             return StepCode(definitions, node=fn)
         router = ctx.names.claim(f"route_{step.id}")

@@ -7,7 +7,7 @@ LangChain term: an HTTP request tool.
 
 | Setting | What it does |
 |---|---|
-| URL | The address to call. Use `{field}` for Flow Data, for example `{url}` or `https://api.example.com/search?q={question}`. Values are URL-encoded for you. |
+| URL | The address to call. Use `{field}` for Flow Data, for example `{url}` or `https://api.example.com/search?q={question}`. Values are URL-encoded for you, `/` included, so a value (one an agent picked, say) can't point the request at another address: `{order_id}` set to `../admin` stays inside its part of the path. A value that would leave a part of the path empty, `.` or `..` stops the step with an error. Only a field that starts the URL, like `{base_url}/orders/{order_id}`, is used as it is. |
 | Method | GET reads a page; POST, PUT, PATCH and DELETE send data. |
 | Keep | **Readable text** (drops menus, scripts and HTML tags; best for web pages), **the raw response**, or **JSON data** (for APIs). |
 | Save the result as | The field that holds the result. |
@@ -39,4 +39,5 @@ LangChain term: an HTTP request tool.
 | … "401" or "403" … | The site needs a login or API key, or blocks automated requests. |
 | Couldn't reach … / took too long | Check the address and your connection, or raise the time limit. |
 | A header value is empty or invalid | A `{secret:NAME}` it uses isn't set. Add it in Settings → Secrets. |
+| {field} in the URL is empty (or “..”), which would call a different address | Give the field a real value. To call a path with several parts from one field, start the URL with it (`{page_url}`) or keep the parts in separate fields. |
 | The response wasn't JSON | Set **Keep** to the raw response or readable text. |

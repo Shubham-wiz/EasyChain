@@ -352,9 +352,11 @@ def ask_in_terminal(request: dict[str, Any]) -> dict[str, Any]:
         options = request.get("options", [])
         for number, option in enumerate(options, start=1):
             print(f"  {number}. {option}")
-        picked = input("choose a number> ").strip()
-        index = int(picked) - 1 if picked.isdigit() else 0
-        return {"action": "approve", "value": options[index if 0 <= index < len(options) else 0]}
+        while True:
+            picked = input("choose a number> ").strip()
+            if picked.isdigit() and 1 <= int(picked) <= len(options):
+                return {"action": "approve", "value": options[int(picked) - 1]}
+            print(f"Type a number from 1 to {len(options)}.")
     approved = input("approve? [y/n]> ").strip().lower().startswith("y")
     answer: dict[str, Any] = {"action": "approve" if approved else "reject", "comment": input("comment> ")}
     if kind == "edit" and approved:

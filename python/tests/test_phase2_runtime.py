@@ -149,6 +149,29 @@ async def test_choose_and_answer_pause_one_after_the_other():
     }
 
 
+async def test_an_answer_that_isnt_an_option_is_asked_again():
+    spec = case("ask_human_choose")
+    final, _ = await run(spec, {"draft": "Thanks."}, thread_id="choose-again")
+    [first] = final["interrupts"]
+    # "Form" is neither option: it used to take the first option (Friendly) without a word.
+    final, events = await run(
+        spec, action="resume", resume={first["id"]: "Form"}, thread_id="choose-again"
+    )
+    assert final["status"] == "paused", final
+    [again] = final["interrupts"]
+    assert again["step"] == "tone"
+    assert again["request"]["question"] == (
+        "“Form” isn't one of the options. Which tone should the reply have?"
+    )
+    assert again["request"]["options"] == ["Friendly", "Formal"]
+    assert not routes(events)
+    final, events = await run(
+        spec, action="resume", resume={again["id"]: "  FORMAL "}, thread_id="choose-again"
+    )
+    assert final["status"] == "paused" and final["interrupts"][0]["step"] == "note"
+    assert ("tone", "Formal") in routes(events)
+
+
 async def test_resuming_a_run_that_isnt_waiting_is_a_clear_error():
     final, _ = await run(case("for_each"), {"topics": ["x"]}, thread_id="done-run")
     assert final["status"] == "ok"

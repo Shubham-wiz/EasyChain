@@ -60,11 +60,34 @@ APPROVAL = {
 }
 
 
+CHOOSE = {
+    "name": "Refund or not",
+    "steps": [
+        {"id": "start", "type": "input", "settings": {"fields": [{"name": "order"}]}},
+        {
+            "id": "pick",
+            "type": "ask_human",
+            "settings": {
+                "kind": "choose",
+                "question": "Refund {order}?",
+                "options": ["Refund", "No refund"],
+            },
+        },
+        {"id": "finish", "type": "output", "settings": {"fields": ["human_answer"]}},
+    ],
+    "connections": [
+        {"from": "start", "to": "pick"},
+        {"from": "pick", "to": "finish", "exit": "Refund"},
+        {"from": "pick", "to": "finish", "exit": "No refund"},
+    ],
+}
+
+
 @pytest.fixture
 async def hub(tmp_path: Path):
     folder = tmp_path / "flows"
     folder.mkdir()
-    for flow_id, data in (("ask-each", ASK_EACH), ("approval", APPROVAL)):
+    for flow_id, data in (("ask-each", ASK_EACH), ("approval", APPROVAL), ("choose", CHOOSE)):
         (folder / f"{flow_id}.flow.yaml").write_text(dumps_spec(parse_spec(data)), encoding="utf-8")
     url = f"sqlite:///{tmp_path / 'runs.db'}"
     db = await Database.connect(url)
@@ -117,6 +140,25 @@ async def test_answering_items_one_by_one_asks_nobody_twice(hub: Hub):
     run = await hub.db.get_run(run_id)
     assert run["status"] == "ok", run
     assert "hello Ada" in str(run["output"]) and "hello Bo" in str(run["output"])
+    assert await open_items(hub, run_id) == []
+
+
+async def test_an_answer_that_isnt_an_option_opens_the_question_again(hub: Hub):
+    run_id = await hub.start_run(hub.flows.get("choose"), flow_id="choose", inputs={"order": "42"})
+    await work(hub)
+    [item] = await open_items(hub, run_id)
+    # "no" isn't an option; it used to pick "Refund", the first one.
+    await hub.answer(item["id"], {"value": "no"})
+    await work(hub)
+    assert (await hub.db.get_run(run_id))["status"] == "paused"
+    [again] = await open_items(hub, run_id)
+    assert again["id"] != item["id"]
+    assert again["request"]["question"] == "“no” isn't one of the options. Refund 42?"
+    await hub.answer(again["id"], {"value": "No refund"})
+    await work(hub)
+    run = await hub.db.get_run(run_id)
+    assert run["status"] == "ok", run
+    assert run["output"] == {"human_answer": "No refund"}
     assert await open_items(hub, run_id) == []
 
 

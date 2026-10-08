@@ -38,6 +38,11 @@ LangGraph: a node that calls `interrupt()`; the run is resumed with `Command(res
 An answer is `{"action": "approve" | "reject", "value": …, "comment": "…"}`. A bare value is
 also accepted (for answer and pick).
 
+For **Pick one of some options**, the value must be one of the options (case and extra spaces
+don't matter). Any other answer isn't guessed at: the step asks again, with the question starting
+““no” isn't one of the options.”, and a new Inbox item opens. In exported code the terminal keeps
+asking for a number until it gets one in range.
+
 ## Example
 
 ```yaml

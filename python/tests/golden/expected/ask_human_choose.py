@@ -49,16 +49,11 @@ class FlowOutput(TypedDict, total=False):
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
-def pick_exit(reply: str, exits: list[str], otherwise: str) -> str:
-    """Match an AI reply to one of a Decision's exit names (ignoring case)."""
-    text = reply.strip().strip(".!\"'`*").lower()
-    for name in exits:
-        if text == name.lower():
-            return name
-    for name in exits:
-        if name.lower() in text:
-            return name
-    return otherwise
+def pick_option(answer: str, options: list[str]) -> str | None:
+    """The option a person picked: the one their answer names exactly (ignoring case and
+    spaces), or None."""
+    said = " ".join(answer.split()).lower()
+    return next((o for o in options if " ".join(o.split()).lower() == said), None)
 
 
 def ask_in_terminal(request: dict[str, Any]) -> dict[str, Any]:
@@ -83,9 +78,11 @@ def ask_in_terminal(request: dict[str, Any]) -> dict[str, Any]:
         options = request.get("options", [])
         for number, option in enumerate(options, start=1):
             print(f"  {number}. {option}")
-        picked = input("choose a number> ").strip()
-        index = int(picked) - 1 if picked.isdigit() else 0
-        return {"action": "approve", "value": options[index if 0 <= index < len(options) else 0]}
+        while True:
+            picked = input("choose a number> ").strip()
+            if picked.isdigit() and 1 <= int(picked) <= len(options):
+                return {"action": "approve", "value": options[int(picked) - 1]}
+            print(f"Type a number from 1 to {len(options)}.")
     approved = input("approve? [y/n]> ").strip().lower().startswith("y")
     answer: dict[str, Any] = {"action": "approve" if approved else "reject", "comment": input("comment> ")}
     if kind == "edit" and approved:
@@ -105,21 +102,27 @@ def tone(data: FlowData) -> dict[str, Any]:
     """Ask a Human · tone
 
     Pauses the run (a LangGraph interrupt) until a person picks an option; saves it as
-    `tone_choice`.
+    `tone_choice`. An answer that isn't one of the options is asked again.
     """
-    answer = interrupt(
-        {
-            "step": "tone",
-            "kind": "choose",
-            "question": "Which tone should the reply have?",
-            "show": {"draft": data.get("draft")},
-            "options": TONE_OPTIONS,
-        }
-    )
-    if not isinstance(answer, dict):  # resumed with a bare value
-        answer = {"value": answer}
-    choice = pick_exit(str(answer.get("value") or ""), TONE_OPTIONS, TONE_OPTIONS[0])
-    return {"tone_choice": choice, "tone_choice_comment": str(answer.get("comment") or "")}
+    problem = ""  # says why when an answer has to be given again
+    while True:
+        answer = interrupt(
+            {
+                "step": "tone",
+                "kind": "choose",
+                "question": problem + "Which tone should the reply have?",
+                "show": {"draft": data.get("draft")},
+                "options": TONE_OPTIONS,
+            }
+        )
+        if not isinstance(answer, dict):  # resumed with a bare value
+            answer = {"value": answer}
+        value = str(answer.get("value") or "")
+        choice = pick_option(value, TONE_OPTIONS)
+        if choice is not None:
+            return {"tone_choice": choice, "tone_choice_comment": str(answer.get("comment") or "")}
+        # Not one of the options: ask again (LangGraph matches answers to asks in order).
+        problem = f"“{' '.join(value.split())[:60]}” isn't one of the options. "
 
 
 def route_tone(data: FlowData) -> str:
