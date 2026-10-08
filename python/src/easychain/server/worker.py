@@ -379,7 +379,8 @@ class Worker:
             #   with this job: send it now instead of asking again;
             # - sent with this job, but LangGraph keeps listing a For Each item until its
             #   siblings are answered too (it has stored the answer): don't ask again.
-            # A question asked again later has a new id, so it is never answered by an old reply.
+            # An agent's next approval has a new id. An Ask a Human "choose" that asks again keeps
+            # its id, but its answer was sent, so it falls to the last case and is asked anew.
             sent = (job.get("payload") or {}).get("resume") or {}
             answered = await db.inbox_answers(run["id"], [i["id"] for i in waiting])
             unanswered = [i for i in waiting if i["id"] not in answered]

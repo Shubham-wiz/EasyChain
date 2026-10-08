@@ -22,8 +22,9 @@ _Updated 2026-10-09 so work can carry on from another machine or session._
    its annotations name the failing tests; they are readable without admin rights:
    `curl -s https://api.github.com/repos/Shubham-wiz/EasyChain/check-runs/<job id>/annotations`
    (job ids: `…/actions/runs/<run id>/jobs`).
-3. **Then** the rest of [review.md](review.md) (everything under "Other findings"), most serious
-   first, each fix with a test.
+3. **The review is worked through** ([review.md](review.md)): everything serious is fixed. What's
+   left there is listed under "Open" in each section; none of it blocks Phase 4. Before a
+   release, run the agent templates' Test Sets with a real model (`--real-model`).
 4. **Then Phase 4** ([ROADMAP.md](../ROADMAP.md#phase-4-autopilot-and-teams)); its questions are
    answered (decisions 4.1–4.3).
 
@@ -35,7 +36,7 @@ _Updated 2026-10-09 so work can carry on from another machine or session._
 | 1. Visual MVP | Canvas, step library, inspector, run panel, chat, export, templates | Done | [phase-0-1.md](../phases/phase-0-1.md) |
 | 2. Real runtime | Flow Data, loops, parallel joins, For Each, Sub-flows, Jump, Ask a Human, Inbox, Save Points, time travel, workers, triggers, notifications | Done | [phase-2.md](../phases/phase-2.md) |
 | 3. Agents and knowledge | Agent step + add-ons, MCP, OpenAPI import, structured output, Knowledge Base, memory, all providers | Done | [phase-3.md](../phases/phase-3.md) |
-| Review fixes | Windows support; data-loss and security findings of the 2026-10-04 review | **In progress** | [review.md](review.md) |
+| Review fixes | Windows support; the findings of the 2026-10-04 review | Done (small items left in review.md) | [review.md](review.md) |
 | 4. Autopilot and teams | Deep Agents, Helpers, Skills, sandboxes, multi-agent patterns, describe-it copilot | Next (questions answered: decisions 4.1–4.3) | plan in [ROADMAP.md](../ROADMAP.md#phase-4-autopilot-and-teams) |
 | 5. Platform | Test Sets and Checks, Test Runs, CI gate, dashboards, model gateway, Publish, environments, roles, SSO | Not started | |
 | 6. Ecosystem | LangGraph.js export, custom module registry, import, collaboration, prompt optimisation, Helm | Not started | |

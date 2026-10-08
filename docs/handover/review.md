@@ -48,29 +48,28 @@ All done; CI runs the Python suite, the CLI, a worker and the web checks on Wind
 
 Done:
 
-- Python keywords as Flow Data or reply field names (`from`, `class`) are a clear error; Code
-  tools reading keys like `order-id` no longer produce invalid code.
-- A docstring ending in `"` is escaped.
-- Every name the helper code defines or imports is reserved (`Names.reserved()`), plus the
-  names steps import (`interrupt`, `Command`, `Send`…).
-- A custom update rule may start with blank lines; top-level code other than imports and
-  `combine` is refused (it would run when the flow loads).
-- Safety net: `compile_flow` compiles its own output; anything Python can't read becomes a
-  check error before the run, not a crash in it.
+- Names are one-line labels; Python keywords as field names are a clear error; Code tools
+  reading keys like `order-id` produce valid code; docstrings ending in `"` are escaped; every
+  helper name is reserved; update rules may start with blank lines and can't run code when the
+  flow loads; `compile_flow` compiles its own output and reports anything Python can't read.
+- URL values are fully encoded (`/` included) and can't be `.`, `..` or empty, so a value can't
+  change the address called.
+- AI Decision exits and Ask a Human options match exactly (whole words, longest first); an
+  answer that isn't an option is asked again (a new Inbox item).
+- `{secret:NAME}` can't go into text sent to the AI (Instructions, an Agent's role and rules,
+  Decision guidance): a check error. Before, an Agent's prompt got the real value.
+- Agent tools keep their own retries and time limit (`with_run_policy`); cache and "wait for all
+  branches" on a tool get a warning.
+- Sub-flows containing async steps (MCP, time limits) are awaited everywhere; shared-data
+  sub-flows work as agent tools, For Each bodies and with a time limit.
+- For Each "at most this many at once" limits that step only, inside sub-flows too.
+- Saving keeps spaces at the end of lines in multi-line text.
 
 Open:
 
-- A sub-flow containing MCP steps is invoked synchronously (`TypeError`).
-- A shared-data sub-flow as an agent tool or For Each body generates broken code.
-- Run policy (retries, timeout, cache) is dropped for steps used as agent tools; the docs say it
-  applies.
-- For Each `concurrency` is ignored inside sub-flows and becomes run-wide on the root.
-- AI Decision and Ask a Human "choose" fall back to substring matching ("None of the above" picks
-  `No`; "no" picks `Refund` from `[Refund, No refund]`).
-- `fill_url` keeps `/` in path values, so `../admin` reaches another endpoint with the same
-  auth headers (matters when an agent picks the arguments).
-- `{secret:NAME}` in Instructions text goes to the model literally; docs say it works.
-- Saving strips trailing spaces from every multi-line string.
+- `max_parallel` set on a sub-flow is ignored (only the root flow's applies).
+- With `retry_wait` left at its default (1 s), LangGraph waits its own 0.5 s before a retry.
+- The Decision expression sandbox has one known gap: memory exhaustion (`"a" * 999999999999`).
 
 ### Runtime, server and workers
 

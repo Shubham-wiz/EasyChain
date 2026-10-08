@@ -48,7 +48,7 @@ whenever something takes more than a few minutes to understand.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| A For Each item's Inbox answer was asked again | LangGraph keeps listing a parallel item's interrupt (with the answer stored) until its siblings are answered | The worker doesn't reopen questions that already have an answer, and sends answers given while the run was busy (`worker._finish`). Questions asked again later get new interrupt ids. |
+| A For Each item's Inbox answer was asked again | LangGraph keeps listing a parallel item's interrupt (with the answer stored) until its siblings are answered | The worker doesn't reopen questions that already have an answer, and sends answers given while the run was busy (`worker._finish`). An agent's next approval gets a new interrupt id; an Ask a Human "choose" that asks again (the answer wasn't an option) keeps its id, and the worker opens a new Inbox item for it because its answer was already sent. |
 | `greenlet` missing at runtime | SQLAlchemy async needs the extra | Depend on `sqlalchemy[asyncio]` |
 | Token events vanished before a slow tail read them | Old tokens were deleted eagerly | Drop old tokens lazily (`drop_old_tokens`, run from the schedule loop) |
 | "Interrupt" double texting was slow to cancel | Cancel waited for the next heartbeat | An in-process `running` stop map on the EventBus, and a heartbeat interval of `min(lease/3, 2s)` |
