@@ -11,8 +11,24 @@
 //   }
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { EasyChainClient } from "./index.js";
+import { EasyChainError, type EasyChainClient } from "./index.js";
 import type { Answer, RunError, RunEvent, RunStatus, Waiting } from "./types.js";
+
+/** How long to wait (ms) before each try at picking up a run whose event stream dropped. */
+export const RECONNECT_DELAYS = [500, 1000, 2000, 4000];
+
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) return resolve();
+    const done = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal.addEventListener("abort", done);
+  });
+}
 
 export interface UseRunOptions {
   flowId: string;
@@ -50,10 +66,13 @@ export function useEasyChainRun(client: EasyChainClient, options: UseRunOptions)
   const [waiting, setWaiting] = useState<Waiting[]>([]);
   const abort = useRef<AbortController | null>(null);
   const runRef = useRef<string | null>(null);
+  // The last event seen, to pick the run up again from there if the stream drops.
+  const lastId = useRef(0);
 
   useEffect(() => () => abort.current?.abort(), []);
 
   const handle = useCallback((event: RunEvent) => {
+    if (event.event_id != null) lastId.current = Math.max(lastId.current, event.event_id);
     if (event.type !== "token") setEvents((list) => [...list, event]);
     if (event.path?.length) return; // steps inside Sub-flows
     switch (event.type) {
@@ -92,25 +111,56 @@ export function useEasyChainRun(client: EasyChainClient, options: UseRunOptions)
     }
   }, []);
 
+  // Follow a stream until this part of the run ends. If it ends or breaks before that, pick
+  // the run up again from the last event seen (a few times, waiting longer each time), then
+  // report that the connection was lost.
   const follow = useCallback(
     async (stream: (signal: AbortSignal) => AsyncGenerator<RunEvent>) => {
       abort.current?.abort();
       const controller = new AbortController();
       abort.current = controller;
-      try {
-        for await (const event of stream(controller.signal)) handle(event);
-      } catch (err) {
-        if ((err as Error).name === "AbortError") return;
-        setStatus("error");
-        setError({ kind: "error", message: err instanceof Error ? err.message : String(err) });
+      let open = stream;
+      let attempt = 0;
+      for (;;) {
+        const seen = lastId.current;
+        let ended = false;
+        let failure: unknown = null;
+        try {
+          for await (const event of open(controller.signal)) {
+            handle(event);
+            if (event.type === "run_finished") ended = true;
+          }
+        } catch (err) {
+          failure = err;
+        }
+        if (abort.current !== controller || controller.signal.aborted || ended) return;
+        const id = runRef.current;
+        if (failure instanceof EasyChainError || (failure != null && !id)) {
+          setStatus("error");
+          setError({ kind: failure instanceof EasyChainError && failure.kind ? failure.kind : "error", message: failure instanceof Error ? failure.message : String(failure) });
+          return;
+        }
+        if (lastId.current > seen) attempt = 0;
+        if (!id || attempt >= RECONNECT_DELAYS.length) {
+          setStatus("error");
+          setError({
+            kind: "disconnected",
+            message: "Lost the connection to the run.",
+            hint: "It may still be going on the server; follow it again with client.follow(runId).",
+          });
+          return;
+        }
+        await sleep(RECONNECT_DELAYS[attempt++], controller.signal);
+        open = (signal) => client.follow(id, lastId.current, signal);
       }
     },
-    [handle],
+    [client, handle],
   );
 
   const reset = useCallback(() => {
     abort.current?.abort();
     runRef.current = null;
+    lastId.current = 0;
     setStatus("idle");
     setRunId(null);
     setEvents([]);

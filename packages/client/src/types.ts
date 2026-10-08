@@ -2,14 +2,25 @@
 
 export type RunStatus = "queued" | "running" | "paused" | "ok" | "error" | "cancelled";
 
+/** One tool call an Agent wants to make, waiting for a person's approval. */
+export interface ToolAction {
+  tool: string;
+  args: Record<string, unknown>;
+}
+
 export interface AskRequest {
   step?: string;
-  kind: "approve" | "edit" | "answer" | "choose";
+  /** "approve_tool": an Agent asks before using a tool (answer approve, or reject with a comment). */
+  kind: "approve" | "edit" | "answer" | "choose" | "approve_tool";
   question: string;
   show?: Record<string, unknown>;
   field?: string;
   value?: unknown;
   options?: string[];
+  /** approve_tool: the tool calls the agent wants to make. */
+  actions?: ToolAction[];
+  /** approve_tool: the answers allowed, e.g. ["approve", "reject"]. */
+  allowed?: string[];
 }
 
 /** An Ask a Human step waiting for an answer. */
@@ -55,6 +66,8 @@ export interface RunEvent {
   error?: RunError;
   reason?: "ask_human" | "breakpoint";
   interrupts?: Waiting[];
+  /** paused: the steps that run next. */
+  next?: string[];
   reply?: string | null;
   thread_id?: string;
   [key: string]: unknown;

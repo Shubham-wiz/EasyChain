@@ -24,13 +24,18 @@ for await (const _ of easy.resume(run_id, { [final.interrupts![0].id]: { action:
 | `run(options)` | Start a run; yields its events until it finishes, fails, stops or waits for a person. |
 | `start(options)` | Start a run in the background; returns `{ run_id, thread_id }`. |
 | `follow(runId, after?)` | Events of a run from an `event_id` on (safe to call again after a disconnect). |
-| `wait(runId)` | Follow a run to the end of its current part; returns the final event. |
-| `resume(runId, answers)` | Answer waiting Ask a Human steps, `{ waitingId: { action, value, comment } }`. |
+| `wait(runId)` | Follow a run to the end of its current part; returns the final event. For a run that was answered or continued, that is the end of its newest part. |
+| `resume(runId, answers)` | Answer waiting Ask a Human steps and tool approvals, `{ waitingId: { action, value, comment } }`. |
 | `continue(runId)` | Carry on after a breakpoint, an error or a stop. |
 | `fork(runId, checkpointId, update?)` | Re-run from a Save Point, optionally changing Flow Data there. |
 | `cancel(runId)` | Stop a run (its Save Points are kept). |
 | `inbox()`, `answer(inboxId, answer)` | Everything waiting for a person, and answering it. |
 | `socket(runId)` | A WebSocket with every event as JSON; send `{"type": "cancel"}` to stop the run. |
+
+Leaving a `for await` loop early (`break`) closes the connection; the run carries on on the
+server, and `follow(runId, after)` picks it up again. A waiting request has `kind` `approve`,
+`edit`, `answer` or `choose` (Ask a Human), or `approve_tool`: an Agent asks before using a tool,
+and `actions` lists the calls it wants to make (`{ tool, args }`).
 
 ## React
 
@@ -59,3 +64,6 @@ export function Reply({ email }: { email: string }) {
 
 The hook returns `status`, `text` and `tokens` (streamed model output), `steps` (each step's state),
 `output`, `error`, `waiting` (Ask a Human steps) and `start`, `answer`, `cancel` and `reset`.
+If the event stream drops mid-run, the hook picks the run up again from the last event it saw
+(four tries, waiting 0.5 to 4 seconds); after that `status` is `"error"` with `error.kind`
+`"disconnected"`, and the run may still be going on the server.

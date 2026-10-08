@@ -71,9 +71,19 @@ export class EasyChainClient {
   }
 
   private async *events(path: string, init: RequestInit, signal?: AbortSignal): AsyncGenerator<RunEvent> {
-    const res = await this.request(path, { ...init, signal, headers: { Accept: "text/event-stream" } });
-    if (!res.body) return;
-    for await (const data of readSse(res.body)) yield JSON.parse(data) as RunEvent;
+    // Our own controller, so that stopping early (break out of `for await`) closes the request.
+    const controller = new AbortController();
+    const stop = () => controller.abort(signal?.reason);
+    if (signal?.aborted) stop();
+    else signal?.addEventListener("abort", stop, { once: true });
+    try {
+      const res = await this.request(path, { ...init, signal: controller.signal, headers: { Accept: "text/event-stream" } });
+      if (!res.body) return;
+      for await (const data of readSse(res.body)) yield JSON.parse(data) as RunEvent;
+    } finally {
+      signal?.removeEventListener("abort", stop);
+      controller.abort();
+    }
   }
 
   /** Start a run and follow it until it finishes, fails, is stopped or waits for someone. */
@@ -91,23 +101,52 @@ export class EasyChainClient {
     return this.events(`/api/runs/${encodeURIComponent(runId)}/events?after=${after}`, { method: "GET" }, signal);
   }
 
-  /** Follow a run to the end of its current part and return the final event. */
+  /**
+   * Follow a run to the end of its current part and return the final event: run_finished
+   * with status "ok", "error" or "cancelled", or "paused" when it waits for a person. For a run
+   * that was resumed or continued, that is the end of the newest part, not an earlier pause.
+   */
   async wait(runId: string, signal?: AbortSignal): Promise<RunEvent> {
-    let last: RunEvent | undefined;
-    let after = 0;
+    let seen = 0;
     for (;;) {
-      for await (const event of this.follow(runId, after, signal)) {
+      const run = await this.getRun(runId, signal);
+      const events = run.events ?? [];
+      let i = events.length - 1;
+      while (i >= 0 && events[i].type !== "run_finished") i -= 1;
+      const finished = i >= 0 ? events[i] : undefined;
+      const going = run.status === "queued" || run.status === "running";
+      // Nothing happened since the last part ended: that is where the run is.
+      if (!going && finished && i === events.length - 1) return finished;
+      // Follow on from the last part's end (or from where a dropped stream got to): the
+      // server stops at the next run_finished.
+      let last: RunEvent | undefined;
+      for await (const event of this.follow(runId, Math.max(finished?.event_id ?? 0, seen), signal)) {
         last = event;
-        after = event.event_id ?? after;
+        seen = Math.max(seen, event.event_id ?? 0);
       }
       if (last?.type === "run_finished") return last;
-      const run = await this.getRun(runId);
-      if (!["queued", "running"].includes(run.status)) return last ?? ({ type: "run_finished", run_id: runId, ts: Date.now(), status: run.status } as RunEvent);
+      // The run had already stopped but never said so: report what the server knows.
+      if (!going) {
+        const pending = run.pending ?? undefined;
+        return {
+          type: "run_finished",
+          run_id: runId,
+          ts: Date.now(),
+          status: run.status,
+          output: run.output ?? undefined,
+          error: run.error ?? undefined,
+          reason: pending?.reason,
+          interrupts: pending?.interrupts,
+          next: pending?.next,
+        } as RunEvent;
+      }
+      // Still going and the stream dropped: look again.
     }
   }
 
-  getRun(runId: string): Promise<RunInfo & { events: RunEvent[] }> {
-    return this.json(`/api/runs/${encodeURIComponent(runId)}`);
+  /** A run's details, with its events so far (without streamed tokens). */
+  getRun(runId: string, signal?: AbortSignal): Promise<RunInfo & { events: RunEvent[] }> {
+    return this.json(`/api/runs/${encodeURIComponent(runId)}`, { signal });
   }
 
   listRuns(filter: { flowId?: string; threadId?: string; status?: string } = {}): Promise<RunInfo[]> {
