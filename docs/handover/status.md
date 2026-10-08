@@ -13,19 +13,13 @@ The Phase 4 questions are answered (decisions 4.1–4.3), so Phase 4 starts afte
 
 ## Pick up here
 
-_Written 2026-10-04 so work can carry on from another machine or session._
+_Updated 2026-10-09 so work can carry on from another machine or session._
 
 1. **Set up:** clone, `pnpm run setup`, then `pnpm lint` and `pnpm test` (Windows, macOS or
    Linux). Read [AGENTS.md](../../AGENTS.md), this page, [review.md](review.md) and
    [decisions.md](decisions.md).
-2. **CI.** Check the latest run on GitHub (Actions). Two jobs were red and are fixed in the
-   last commit; if either is still red, its annotations name the failing tests:
-   - **End-to-end (Playwright)**: the accessibility checks measured colours during the
-     theme-switch animation; they now wait for animations that end (spinners never do).
-     All 31 journeys pass locally on Windows too.
-   - **Windows**: `initdb` can't create a throwaway Postgres on GitHub's Windows runner, so the
-     job starts the runner's own Postgres service and sets `EASYCHAIN_TEST_POSTGRES_URL`.
-   Annotations are readable without admin rights:
+2. **CI** is green on Linux and Windows (all five jobs, from commit `ba6f12c`). If a run fails,
+   its annotations name the failing tests; they are readable without admin rights:
    `curl -s https://api.github.com/repos/Shubham-wiz/EasyChain/check-runs/<job id>/annotations`
    (job ids: `…/actions/runs/<run id>/jobs`).
 3. **Then** the rest of [review.md](review.md) (everything under "Other findings"), most serious
