@@ -6,7 +6,7 @@ import { copySteps, pasteSteps, type Clipboard } from "../lib/spec";
 import type { FlowSpec } from "../lib/types";
 import { useCheck } from "../state/check";
 import { redo, undo, useFlow } from "../state/flow";
-import { attachRun, startRun, useRun } from "../state/run";
+import { attachRun, tryRun, useRun } from "../state/run";
 import { useUi } from "../state/ui";
 import { Canvas } from "./canvas/Canvas";
 import { ExportDialog } from "./dialogs/ExportDialog";
@@ -180,17 +180,20 @@ export function Editor({ flowId, tryIt, onHome }: { flowId: string; tryIt: boole
   useEffect(() => {
     let cancelled = false;
     setError(null);
+    // Stops following the last flow's run (or replay), so it can't show up in this one.
     useRun.getState().newChat();
     useCheck.getState().set({ issues: [], analysis: null, compiled: null });
     useUi.getState().select([]);
     useUi.getState().setRightTab(tryIt ? "run" : "inspect");
-    useUi.getState().loadBreakpoints(flowId);
+    useUi.getState().loadFlowPrefs(flowId);
     api
       .flow(flowId)
       .then(({ spec }) => {
         if (cancelled) return;
         useFlow.getState().load(flowId, spec);
-        if (tryIt) void tryRun(spec);
+        // Once the try-run starts, drop ?try=1: a reload or Back then shows that run
+        // (it survives reloads) instead of starting, and paying for, another one.
+        if (tryIt) void tryRun(flowId, spec, () => window.history.replaceState(window.history.state, "", `#/flows/${flowId}`));
         else void showActiveRun(flowId);
       })
       .catch((err) => !cancelled && setError(err instanceof Error ? err.message : String(err)));
@@ -263,25 +266,4 @@ async function showActiveRun(flowId: string) {
   } catch {
     /* nothing to show */
   }
-}
-
-/** "Try it" from the gallery: run on the template's sample data (stand-in AI if a key is missing). */
-async function tryRun(spec: FlowSpec) {
-  const input = spec.steps.find((s) => s.type === "input");
-  const providers = await api.catalog().then((c) => c.providers).catch(() => []);
-  const missingKey = spec.steps.some((s) => {
-    const model = s.settings?.model as string | undefined;
-    if (!model || (s.type === "decision" && s.settings.mode !== "ai")) return false;
-    const p = providers.find((x) => x.id === model.split(":")[0]);
-    return p ? !p.key_set : false;
-  });
-  if (missingKey) useUi.getState().setStandIn(true);
-  if (input?.settings.mode === "chat") {
-    await startRun({}, { chatMessage: "Hello! What can you help me with?" });
-    return;
-  }
-  const inputs = Object.fromEntries(
-    ((input?.settings.fields ?? []) as { name: string; example: unknown }[]).filter((f) => f.example != null).map((f) => [f.name, f.example]),
-  );
-  await startRun(inputs);
 }

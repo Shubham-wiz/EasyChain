@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { api, ApiError } from "../lib/api";
-import type { AskRequest, Issue, RunError, RunEvent, RunStatus, Usage, Waiting } from "../lib/types";
+import type { AskRequest, FlowSpec, Issue, RunError, RunEvent, RunStatus, Usage, Waiting } from "../lib/types";
 import { useCheck } from "./check";
 import { useFlow } from "./flow";
 import { useUi } from "./ui";
@@ -88,9 +88,12 @@ interface RunState {
   lastEventId: number;
   /** The inputs of the last form run, so the form and Retry can reuse them. */
   lastInputs: Record<string, unknown>;
+  /** The stream (or replay) the panel follows; a stream that no longer owns it changes nothing. */
   controller: AbortController | null;
+  /** Clear the run from the panel and stop following it. */
   reset: () => void;
   handle: (event: RunEvent) => void;
+  /** Start a new conversation (also used when another flow opens): stops following the run. */
   newChat: () => void;
 }
 
@@ -158,8 +161,16 @@ export const useRun = create<RunState>()((set, get) => ({
   chat: [],
   lastInputs: {},
   controller: null,
-  reset: () => set({ ...empty }),
-  newChat: () => set({ ...empty, threadId: null, chat: [], lastInputs: {} }),
+  // Both drop the run on show and stop following it (its stream or a replay), so nothing
+  // from it can turn up afterwards.
+  reset: () => {
+    get().controller?.abort();
+    set({ ...empty, controller: null });
+  },
+  newChat: () => {
+    get().controller?.abort();
+    set({ ...empty, threadId: null, chat: [], lastInputs: {}, controller: null });
+  },
   handle: (event) => {
     const state = get();
     const events = event.type === "token" ? state.events : [...state.events, event];
@@ -351,33 +362,102 @@ function newThreadId() {
   return typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : String(Date.now());
 }
 
-async function follow(stream: (signal: AbortSignal) => Promise<void>) {
+/** How long to wait before each try at picking up a run whose event stream dropped. */
+export const RECONNECT_DELAYS = [500, 1000, 2000, 4000];
+
+type Stream = (signal: AbortSignal, onEvent: (event: RunEvent) => void) => Promise<void>;
+
+/** Take over the run panel: stop following whatever it followed before (a stream or a replay). */
+function takeOver(): AbortController {
   useRun.getState().controller?.abort();
   const controller = new AbortController();
   useRun.setState({ controller });
+  return controller;
+}
+
+function owns(controller: AbortController): boolean {
+  return useRun.getState().controller === controller;
+}
+
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) return resolve();
+    const done = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal.addEventListener("abort", done);
+  });
+}
+
+function lostConnection(runId: string | null): RunError {
+  return runId
+    ? {
+        kind: "disconnected",
+        message: "Lost the connection to this run.",
+        hint: "It may still be going on the server. Reconnect, or open it again from Recent runs.",
+        fixes: [{ kind: "reconnect", label: "Reconnect", params: { run_id: runId } }],
+      }
+    : {
+        kind: "disconnected",
+        message: "Lost the connection before the run started.",
+        hint: "Check that the Easy Chain server is running, then run again.",
+        fixes: [],
+      };
+}
+
+/**
+ * Follow a stream of run events into the panel until this part of the run ends. When the
+ * stream ends or breaks before the run does, it picks the run up again from the last event
+ * it saw (a few times, waiting longer each time), then says the connection was lost.
+ * A stream that no longer owns the panel (another run, a replay, another flow) changes nothing.
+ */
+async function follow(open: Stream, controller = takeOver()) {
   useUi.getState().setRightTab("run");
-  try {
-    await stream(controller.signal);
-    const status = useRun.getState().status;
-    if (status === "running" || status === "queued") {
-      useRun.setState({ controller: null });
+  const onEvent = (event: RunEvent) => {
+    if (owns(controller) && !controller.signal.aborted) useRun.getState().handle(event);
+  };
+  let stream = open;
+  let attempt = 0;
+  for (;;) {
+    const seen = useRun.getState().lastEventId;
+    let failure: unknown = null;
+    try {
+      await stream(controller.signal, onEvent);
+    } catch (err) {
+      failure = err;
     }
-  } catch (err) {
-    if ((err as Error).name === "AbortError") {
+    if (!owns(controller)) return;
+    const { status, runId, lastEventId } = useRun.getState();
+    const going = status === "running" || status === "queued";
+    if (controller.signal.aborted) {
+      // Stop couldn't reach the server, so the stream was dropped.
+      useRun.setState(going ? { controller: null, status: "error", error: lostConnection(runId) } : { controller: null });
+      return;
+    }
+    if (failure instanceof ApiError || (failure != null && !runId)) {
+      const message = failure instanceof Error ? failure.message : String(failure);
+      useRun.setState({
+        status: "error",
+        controller: null,
+        error: { kind: failure instanceof ApiError && failure.status === 409 ? "busy" : "error", message, fixes: [] },
+      });
+      return;
+    }
+    if (!going) {
       useRun.setState({ controller: null });
       return;
     }
-    const message = err instanceof ApiError || err instanceof Error ? err.message : String(err);
-    useRun.setState({
-      status: "error",
-      controller: null,
-      error: { kind: err instanceof ApiError && err.status === 409 ? "busy" : "error", message, fixes: [] },
-    });
+    if (lastEventId > seen) attempt = 0;
+    if (!runId || attempt >= RECONNECT_DELAYS.length) {
+      useRun.setState({ status: "error", controller: null, error: lostConnection(runId) });
+      return;
+    }
+    await sleep(RECONNECT_DELAYS[attempt++], controller.signal);
+    stream = (signal, onEvent) => api.followStream(runId, useRun.getState().lastEventId, onEvent, signal);
   }
-}
-
-function handler(event: RunEvent) {
-  useRun.getState().handle(event);
 }
 
 /** Start a run of the flow open in the editor (unsaved edits included). */
@@ -400,7 +480,7 @@ export async function startRun(inputs: Record<string, unknown>, opts: { chatMess
     useRun.setState({ ...empty, lastInputs: inputs });
   }
   useRun.setState({ status: "queued" });
-  await follow((signal) =>
+  await follow((signal, onEvent) =>
     api.runStream(
       {
         flow_id: flowId ?? undefined,
@@ -411,10 +491,40 @@ export async function startRun(inputs: Record<string, unknown>, opts: { chatMess
         pause_before: breakpoints.before,
         pause_after: breakpoints.after,
       },
-      handler,
+      onEvent,
       signal,
     ),
   );
+}
+
+/**
+ * "Try it" from the gallery: run the flow on its template's sample data. Without a key for
+ * its AI Model this flow (only) uses the stand-in AI. `onStart` is called as the run starts.
+ */
+export async function tryRun(flowId: string, spec: FlowSpec, onStart?: () => void) {
+  const input = spec.steps.find((s) => s.type === "input");
+  const providers = await api
+    .catalog()
+    .then((c) => c.providers)
+    .catch(() => []);
+  // Another flow opened while the catalog loaded: this try is over.
+  if (useFlow.getState().flowId !== flowId) return;
+  const missingKey = spec.steps.some((s) => {
+    const model = s.settings?.model as string | undefined;
+    if (!model || (s.type === "decision" && s.settings.mode !== "ai")) return false;
+    const p = providers.find((x) => x.id === model.split(":")[0]);
+    return p ? !p.key_set : false;
+  });
+  if (missingKey) useUi.getState().setFlowStandIn(flowId, true);
+  onStart?.();
+  if (input?.settings.mode === "chat") {
+    await startRun({}, { chatMessage: "Hello! What can you help me with?" });
+    return;
+  }
+  const inputs = Object.fromEntries(
+    ((input?.settings.fields ?? []) as { name: string; example: unknown }[]).filter((f) => f.example != null).map((f) => [f.name, f.example]),
+  );
+  await startRun(inputs);
 }
 
 /** Stop the run: it ends where it is (its Save Points stay, so it can be continued). */
@@ -437,7 +547,7 @@ export async function answerWaiting(answers: Record<string, unknown>) {
   const { runId } = useRun.getState();
   if (!runId) return;
   useRun.setState({ status: "queued", waiting: [], pauseReason: null });
-  await follow((signal) => api.resumeStream(runId, answers, handler, signal));
+  await follow((signal, onEvent) => api.resumeStream(runId, answers, onEvent, signal));
 }
 
 /** Carry on after a breakpoint, an error or a stop; `step` runs only the next step, then pauses. */
@@ -445,7 +555,7 @@ export async function continueRun(step = false) {
   const { runId } = useRun.getState();
   if (!runId) return;
   useRun.setState({ status: "queued", waiting: [], pauseReason: null, error: null });
-  await follow((signal) => api.continueStream(runId, handler, signal, step));
+  await follow((signal, onEvent) => api.continueStream(runId, onEvent, signal, step));
 }
 
 /** Re-run from a Save Point of the current run, with changed Flow Data. */
@@ -454,11 +564,11 @@ export async function forkFrom(checkpointId: string, update: Record<string, unkn
   if (!runId) return;
   const breakpoints = useUi.getState().breakpoints;
   useRun.setState({ ...empty, threadId, chat, status: "queued" });
-  await follow((signal) =>
+  await follow((signal, onEvent) =>
     api.forkStream(
       runId,
       { checkpoint_id: checkpointId, update, pause_before: breakpoints.before, pause_after: breakpoints.after },
-      handler,
+      onEvent,
       signal,
     ),
   );
@@ -466,7 +576,16 @@ export async function forkFrom(checkpointId: string, update: Record<string, unkn
 
 /** Show a run that is already going or waiting (after a reload, or one started by a trigger). */
 export async function attachRun(runId: string) {
-  const detail = await api.run(runId);
+  const controller = takeOver();
+  let detail: Awaited<ReturnType<typeof api.run>>;
+  try {
+    detail = await api.run(runId);
+  } catch (err) {
+    if (owns(controller)) useRun.setState({ controller: null });
+    throw err;
+  }
+  // Something else (another flow, run or replay) took the panel while the run loaded.
+  if (!owns(controller) || controller.signal.aborted) return;
   useRun.setState({ ...empty, lastInputs: detail.inputs ?? {} });
   for (const event of detail.events) useRun.getState().handle(event);
   if (detail.status === "paused" && detail.pending) {
@@ -474,21 +593,25 @@ export async function attachRun(runId: string) {
   }
   if (detail.status === "running" || detail.status === "queued") {
     useRun.setState({ status: detail.status });
-    await follow((signal) => api.followStream(runId, useRun.getState().lastEventId, handler, signal));
+    await follow((signal, onEvent) => api.followStream(runId, useRun.getState().lastEventId, onEvent, signal), controller);
+  } else {
+    useRun.setState({ controller: null });
   }
 }
 
-/** Play a recorded run back on the canvas (Run Replay). */
+/** Play a recorded run back on the canvas (Run Replay). Starting another replay or run stops it. */
 export async function replayRun(events: RunEvent[], speed = 1) {
+  const controller = takeOver();
   useRun.setState({ ...empty, replaying: true });
   useUi.getState().setRightTab("run");
+  const playing = () => owns(controller) && !controller.signal.aborted && useRun.getState().replaying;
   let last = events[0]?.ts ?? 0;
   for (const event of events) {
     const wait = Math.min(Math.max((event.ts - last) / speed, 120), 900);
     last = event.ts;
-    await new Promise((resolve) => setTimeout(resolve, event.type === "run_started" || event.type === "run_queued" ? 0 : wait));
-    if (!useRun.getState().replaying) return;
+    await sleep(event.type === "run_started" || event.type === "run_queued" ? 0 : wait, controller.signal);
+    if (!playing()) break;
     useRun.getState().handle(event);
   }
-  useRun.setState({ replaying: false });
+  if (owns(controller)) useRun.setState({ replaying: false, controller: null });
 }

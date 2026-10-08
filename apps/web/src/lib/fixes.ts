@@ -3,6 +3,7 @@
 import { stepInfo } from "../state/catalog";
 import { useCheck } from "../state/check";
 import { useFlow } from "../state/flow";
+import { attachRun } from "../state/run";
 import { useUi } from "../state/ui";
 import { addStep, createStep, getStep, insertBefore, nextFreePosition, renameStepId, renameVariable, updateSettings } from "./spec";
 import type { Fix } from "./types";
@@ -24,6 +25,10 @@ export function applyFix(fix: Fix, stepId?: string, rerun?: () => void) {
       return;
     case "retry":
       rerun?.();
+      return;
+    case "reconnect":
+      // The run's event stream dropped: show the run again from the server and follow it.
+      void attachRun(String(p.run_id)).catch(() => undefined);
       return;
     case "focus_setting":
       if (stepId) ui.focus(stepId, String(p.key));

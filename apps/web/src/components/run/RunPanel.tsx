@@ -38,7 +38,7 @@ function ErrorCard({ error, retry }: { error: RunError; retry: () => void }) {
   const failedStep = useRun((s) => (s.final?.step ? s.final.step : Object.entries(s.steps).find(([, v]) => v.status === "error")?.[0]));
   const stepName = useFlow((s) => s.spec?.steps.find((x) => x.id === failedStep)?.name);
   const select = useUi((s) => s.select);
-  const canCarryOn = useRun((s) => !!s.runId && s.status === "error" && !!s.final?.checkpoint_id && !["bad_input", "invalid_flow", "busy"].includes(error.kind));
+  const canCarryOn = useRun((s) => !!s.runId && s.status === "error" && !!s.final?.checkpoint_id && !["bad_input", "invalid_flow", "busy", "disconnected"].includes(error.kind));
   const [details, setDetails] = useState(false);
   return (
     <div className="rounded-lg border border-danger/30 bg-danger-soft p-3 text-sm" role="alert" data-testid="run-error">
@@ -518,7 +518,15 @@ function ChatRun() {
   };
   return (
     <div className="flex flex-col gap-2">
-      <div ref={listRef} className="scroll-thin max-h-[42vh] min-h-32 space-y-2 overflow-y-auto rounded-lg border border-border bg-surface-2/40 p-2.5" aria-live="polite" data-testid="chat-log">
+      {/* Not a live region (that reads out every token): RunAnnouncer says when the reply is done. */}
+      <div
+        ref={listRef}
+        className="scroll-thin max-h-[42vh] min-h-32 space-y-2 overflow-y-auto rounded-lg border border-border bg-surface-2/40 p-2.5"
+        role="group"
+        aria-label="Conversation"
+        aria-busy={status === "running"}
+        data-testid="chat-log"
+      >
         {!chat.length && <p className="py-6 text-center text-xs text-faint">Say hello to start the conversation.</p>}
         {chat.map((m, i) => (
           <div key={i} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
@@ -564,6 +572,42 @@ function ChatRun() {
         <Conversations />
       </div>
     </div>
+  );
+}
+
+type RunView = ReturnType<typeof useRun.getState>;
+
+/** What a screen reader hears about the run: each change of status, then the reply. */
+export function announcement(run: Pick<RunView, "status" | "replaying" | "pauseReason" | "chat">, chat: boolean): string {
+  if (run.replaying) return "";
+  switch (run.status) {
+    case "queued":
+      return "Waiting for a worker.";
+    case "running":
+      return "Running.";
+    case "paused":
+      return run.pauseReason === "breakpoint" ? "Paused at a breakpoint." : "Paused: waiting for an answer.";
+    case "ok": {
+      const last = run.chat.at(-1);
+      if (chat) return last?.role === "assistant" && !last.pending ? `Reply: ${last.content}` : "Finished.";
+      return "Finished. The result is below.";
+    }
+    case "error":
+      return "Failed.";
+    case "cancelled":
+      return "Stopped.";
+    default:
+      return "";
+  }
+}
+
+/** A polite live region with the run's status and final reply (the streamed text is not announced). */
+export function RunAnnouncer({ chat }: { chat: boolean }) {
+  const message = useRun((s) => announcement(s, chat));
+  return (
+    <p className="sr-only" role="status" aria-live="polite" data-testid="run-announcer">
+      {message}
+    </p>
   );
 }
 
@@ -660,6 +704,7 @@ export function RunPanel() {
           <RotateCcw size={13} /> Clear the run from the canvas
         </Button>
       )}
+      <RunAnnouncer chat={chat} />
     </div>
   );
 }

@@ -13,7 +13,7 @@ import { CodeView } from "../CodeView";
 import { AddonsField, McpToolsField, ToolsField } from "./AgentFields";
 import { KnowledgeBasePicker, McpServerPicker, McpToolPicker, SecretPicker, SqlEditor } from "./IntegrationFields";
 import { SchemaBuilder } from "./SchemaBuilder";
-import { Button, Input, Select, Switch, Textarea } from "../ui";
+import { Button, DraftInput, Input, Select, Switch, Textarea, useRowKeys } from "../ui";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Value = any;
@@ -169,21 +169,14 @@ export function FieldPicker({ value, onChange, fields, upstream, field, id }: Fi
 }
 
 export function FieldNameInput({ value, onChange, id, field }: FieldProps) {
-  const [draft, setDraft] = useState(String(value ?? ""));
-  useEffect(() => setDraft(String(value ?? "")), [value]);
   return (
-    <Input
+    <DraftInput
       id={id}
       className="font-mono text-[13px]"
-      value={draft}
+      value={String(value ?? "")}
       placeholder={field.example}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => {
-        const clean = toIdent(draft, "result");
-        setDraft(clean);
-        if (clean !== value) onChange(clean);
-      }}
-      onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+      clean={(text) => toIdent(text, "result")}
+      onCommit={onChange}
     />
   );
 }
@@ -220,6 +213,7 @@ function move<T>(list: T[], i: number, by: number): T[] {
 
 export function InputFieldsEditor({ value, onChange, field }: FieldProps) {
   const list: Value[] = value ?? [];
+  const rows = useRowKeys(list.length);
   const set = (i: number, patch: Record<string, unknown>) => onChange(list.map((f, j) => (j === i ? { ...f, ...patch } : f)));
   const taken = new Set(list.map((f) => f.name));
   const nextName = () => {
@@ -230,17 +224,21 @@ export function InputFieldsEditor({ value, onChange, field }: FieldProps) {
   return (
     <div className="space-y-2">
       {list.map((f, i) => (
-        <Row key={i} label={`field ${f.name}`} onRemove={() => onChange(list.filter((_, j) => j !== i))}>
+        <Row
+          key={rows.keys[i]}
+          label={`field ${f.name}`}
+          onRemove={() => {
+            rows.remove(i);
+            onChange(list.filter((_, j) => j !== i));
+          }}
+        >
           <div className="flex gap-1.5">
-            <Input
+            <DraftInput
               aria-label="Field name"
               className="font-mono text-[13px]"
-              defaultValue={f.name}
-              onBlur={(e) => {
-                const clean = toIdent(e.target.value, "field");
-                e.target.value = clean;
-                if (clean !== f.name) set(i, { name: clean });
-              }}
+              value={f.name}
+              clean={(text) => toIdent(text, "field")}
+              onCommit={(name) => set(i, { name })}
             />
             <Select aria-label="Field type" className="w-28" value={f.type} onChange={(e) => set(i, { type: e.target.value })}>
               {(field.options ?? []).map((o) => (
@@ -308,17 +306,19 @@ const KEY_VALUE_LABELS: Record<string, { key: string; value: string; add: string
 export function KeyValueEditor({ value, onChange, field }: FieldProps) {
   const labels = KEY_VALUE_LABELS[field.key] ?? KEY_VALUE_LABELS.headers;
   const entries = Object.entries((value ?? {}) as Record<string, string>);
+  const rows = useRowKeys(entries.length);
   const write = (list: [string, string][]) => onChange(Object.fromEntries(list));
   const clean = (k: string) => (field.key === "headers" ? k : toIdent(k, "field"));
   return (
     <div className="space-y-1.5">
       {entries.map(([k, v], i) => (
-        <div key={`${k}-${i}`} className="flex gap-1.5">
-          <Input
+        <div key={rows.keys[i]} className="flex gap-1.5">
+          <DraftInput
             aria-label={labels.key}
             className={cn("w-2/5", field.key !== "headers" && "font-mono text-[12px]")}
-            defaultValue={k}
-            onBlur={(e) => write(entries.map((p, j) => (j === i ? [clean(e.target.value), p[1]] : p)))}
+            value={k}
+            clean={clean}
+            onCommit={(key) => write(entries.map((p, j) => (j === i ? [key, p[1]] : p)))}
           />
           <Input
             aria-label={`${labels.value} (${k})`}
@@ -327,7 +327,15 @@ export function KeyValueEditor({ value, onChange, field }: FieldProps) {
             value={v}
             onChange={(e) => write(entries.map((p, j) => (j === i ? [p[0], e.target.value] : p)))}
           />
-          <Button size="icon" variant="ghost" aria-label={`Remove ${labels.key.toLowerCase()}`} onClick={() => write(entries.filter((_, j) => j !== i))}>
+          <Button
+            size="icon"
+            variant="ghost"
+            aria-label={`Remove ${labels.key.toLowerCase()}`}
+            onClick={() => {
+              rows.remove(i);
+              write(entries.filter((_, j) => j !== i));
+            }}
+          >
             <Trash2 size={13} />
           </Button>
         </div>
@@ -343,6 +351,7 @@ export function KeyValueEditor({ value, onChange, field }: FieldProps) {
 export function FieldUpdatesEditor({ value, onChange, fields }: FieldProps) {
   const mode = useUi((s) => s.mode);
   const list: { field: string; value?: string; expression?: string | null }[] = value ?? [];
+  const rows = useRowKeys(list.length);
   const set = (i: number, patch: Record<string, unknown>) => onChange(list.map((u, j) => (j === i ? { ...u, ...patch } : u)));
   const listId = "field-updates-names";
   return (
@@ -355,18 +364,22 @@ export function FieldUpdatesEditor({ value, onChange, fields }: FieldProps) {
       {list.map((u, i) => {
         const usesExpression = u.expression != null;
         return (
-          <Row key={i} label={`update of ${u.field}`} onRemove={() => onChange(list.filter((_, j) => j !== i))}>
+          <Row
+            key={rows.keys[i]}
+            label={`update of ${u.field}`}
+            onRemove={() => {
+              rows.remove(i);
+              onChange(list.filter((_, j) => j !== i));
+            }}
+          >
             <div className="flex items-center gap-1.5">
-              <Input
+              <DraftInput
                 aria-label="Field to set"
                 list={listId}
                 className="w-2/5 font-mono text-[12px]"
-                defaultValue={u.field}
-                onBlur={(e) => {
-                  const clean = toIdent(e.target.value, "field");
-                  e.target.value = clean;
-                  if (clean !== u.field) set(i, { field: clean });
-                }}
+                value={u.field}
+                clean={(text) => toIdent(text, "field")}
+                onCommit={(name) => set(i, { field: name })}
               />
               <span className="text-xs text-muted">=</span>
               {usesExpression ? (
@@ -422,32 +435,40 @@ export function FlowPicker({ value, onChange, id }: FieldProps) {
   );
 }
 
+const splitList = (text: string) =>
+  text
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
 export function StringList({ value, onChange, id, field }: FieldProps) {
   const list: string[] = value ?? [];
   return (
-    <Input
+    <DraftInput
       id={id}
-      defaultValue={list.join(", ")}
+      value={list.join(", ")}
       placeholder={field.placeholder ?? "Separate with commas"}
-      onBlur={(e) =>
-        onChange(
-          e.target.value
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean),
-        )
-      }
+      clean={(text) => splitList(text).join(", ")}
+      onCommit={(text) => onChange(splitList(text))}
     />
   );
 }
 
 export function ExamplesEditor({ value, onChange }: FieldProps) {
   const list: { role: string; content: string }[] = value ?? [];
+  const rows = useRowKeys(list.length);
   const set = (i: number, patch: Record<string, string>) => onChange(list.map((e, j) => (j === i ? { ...e, ...patch } : e)));
   return (
     <div className="space-y-2">
       {list.map((ex, i) => (
-        <Row key={i} label={`example ${i + 1}`} onRemove={() => onChange(list.filter((_, j) => j !== i))}>
+        <Row
+          key={rows.keys[i]}
+          label={`example ${i + 1}`}
+          onRemove={() => {
+            rows.remove(i);
+            onChange(list.filter((_, j) => j !== i));
+          }}
+        >
           <Select aria-label="Who says it" value={ex.role} onChange={(e) => set(i, { role: e.target.value })}>
             <option value="user">The user says</option>
             <option value="assistant">The AI answers</option>
@@ -487,6 +508,7 @@ const OPS: { value: string; label: string; noValue?: boolean }[] = [
 export function ExitsEditor({ value, onChange, settings, fields }: FieldProps) {
   const mode = useUi((s) => s.mode);
   const list: Value[] = value ?? [];
+  const rows = useRowKeys(list.length);
   const ai = settings.mode === "ai";
   const set = (i: number, patch: Record<string, unknown>) => onChange(list.map((e, j) => (j === i ? { ...e, ...patch } : e)));
   const setWhen = (i: number, patch: Record<string, unknown>) => set(i, { when: { field: null, op: "contains", value: null, expression: null, ...(list[i].when ?? {}), ...patch } });
@@ -498,11 +520,28 @@ export function ExitsEditor({ value, onChange, settings, fields }: FieldProps) {
         const usesExpression = when?.expression != null;
         return (
           <Row
-            key={i}
+            key={rows.keys[i]}
             label={`exit ${ex.label}`}
-            onRemove={() => onChange(list.filter((_, j) => j !== i))}
-            onUp={i > 0 ? () => onChange(move(list, i, -1)) : undefined}
-            onDown={i < list.length - 1 ? () => onChange(move(list, i, 1)) : undefined}
+            onRemove={() => {
+              rows.remove(i);
+              onChange(list.filter((_, j) => j !== i));
+            }}
+            onUp={
+              i > 0
+                ? () => {
+                    rows.move(i, -1);
+                    onChange(move(list, i, -1));
+                  }
+                : undefined
+            }
+            onDown={
+              i < list.length - 1
+                ? () => {
+                    rows.move(i, 1);
+                    onChange(move(list, i, 1));
+                  }
+                : undefined
+            }
           >
             <Input aria-label="Exit name" value={ex.label} onChange={(e) => set(i, { label: e.target.value })} className="font-medium" />
             {ai ? (

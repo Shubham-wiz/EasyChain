@@ -5,7 +5,7 @@ import type { FlowListItem, Trigger, TriggerKind } from "../../lib/types";
 import { timeAgo } from "../../lib/utils";
 import { useFlow } from "../../state/flow";
 import { useUi } from "../../state/ui";
-import { Badge, Button, Dialog, Field, Input, Select, Switch } from "../ui";
+import { Badge, Button, Dialog, Field, Input, SecretInput, Select, Switch } from "../ui";
 
 const KINDS: { kind: TriggerKind; label: string; help: string; icon: typeof Link2 }[] = [
   { kind: "webhook", label: "Webhook", help: "Another app POSTs JSON to a private URL; its fields become the inputs.", icon: Link2 },
@@ -220,8 +220,8 @@ function NewTrigger({ flowId, flows, onCreated }: { flowId: string; flows: FlowL
           <Field label="User name" htmlFor="mail-user">
             <Input id="mail-user" value={mail.username} onChange={(e) => setMail({ ...mail, username: e.target.value })} />
           </Field>
-          <Field label="Password" help="Best as {secret:NAME}, a secret from Settings." htmlFor="mail-password">
-            <Input id="mail-password" placeholder="{secret:MAIL_PASSWORD}" value={mail.password} onChange={(e) => setMail({ ...mail, password: e.target.value })} />
+          <Field label="Password" help="Best as {secret:NAME}, a secret from Settings › Keys and providers." htmlFor="mail-password">
+            <SecretInput id="mail-password" placeholder="{secret:MAIL_PASSWORD}" value={mail.password} onChange={(password) => setMail({ ...mail, password })} />
           </Field>
           <Field label="Folder" htmlFor="mail-folder">
             <Input id="mail-folder" value={mail.folder} onChange={(e) => setMail({ ...mail, folder: e.target.value })} />

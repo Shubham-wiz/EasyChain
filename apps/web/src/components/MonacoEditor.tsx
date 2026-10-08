@@ -6,6 +6,7 @@ import "monaco-editor/esm/vs/basic-languages/python/python.contribution";
 import "monaco-editor/esm/vs/basic-languages/yaml/yaml.contribution";
 import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 import { useEffect } from "react";
+import { flowDataCompletions } from "../lib/completions";
 import { useCheck } from "../state/check";
 import { useUi } from "../state/ui";
 
@@ -19,24 +20,24 @@ function registerFlowDataCompletions() {
   if (completionsRegistered) return;
   completionsRegistered = true;
   monaco.languages.registerCompletionItemProvider("python", {
-    triggerCharacters: ['"', "'", "["],
+    triggerCharacters: ['"', "'", "[", "("],
     provideCompletionItems(model, position) {
-      const word = model.getWordUntilPosition(position);
-      const range = {
-        startLineNumber: position.lineNumber,
-        endLineNumber: position.lineNumber,
-        startColumn: word.startColumn,
-        endColumn: word.endColumn,
-      };
+      const line = model.getLineContent(position.lineNumber);
       const fields = useCheck.getState().analysis?.fields ?? [];
+      const found = flowDataCompletions(line.slice(0, position.column - 1), line.slice(position.column - 1), fields);
       return {
-        suggestions: fields.map((f) => ({
-          label: `data["${f.name}"]`,
+        suggestions: found.map(({ field: f, label, before, after }) => ({
+          label,
           kind: monaco.languages.CompletionItemKind.Field,
           detail: `Flow Data · ${f.type}`,
           documentation: f.description || `Set by ${f.written_by.join(", ") || "Input"}`,
-          insertText: `data.get("${f.name}")`,
-          range,
+          insertText: label,
+          range: {
+            startLineNumber: position.lineNumber,
+            endLineNumber: position.lineNumber,
+            startColumn: position.column - before,
+            endColumn: position.column + after,
+          },
         })),
       };
     },

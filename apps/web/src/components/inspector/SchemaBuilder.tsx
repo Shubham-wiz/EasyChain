@@ -2,7 +2,7 @@
 
 import { Plus, Trash2 } from "lucide-react";
 import { toIdent } from "../../lib/spec";
-import { Button, Input, Select, Switch } from "../ui";
+import { Button, DraftInput, Input, Select, Switch, useRowKeys } from "../ui";
 import type { FieldProps } from "./fields";
 
 export interface SchemaField {
@@ -47,24 +47,28 @@ function newField(list: SchemaField[]): SchemaField {
   return { name: list.length ? `field_${n}` : "answer", type: "text", description: "", required: true };
 }
 
+const splitChoices = (text: string) =>
+  text
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+
 function FieldsEditor({ list, onChange, depth }: { list: SchemaField[]; onChange: (list: SchemaField[]) => void; depth: number }) {
+  const rows = useRowKeys(list.length);
   const set = (i: number, patch: Partial<SchemaField>) => onChange(list.map((f, j) => (j === i ? { ...f, ...patch } : f)));
   return (
     <div className="space-y-1.5">
       {list.map((f, i) => {
         const nested = f.type === "object" || (f.type === "list" && f.items === "object");
         return (
-          <div key={i} className="space-y-1.5 rounded-lg border border-border bg-surface p-2" data-testid={`schema-field-${f.name}`}>
+          <div key={rows.keys[i]} className="space-y-1.5 rounded-lg border border-border bg-surface p-2" data-testid={`schema-field-${f.name}`}>
             <div className="flex gap-1.5">
-              <Input
+              <DraftInput
                 aria-label="Field name"
                 className="h-8 font-mono text-[12px]"
-                defaultValue={f.name}
-                onBlur={(e) => {
-                  const clean = toIdent(e.target.value, "field");
-                  e.target.value = clean;
-                  if (clean !== f.name) set(i, { name: clean });
-                }}
+                value={f.name}
+                clean={(text) => toIdent(text, "field")}
+                onCommit={(name) => set(i, { name })}
               />
               <Select
                 aria-label="Kind of value"
@@ -85,7 +89,15 @@ function FieldsEditor({ list, onChange, depth }: { list: SchemaField[]; onChange
                   </option>
                 ))}
               </Select>
-              <Button size="icon-sm" variant="ghost" aria-label={`Remove ${f.name}`} onClick={() => onChange(list.filter((_, j) => j !== i))}>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label={`Remove ${f.name}`}
+                onClick={() => {
+                  rows.remove(i);
+                  onChange(list.filter((_, j) => j !== i));
+                }}
+              >
                 <Trash2 size={13} />
               </Button>
             </div>
@@ -107,12 +119,13 @@ function FieldsEditor({ list, onChange, depth }: { list: SchemaField[]; onChange
               </Select>
             )}
             {f.type === "choice" && (
-              <Input
+              <DraftInput
                 aria-label="Choices"
                 className="h-7 text-xs"
                 placeholder="positive, negative, mixed"
-                defaultValue={(f.options ?? []).join(", ")}
-                onBlur={(e) => set(i, { options: e.target.value.split(",").map((x) => x.trim()).filter(Boolean) })}
+                value={(f.options ?? []).join(", ")}
+                clean={(text) => splitChoices(text).join(", ")}
+                onCommit={(text) => set(i, { options: splitChoices(text) })}
               />
             )}
             <Input

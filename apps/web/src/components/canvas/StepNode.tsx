@@ -151,10 +151,13 @@ function RunFooter({ id }: { id: string }) {
           {run.note}
         </p>
       )}
+      {/* Not a live region: screen readers would read out every token. The run panel announces the run's status and result. */}
       {run.status === "running" && tail && (
-        <p className="line-clamp-3 font-mono text-[10.5px] leading-snug whitespace-pre-wrap text-muted" aria-live="polite">
+        <p className="line-clamp-3 font-mono text-[10.5px] leading-snug whitespace-pre-wrap text-muted" data-testid={`tokens-${id}`}>
           {tail}
-          <span className="animate-pulse">▍</span>
+          <span className="animate-pulse" aria-hidden="true">
+            ▍
+          </span>
         </p>
       )}
       {run.status === "done" && (

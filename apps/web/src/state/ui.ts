@@ -21,6 +21,22 @@ function persist(key: string, value: string) {
   }
 }
 
+function forget(key: string) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    /* private mode */
+  }
+}
+
+const STAND_IN = "easychain.standIn";
+
+/** The stand-in setting for a flow: its own (set by "Try it"), or else the one for every flow. */
+function storedStandIn(flowId: string | null): boolean {
+  const own = flowId ? stored<string>(`${STAND_IN}.${flowId}`, "") : "";
+  return (own || stored<string>(STAND_IN, "false")) === "true";
+}
+
 export interface Breakpoints {
   before: string[];
   after: string[];
@@ -45,12 +61,14 @@ interface UiState {
   importOpen: boolean;
   exportOpen: boolean;
   problemsOpen: boolean;
+  /** Use the stand-in AI for test runs of the open flow. */
   standIn: boolean;
   focusSetting: { step: string; key: string; at: number } | null;
   triggersOpen: boolean;
   /** Breakpoints for test runs of the open flow (kept per flow in this browser). */
   breakpoints: Breakpoints;
-  breakpointsFor: string | null;
+  /** The flow whose breakpoints and stand-in setting are loaded. */
+  prefsFor: string | null;
   setMode: (mode: Mode) => void;
   toggleTheme: () => void;
   select: (ids: string[]) => void;
@@ -60,10 +78,14 @@ interface UiState {
   closeSettings: () => void;
   setExportOpen: (open: boolean) => void;
   setProblemsOpen: (open: boolean) => void;
+  /** The Stand-in AI switch: on or off for every flow. */
   setStandIn: (on: boolean) => void;
+  /** Use the stand-in AI for one flow only ("Try it" without a key), kept in this browser. */
+  setFlowStandIn: (flowId: string, on: boolean) => void;
   focus: (step: string, key: string) => void;
   setTriggersOpen: (open: boolean) => void;
-  loadBreakpoints: (flowId: string) => void;
+  /** Load the open flow's breakpoints and stand-in setting. */
+  loadFlowPrefs: (flowId: string) => void;
   toggleBreakpoint: (step: string, where: "before" | "after") => void;
 }
 
@@ -79,11 +101,11 @@ export const useUi = create<UiState>()((set, get) => ({
   importOpen: false,
   exportOpen: false,
   problemsOpen: false,
-  standIn: stored<string>("easychain.standIn", "false") === "true",
+  standIn: storedStandIn(null),
   focusSetting: null,
   triggersOpen: false,
   breakpoints: { before: [], after: [] },
-  breakpointsFor: null,
+  prefsFor: null,
   setMode: (mode) => {
     persist("easychain.mode", mode);
     set({ mode });
@@ -106,17 +128,24 @@ export const useUi = create<UiState>()((set, get) => ({
   setExportOpen: (exportOpen) => set({ exportOpen }),
   setProblemsOpen: (problemsOpen) => set({ problemsOpen }),
   setStandIn: (standIn) => {
-    persist("easychain.standIn", String(standIn));
+    persist(STAND_IN, String(standIn));
+    // The switch works as it always has: a flow's own setting from "Try it" gives way to it.
+    const flowId = get().prefsFor;
+    if (flowId) forget(`${STAND_IN}.${flowId}`);
     set({ standIn });
+  },
+  setFlowStandIn: (flowId, on) => {
+    persist(`${STAND_IN}.${flowId}`, String(on));
+    if (get().prefsFor === flowId) set({ standIn: on });
   },
   focus: (step, key) => set({ selected: [step], rightTab: "inspect", focusSetting: { step, key, at: Date.now() } }),
   setTriggersOpen: (triggersOpen) => set({ triggersOpen }),
-  loadBreakpoints: (flowId) => set({ breakpoints: storedBreakpoints(flowId), breakpointsFor: flowId }),
+  loadFlowPrefs: (flowId) => set({ breakpoints: storedBreakpoints(flowId), standIn: storedStandIn(flowId), prefsFor: flowId }),
   toggleBreakpoint: (step, where) => {
     const current = get().breakpoints;
     const list = current[where].includes(step) ? current[where].filter((s) => s !== step) : [...current[where], step];
     const breakpoints = { ...current, [where]: list };
-    const flowId = get().breakpointsFor;
+    const flowId = get().prefsFor;
     if (flowId) persist(`easychain.breakpoints.${flowId}`, JSON.stringify(breakpoints));
     set({ breakpoints });
   },

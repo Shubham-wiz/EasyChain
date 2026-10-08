@@ -26,7 +26,7 @@ In development, Vite proxies `/api` to `EASYCHAIN_API` (default `http://127.0.0.
 | Route | Page |
 |---|---|
 | `#/` | Home: templates (**Try it** / **Use template**), your flows, links to the Inbox and Knowledge |
-| `#/flows/{id}` | The editor: Step library, canvas, inspector, run panel |
+| `#/flows/{id}` | The editor: Step library, canvas, inspector, run panel. **Try it** opens `#/flows/{id}?try=1`, which runs the flow on its sample data once; `?try=1` is dropped as the run starts, so a reload or Back shows that run instead of starting another. |
 | `#/inbox`, `#/inbox/{id}` | Everything waiting for a person: approvals, answers, tool approvals (works on phones) |
 | `#/knowledge`, `#/knowledge/{id}` | Knowledge Bases: documents, chunk preview, test search |
 
@@ -68,12 +68,20 @@ e2e/                    Playwright journeys against the real app and a fake mode
 |---|---|
 | `flow` | The open flow's spec, save state (autosave) and undo history. Typing in one field merges into one undo step. |
 | `check` | Problems, analysis and compiled code, refreshed in the background after each edit. |
-| `run` | Per-step run state built from events: status, tokens, tool calls, progress, Sub-flow detail, waiting requests, Save Points; and the chat. |
-| `ui` | Selection, Beginner/Pro mode, theme, open dialogs, breakpoints (kept per flow in the browser). |
+| `run` | Per-step run state built from events: status, tokens, tool calls, progress, Sub-flow detail, waiting requests, Save Points; and the chat. The panel follows one stream at a time: a new run, a replay or opening another flow stops following the last one, and a stream that no longer owns the panel changes nothing. A stream that drops mid-run is picked up again from the last event (`?after=`, four tries over about 7 s), then the panel says the connection was lost and offers **Reconnect**. |
+| `ui` | Selection, Beginner/Pro mode, theme, open dialogs; breakpoints and the stand-in AI setting for the open flow (kept per flow in the browser). The Stand-in AI switch applies to every flow; **Try it** without a key turns it on for that flow only. |
 | `catalog` | Step types and their forms, providers and models, embedding models, templates. |
 
 Canvas nodes subscribe only to their own step, run state and problems, so a streaming token
 re-renders one node. That keeps a 300-step flow responsive.
+
+Inputs that save when you leave them (field names, lists typed with commas, sticky notes) use
+`DraftInput` / `useDraft` from `ui.tsx`: they follow the saved value when it changes from
+outside (undo, a one-click fix, a row above removed). Rows of a list use `useRowKeys` for stable
+keys. Passwords, webhook URLs and auth headers use `SecretInput`: a password box with Show,
+that treats a value the server sends back hidden (`••••••`) as "unchanged" and suggests
+`{secret:NAME}` for anything typed in plain. Screen readers hear the run's status and final
+reply from one polite live region (`RunAnnouncer`), not each streamed token.
 
 ## Tests
 

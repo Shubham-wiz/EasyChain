@@ -206,28 +206,15 @@ export function Canvas() {
     [select],
   );
 
-  const onNodesDelete = useCallback(
-    (deleted: Node[]) => {
-      const steps = deleted.filter((n) => !n.id.startsWith("note:")).map((n) => n.id);
-      const notes = new Set(deleted.filter((n) => n.id.startsWith("note:")).map((n) => n.id.slice(5)));
-      apply((s) => {
-        let next = steps.length ? removeSteps(s, steps) : s;
-        if (notes.size) {
-          next = clone(next);
-          next.canvas.notes = next.canvas.notes.filter((n) => !notes.has(n.id));
-        }
-        return next;
-      });
-      select([]);
-    },
-    [apply, select],
-  );
-
-  const onEdgesDelete = useCallback(
-    (deleted: Edge[]) =>
+  // One handler for steps, notes and connections deleted together (a connected step and its
+  // connections), so that the deletion is one undo step.
+  const onDelete = useCallback(
+    ({ nodes: deletedNodes, edges: deletedEdges }: { nodes: Node[]; edges: Edge[] }) => {
+      const steps = deletedNodes.filter((n) => !n.id.startsWith("note:")).map((n) => n.id);
+      const notes = new Set(deletedNodes.filter((n) => n.id.startsWith("note:")).map((n) => n.id.slice(5)));
       apply((s) => {
         let next = s;
-        for (const e of deleted.filter((x) => !x.id.startsWith("results:"))) {
+        for (const e of deletedEdges.filter((x) => !x.id.startsWith("results:"))) {
           if (e.id.startsWith("tool:")) {
             next = removeTool(next, e.target, e.source);
             continue;
@@ -235,9 +222,16 @@ export function Canvas() {
           const exit = e.sourceHandle?.startsWith("exit:") ? e.sourceHandle.slice(5) : null;
           next = removeConnection(next, { from: e.source, to: e.target, exit });
         }
+        if (steps.length) next = removeSteps(next, steps);
+        if (notes.size) {
+          next = clone(next);
+          next.canvas.notes = next.canvas.notes.filter((n) => !notes.has(n.id));
+        }
         return next;
-      }),
-    [apply],
+      });
+      if (deletedNodes.length) select([]);
+    },
+    [apply, select],
   );
 
   const exitOf = (handle: string | null | undefined) => (handle?.startsWith("exit:") ? handle.slice(5) : null);
@@ -322,8 +316,7 @@ export function Canvas() {
         onEdgesChange={onEdgesChange}
         onNodeDragStop={onNodeDragStop}
         onSelectionChange={onSelectionChange}
-        onNodesDelete={onNodesDelete}
-        onEdgesDelete={onEdgesDelete}
+        onDelete={onDelete}
         onConnect={onConnect}
         onConnectEnd={onConnectEnd}
         isValidConnection={isValidConnection}

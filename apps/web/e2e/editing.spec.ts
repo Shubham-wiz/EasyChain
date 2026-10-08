@@ -34,10 +34,15 @@ test("click to add, one-click fixes, undo and redo", async ({ page }) => {
   await page.keyboard.press(`${mod}+Shift+z`);
   await expect(step(page, "instructions")).toBeVisible();
 
-  // Delete with the keyboard.
+  // Delete with the keyboard: the step and its connections go in one undo step.
   await step(page, "instructions").click({ position: { x: 60, y: 14 } });
   await page.keyboard.press("Delete");
   await expect(step(page, "instructions")).toHaveCount(0);
+  await expect(page.locator(".react-flow__edge")).toHaveCount(0);
+  await page.locator(".react-flow__pane").click({ position: { x: 20, y: 20 } });
+  await page.keyboard.press(`${mod}+z`);
+  await expect(step(page, "instructions")).toBeVisible();
+  await expect(page.locator(".react-flow__edge")).toHaveCount(2);
 });
 
 test("misspelt variable gets a suggestion and a fix", async ({ page }) => {

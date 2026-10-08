@@ -6,7 +6,7 @@ import { api, ApiError } from "../../lib/api";
 import { toIdent } from "../../lib/spec";
 import type { McpServer, McpSettings, McpTool } from "../../lib/types";
 import { useUi } from "../../state/ui";
-import { Badge, Button, Input, Select } from "../ui";
+import { Badge, Button, DraftInput, Input, SecretInput, Select, useRowKeys } from "../ui";
 
 function blank(n: number): McpServer {
   return { id: `server_${n}`, name: "", transport: "http", url: "", headers: {}, command: "", args: [], env: {} };
@@ -34,11 +34,12 @@ function ServerCard({
     <div className="space-y-2 rounded-lg border border-border p-3" data-testid={`mcp-server-${server.id}`}>
       <div className="flex gap-1.5">
         <Input aria-label="Server name" placeholder="Name, e.g. Company docs" value={server.name} onChange={(e) => set({ name: e.target.value })} />
-        <Input
+        <DraftInput
           aria-label="Server id"
           className="w-36 font-mono text-[12px]"
-          defaultValue={server.id}
-          onBlur={(e) => set({ id: toIdent(e.target.value, "server") })}
+          value={server.id}
+          clean={(text) => toIdent(text, "server")}
+          onCommit={(id) => set({ id })}
         />
         <Button size="icon" variant="ghost" aria-label={`Remove ${server.name || server.id}`} onClick={onRemove}>
           <Trash2 size={14} />
@@ -58,12 +59,12 @@ function ServerCard({
         <Input aria-label="Server URL" className="font-mono text-[12px]" placeholder="https://example.com/mcp" value={server.url} onChange={(e) => set({ url: e.target.value })} />
       )}
       {server.transport !== "stdio" && (
-        <Input
+        <SecretInput
           aria-label="Authorization header"
           className="font-mono text-[12px]"
           placeholder="Authorization header, e.g. Bearer {secret:DOCS_TOKEN}"
           value={server.headers.Authorization ?? ""}
-          onChange={(e) => set({ headers: e.target.value ? { ...server.headers, Authorization: e.target.value } : {} })}
+          onChange={(value) => set({ headers: value ? { ...server.headers, Authorization: value } : {} })}
         />
       )}
       <div className="flex items-center gap-2">
@@ -103,6 +104,8 @@ export function McpSection() {
   const [settings, setSettings] = useState<McpSettings | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A card keeps its key (and the tools it showed) when a card above it is removed.
+  const rows = useRowKeys(settings?.servers.length ?? 0);
   useEffect(() => {
     api.mcpSettings().then(setSettings).catch(() => setSettings({ servers: [], allowed_commands: [] }));
   }, []);
@@ -126,11 +129,14 @@ export function McpSection() {
       </p>
       {settings.servers.map((server, i) => (
         <ServerCard
-          key={i}
+          key={rows.keys[i]}
           server={server}
           allowed={settings.allowed_commands}
           onChange={(s) => setSettings({ ...settings, servers: settings.servers.map((x, j) => (j === i ? s : x)) })}
-          onRemove={() => setSettings({ ...settings, servers: settings.servers.filter((_, j) => j !== i) })}
+          onRemove={() => {
+            rows.remove(i);
+            setSettings({ ...settings, servers: settings.servers.filter((_, j) => j !== i) });
+          }}
         />
       ))}
       <Button size="sm" variant="outline" onClick={() => setSettings({ ...settings, servers: [...settings.servers, blank(settings.servers.length + 1)] })}>
@@ -147,17 +153,16 @@ export function McpSection() {
           <span className="font-mono">python</span>, <span className="font-mono">node</span>) approves it with any arguments: that is,
           anything it can download or run. To approve one server only, write its whole command line; it must then match exactly.
         </p>
-        <Input
+        <DraftInput
           aria-label="Approved commands"
           className="font-mono text-[12px]"
           disabled={mode !== "pro"}
           placeholder="npx -y @modelcontextprotocol/server-filesystem /data"
-          defaultValue={settings.allowed_commands.join(", ")}
-          key={settings.allowed_commands.join(",")}
-          onBlur={(e) =>
+          value={settings.allowed_commands.join(", ")}
+          onCommit={(text) =>
             setSettings({
               ...settings,
-              allowed_commands: e.target.value
+              allowed_commands: text
                 .split(",")
                 .map((x) => x.trim())
                 .filter(Boolean),
