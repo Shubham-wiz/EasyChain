@@ -346,7 +346,15 @@ def test_double_texting_interrupt_and_rollback(client):
         flow_id = create(client, _chat(policy))
         a = start(client, flow_id, {"message": "one"}, thread_id=policy)
         wait(client, a, "running")
-        time.sleep(0.2)
+        # "interrupt" keeps what the first run saved, so wait until it has saved "one" (its
+        # Save Point before the slow reply step); a fixed sleep was flaky on a busy machine.
+        deadline = time.time() + 20
+        while not any(
+            p["run_id"] == a and p["next"] == ["reply"]
+            for p in client.get(f"/api/runs/{a}/savepoints").json()
+        ):
+            assert time.time() < deadline, "the first run never saved its input"
+            time.sleep(0.05)
         b = start(client, flow_id, {"message": "two"}, thread_id=policy)
         assert wait(client, a)["status"] == "cancelled"
         run_b = wait(client, b)

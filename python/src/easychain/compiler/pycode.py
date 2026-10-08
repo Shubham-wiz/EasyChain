@@ -224,14 +224,14 @@ class Names:
     }
 
     @classmethod
-    def reserved(cls) -> set[str]:
+    def reserved(cls) -> frozenset[str]:
         """RESERVED plus every name the helper code defines or imports (``quote``, ``run_once``…)."""
         from .helpers import helper_names
 
-        return cls.RESERVED | helper_names()
+        return frozenset(cls.RESERVED) | helper_names()
 
     def __init__(self) -> None:
-        self._used: set[str] = self.reserved()
+        self._used: set[str] = set(self.reserved())
 
     def claim(self, base: str) -> str:
         name = base if base.isidentifier() and not keyword.iskeyword(base) else f"{base}_"

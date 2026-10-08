@@ -9,7 +9,7 @@ platforms: [linux, windows, macos]   # decision R.4; CI tests linux and windows
 push:
   state: pushed
   branch_on_github: main
-  retired_branch: claude/tender-fermat-4kj4k6   # replaced by main (R.1); deletion approved, owner runs it (R.3)
+  retired_branch: claude/tender-fermat-4kj4k6   # replaced by main (R.1), deleted (R.3)
   ci: "runs on push to main and on pull requests; Linux and Windows jobs"
   past_issue: "HTTP 403 until the Claude GitHub App was given access to the repo (fixed by the owner)"
 

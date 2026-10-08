@@ -32,8 +32,6 @@ _Written 2026-10-04 so work can carry on from another machine or session._
    first, each fix with a test.
 4. **Then Phase 4** ([ROADMAP.md](../ROADMAP.md#phase-4-autopilot-and-teams)); its questions are
    answered (decisions 4.1–4.3).
-5. **For the owner:** delete the old branch: `git push origin --delete claude/tender-fermat-4kj4k6`
-   (decision R.3).
 
 ## Phases
 
@@ -77,9 +75,8 @@ Compose, and **Windows** (Python suite, CLI and worker, web checks, the app serv
 
 - `main` is on GitHub with the full history; CI runs on every push to `main` and on pull
   requests.
-- The first branch, `claude/tender-fermat-4kj4k6`, still has the AI-attribution trailers. Its
-  deletion is approved (decision R.3); the owner runs
-  `git push origin --delete claude/tender-fermat-4kj4k6`. Check with `git ls-remote origin`.
+- The first branch, `claude/tender-fermat-4kj4k6`, which had the AI-attribution trailers, is
+  deleted (decision R.3). Only `main` is left.
 - Earlier pushes failed with HTTP 403 until the Claude GitHub App was given access to this repo;
   see lessons.md if it comes back.
 

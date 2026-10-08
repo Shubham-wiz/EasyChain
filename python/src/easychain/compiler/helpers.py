@@ -6,6 +6,7 @@ exported code stays self-contained (no Easy Chain runtime required).
 
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass, field
 
 
@@ -411,7 +412,8 @@ HELPERS = {
 }
 
 
-def helper_names() -> set[str]:
+@functools.cache
+def helper_names() -> frozenset[str]:
     """Every module-level name helper code defines or imports, so steps can't take them."""
     import ast
 
@@ -429,4 +431,4 @@ def helper_names() -> set[str]:
         for _module, imported in helper.from_imports:
             name, _, alias = imported.partition(" as ")
             names.add(alias or name)
-    return names
+    return frozenset(names)

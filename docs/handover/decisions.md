@@ -10,7 +10,7 @@ asked again.
 |---|---|---|---|
 | R.5 | Fix the code review first | The review of 2026-10-04 ([review.md](review.md)) is worked through before Phase 4: data-loss and security findings first, each fix with a test. | owner: "OK go on" to the proposal |
 | R.4 | Windows and Linux | Easy Chain runs from source on **both Windows and Linux** (and macOS). CI tests Linux and Windows. Developer commands are `pnpm <task>` (`scripts/tasks.mjs`), so `make` isn't needed; what differs between systems lives in `easychain/_platform.py`. | owner: "we need it to be platform independent, Linux and Windows both can run it" |
-| R.3 | The retired branch | `claude/tender-fermat-4kj4k6` still carries the AI-attribution trailers on GitHub, so it is to be deleted (the code is all on `main`): `git push origin --delete claude/tender-fermat-4kj4k6`. The owner runs this. | owner: "OK go on" to deleting it |
+| R.3 | The retired branch | `claude/tender-fermat-4kj4k6` still carried the AI-attribution trailers on GitHub, so it was deleted (the code is all on `main`). Only `main` is left. | owner: "OK go on"; the owner deleted it |
 | R.2 | Branch | Work happens on `main`. The first branch, `claude/tender-fermat-4kj4k6`, was replaced by `main` when the history was rewritten for R.1 (it was not actually deleted then; see R.3). | owner: "yes" to renaming it to `main` |
 | R.1 | AI attribution in git | No `Co-Authored-By: Claude…`, session links or "generated with" lines in commit messages or pull request descriptions. Commits are authored as `Easy Chain Dev <19shubhamdwivedi@gmail.com>`. The existing history was rewritten to remove the trailers. | owner: "remove from git that it's made by claude" |
 
