@@ -711,7 +711,8 @@ class Database:
                         flow_id=run["flow_id"],
                         flow_name=run["flow_name"],
                         step=intr.get("step") or "",
-                        step_name=intr.get("step_name") or intr.get("step") or "",
+                        # Step names have no length limit; the column (on Postgres) does.
+                        step_name=(intr.get("step_name") or intr.get("step") or "")[:200],
                         path=intr.get("path") or [],
                         interrupt_id=intr["id"],
                         request=intr.get("request") or {},

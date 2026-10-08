@@ -142,3 +142,12 @@ async def test_a_tool_approval_without_a_clear_yes_is_a_no():
     assert _tool_decisions(asking, {"action": "approve"}) == {"decisions": [{"type": "approve"}]}
     for unclear in ({}, {"comment": "hmm"}, "no", None):
         assert _tool_decisions(asking, unclear)["decisions"][0]["type"] == "reject"
+
+
+async def test_a_very_long_step_name_fits_the_inbox(hub: Hub):
+    run_id = await hub.start_run(hub.flows.get("approval"), flow_id="approval", inputs={})
+    run = await hub.db.get_run(run_id)
+    interrupt = {"id": "a" * 32, "step": "approve", "step_name": "Check " * 60, "request": {}}
+    [item_id] = await hub.db.open_inbox_items(run, [interrupt])
+    item = await hub.db.get_inbox(item_id)
+    assert len(item["step_name"]) <= 200  # the column's size on Postgres
