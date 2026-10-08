@@ -20,6 +20,12 @@ reused. LangGraph: a subgraph.
 - The exported file contains the sub-flow's code as well (prefixed names), so it still runs
   without Easy Chain.
 - A flow can't run itself, directly or through other flows; the check catches it.
+- A sub-flow that shares Flow Data is added as a subgraph node, except where a function has to
+  call it: as an agent's tool, as the step a For Each runs per item, or with a time limit. There
+  a small function runs its graph on this flow's data and returns its results (for a For Each,
+  each item's result is the object with the sub-flow's results).
+- A sub-flow with an MCP tool, an agent with MCP tools or a time limit inside it (at any depth)
+  is awaited (`await …ainvoke(...)`), wherever it runs: as a step, per item or as a tool.
 
 ## Checks
 

@@ -453,7 +453,9 @@ def _emit_header(spec: FlowSpec, mod: str, an: FlowAnalysis, module: ModuleConte
         )
         lines.append("Command(resume=...).")
     if module.has_async:
-        lines.append("Some steps have a time limit, so call it with `await graph.ainvoke(...)`.")
+        lines.append(
+            "Some steps are async (time limits, MCP), so call it with `await graph.ainvoke(...)`."
+        )
     return docstring("\n".join(lines), spaces=0)
 
 

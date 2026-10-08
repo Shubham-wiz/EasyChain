@@ -9,7 +9,7 @@ It needs only LangChain and LangGraph:
 `python run_policies.py '<inputs as JSON>'`.
 
 The compiled graph is `graph`; call `build_graph(checkpointer=...)` to keep Save Points.
-Some steps have a time limit, so call it with `await graph.ainvoke(...)`.
+Some steps are async (time limits, MCP), so call it with `await graph.ainvoke(...)`.
 """
 
 import asyncio

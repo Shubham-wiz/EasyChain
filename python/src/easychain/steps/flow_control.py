@@ -578,12 +578,17 @@ class ForEachHandler(StepHandler):
 
 
 def flow_is_async(an: Any) -> bool:
-    """Whether a flow has steps that need ``await graph.ainvoke`` (time limits)."""
+    """Whether a flow must be run with ``await graph.ainvoke``.
+
+    It must when one of its steps has a time limit or is ``async def`` itself (an MCP tool,
+    an Agent with MCP tools or async tools, a Sub-flow, For Each item or tool that runs such
+    a flow), or when a Sub-flow that shares its data contains one.
+    """
     for sid in an.reachable:
         step = an.steps[sid]
-        if step.run.timeout:
+        if step.run.timeout or an.handlers[sid].is_async(step, an):
             return True
-        if step.type == "subflow":
+        if step.type == "subflow" and step.settings.share_data:
             child = an.child(step.settings.flow)
             if child is not None and flow_is_async(child):
                 return True
@@ -655,11 +660,26 @@ class SubflowHandler(StepHandler):
             return names
         return [n for n, info in child.fields.items() if not info.private]
 
+    def runs_graph_as_node(self, step: Any, an: Any) -> bool:
+        """A Sub-flow sharing Flow Data is added as its graph itself, except where a function
+        has to call it: as an agent's tool, as a For Each's per-item step, or with a time limit
+        (LangGraph enforces those on functions)."""
+        return bool(
+            step.settings.share_data
+            and step.id not in an.tool_of
+            and step.id not in an.foreach_body
+            and not step.run.timeout
+        )
+
     def is_async(self, step: Any, an: Any) -> bool:
         child = self.child(step, an)
-        return bool(child is not None and not step.settings.share_data and flow_is_async(child))
+        if child is None or self.runs_graph_as_node(step, an):
+            return False
+        return flow_is_async(child)
 
     def primary_output(self, step: Any) -> str | None:
+        if step.settings.share_data:
+            return None  # its results keep their own names; none is mapped
         outputs = step.settings.outputs
         return next(iter(outputs)) if outputs else None
 
@@ -841,7 +861,8 @@ class SubflowHandler(StepHandler):
                 node=fn,
             )
         child = parts.analysis
-        if s.share_data:
+        is_async = self.is_async(step, ctx.an)
+        if self.runs_graph_as_node(step, ctx.an):
             ctx.node_override[step.id] = parts.graph_var
             return StepCode(
                 [
@@ -850,7 +871,17 @@ class SubflowHandler(StepHandler):
                 ],
                 node=parts.graph_var,
             )
-        is_async = self.is_async(step, ctx.an)
+        if s.share_data:
+            call = f"await {parts.graph_var}.ainvoke" if is_async else f"{parts.graph_var}.invoke"
+            code = (
+                f"{'async def' if is_async else 'def'} {fn}(data: {ctx.data_class}) -> dict[str, Any]:\n"
+                + docstring(
+                    f"{self.title(step)}\n\nRuns the flow “{child.spec.name}” on this flow's data "
+                    "and returns its results."
+                )
+                + f"\n    return {call}(data)"
+            )
+            return StepCode([code], node=fn, is_async=is_async)
         values = [
             f"{py_str(name)}: {template_value(value, ctx)}"
             for name, value in self.inputs(step, child, ctx.an).items()

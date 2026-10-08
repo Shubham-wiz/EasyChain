@@ -363,6 +363,124 @@ async def test_mcp_tool_step_and_agent_tools_over_stdio():
     assert of(events, "tool_finished")[0]["result"] == "5.0"
 
 
+async def test_sub_flows_with_mcp_steps_run_as_steps_items_and_tools():
+    """A sub-flow with its own Flow Data that uses MCP must be awaited wherever it runs."""
+    facts = make_spec(
+        [
+            input_step("city"),
+            {
+                "id": "facts",
+                "type": "mcp_tool",
+                "settings": {
+                    "server": "facts",
+                    "tool": "city_facts",
+                    "arguments": {"city": "{city}"},
+                },
+            },
+            output_step("result"),
+        ],
+        [("input", "facts"), ("facts", "output")],
+        name="City facts",
+    )
+    add_up = make_spec(
+        [
+            input_step("city"),
+            {
+                "id": "helper",
+                "type": "agent",
+                "settings": {"input": "city", "mcp": [{"server": "facts", "tools": ["add"]}]},
+            },
+            output_step("answer"),
+        ],
+        [("input", "helper"), ("helper", "output")],
+        name="Add up",
+    )
+    parent = make_spec(
+        [
+            input_step("city", {"name": "cities", "type": "list"}),
+            {
+                "id": "about",
+                "type": "subflow",
+                "settings": {"flow": "city_facts", "outputs": {"fact": "result"}},
+            },
+            {
+                "id": "summed",
+                "type": "subflow",
+                "settings": {"flow": "add_up", "outputs": {"total": "answer"}},
+            },
+            {
+                "id": "each",
+                "type": "for_each",
+                "settings": {"items": "cities", "item_name": "place", "save_as": "all_facts"},
+            },
+            {
+                "id": "per_city",
+                "type": "subflow",
+                "settings": {
+                    "flow": "city_facts",
+                    "inputs": {"city": "{place}"},
+                    "outputs": {"one_fact": "result"},
+                },
+            },
+            {
+                "id": "asker",
+                "type": "agent",
+                "settings": {"input": "city", "tools": ["look_up"], "save_as": "reply"},
+            },
+            {
+                "id": "look_up",
+                "type": "subflow",
+                "description": "Facts about a town.",
+                "settings": {
+                    "flow": "city_facts",
+                    "inputs": {"city": "{town}"},
+                    "outputs": {"found": "result"},
+                },
+            },
+            output_step("fact", "total", "all_facts", "reply"),
+        ],
+        [
+            ("input", "about"),
+            ("about", "summed"),
+            ("summed", "each"),
+            ("each", "Each item", "per_city"),
+            ("each", "When done", "asker"),
+            ("asker", "output"),
+        ],
+        data=[{"name": "town", "description": "A city name"}],
+    )
+    flows = {"city_facts": facts, "add_up": add_up}
+    compiled = compile_flow(parent, resolve=flows.get)
+    for call in ("await city_facts_graph.ainvoke(", "await add_up_graph.ainvoke("):
+        assert call in compiled.source
+    assert ".invoke(" not in compiled.source  # nothing async is called the sync way
+
+    connections = mcp_module.connections(
+        {"servers": [_stdio_server()], "allowed_commands": [sys.executable]}
+    )
+    script = Script(
+        [
+            {"call": "add", "args": {"a": 2, "b": 3}},
+            "It is 5.",
+            {"call": "look_up", "args": {"town": "Berlin"}},
+            "Berlin is big.",
+        ]
+    )
+    final, events = await run_flow(
+        parent,
+        {"city": "Lisbon", "cities": ["Nairobi"]},
+        RunOptions(stand_in=True, mcp=connections, script=script, resolve=flows.get),
+    )
+    assert final["status"] == "ok", final
+    out = final["output"]
+    assert out["fact"].startswith("Lisbon is the capital of Portugal")
+    assert out["total"] == "It is 5."
+    assert out["all_facts"][0].startswith("Nairobi is the capital of Kenya")
+    assert out["reply"] == "Berlin is big."
+    found = [e for e in of(events, "tool_finished") if e["tool"] == "look_up"]
+    assert found[0]["result"].startswith("Berlin is the capital of Germany")
+
+
 async def test_local_mcp_servers_must_be_approved():
     connections = mcp_module.connections({"servers": [_stdio_server()], "allowed_commands": []})
     final, _ = await run_flow(

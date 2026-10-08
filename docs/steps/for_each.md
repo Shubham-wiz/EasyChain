@@ -26,8 +26,9 @@ runs, the For Each shows a progress bar (“3 of 10 done”) and the trace lists
 ## What each item produces
 
 The result for an item is what the per-item step saves (its **Save as** field; for a Code step,
-the first field it returns; for a Sub-flow, the first mapped result). An empty list skips straight
-to **When done** with an empty result list.
+the first field it returns; for a Sub-flow, the first mapped result, or the object with all its
+results when it shares Flow Data). An empty list skips straight to **When done** with an empty
+result list.
 
 ## Example
 

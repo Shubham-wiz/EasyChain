@@ -236,6 +236,74 @@ async def test_a_loop_without_a_limit_stops_with_a_plain_message():
 # ── Sub-flows ────────────────────────────────────────────────────────────────
 
 
+def _shared_tidy_flow() -> FlowSpec:
+    """The sub-flow "Tidy text" with shared Flow Data: per item, as a tool and with a time limit."""
+    return make_spec(
+        [
+            input_step({"name": "words", "type": "list"}, "text"),
+            {
+                "id": "each",
+                "type": "for_each",
+                "settings": {"items": "words", "item_name": "text", "save_as": "all_tidy"},
+            },
+            {
+                "id": "per_word",
+                "type": "subflow",
+                "settings": {"flow": "tidy_text", "share_data": True},
+            },
+            {
+                "id": "helper",
+                "type": "agent",
+                "settings": {"input": "text", "tools": ["shout"], "save_as": "answer"},
+            },
+            {
+                "id": "shout",
+                "type": "subflow",
+                "description": "Tidies the text in a style: upper or lower.",
+                "settings": {"flow": "tidy_text", "share_data": True},
+            },
+            {
+                "id": "timed",
+                "type": "subflow",
+                "run": {"timeout": 5},
+                "settings": {"flow": "tidy_text", "share_data": True},
+            },
+            output_step("all_tidy", "answer", "tidied"),
+        ],
+        [
+            ("input", "each"),
+            ("each", "Each item", "per_word"),
+            ("each", "When done", "helper"),
+            ("helper", "timed"),
+            ("timed", "output"),
+        ],
+    )
+
+
+async def test_a_shared_data_sub_flow_works_per_item_as_a_tool_and_with_a_time_limit():
+    from easychain.runtime.standin import Script
+
+    spec = _shared_tidy_flow()
+    compiled = compile_flow(spec, resolve=resolve)
+    # Each of these calls the sub-flow's graph from a function (there's no `per_word(...)`
+    # without a definition, and the graph isn't called like a function).
+    assert "def per_word(data: FlowData)" in compiled.source
+    assert "return tidy_text_graph.invoke(data)" in compiled.source
+    assert " tidy_text_graph(" not in compiled.source
+    script = Script([{"call": "shout", "args": {"style": "upper"}}, "Done."])
+    final, events = await run(
+        spec, {"words": ["Ab", "cD"], "text": " Hi "}, stand_in=True, script=script
+    )
+    assert final["status"] == "ok", final
+    out = final["output"]
+    # Shared data: the sub-flow's default style (upper) isn't used, so these are lower case.
+    assert out["all_tidy"] == [{"tidied": "ab"}, {"tidied": "cd"}]
+    assert out["answer"] == "Done."
+    [tool] = of(events, "tool_finished")
+    assert tool["status"] == "success" and "HI" in tool["result"]
+    assert out["tidied"] == "hi"  # the timed step wrote its result into this flow's data
+
+
 async def test_sub_flows_run_with_separate_and_shared_data_and_per_item():
     final, events = await run(
         case("subflows"), {"text": " Hello ", "words": ["Ab", "cD"]}, flow_id="subflows"
