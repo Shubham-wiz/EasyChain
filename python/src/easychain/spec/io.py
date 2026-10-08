@@ -163,9 +163,11 @@ class _Dumper(yaml.SafeDumper):
 
 def _str_representer(dumper: yaml.SafeDumper, value: str) -> yaml.Node:
     if "\n" in value:
-        # Block scalars cannot represent trailing spaces on lines reliably; strip them.
-        value = re.sub(r"[ \t]+\n", "\n", value)
-        return dumper.represent_scalar("tag:yaml.org,2002:str", value, style="|")
+        # A block scalar (|) reads best, but it can't keep spaces at the end of a line (a
+        # Markdown line break in a prompt, say). Such text is written double-quoted instead,
+        # so saving never changes it.
+        style = '"' if re.search(r"[ \t]$", value, flags=re.M) else "|"
+        return dumper.represent_scalar("tag:yaml.org,2002:str", value, style=style)
     return dumper.represent_scalar("tag:yaml.org,2002:str", value)
 
 

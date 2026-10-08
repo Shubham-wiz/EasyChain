@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 import jsonschema
 import pytest
@@ -34,6 +35,30 @@ def test_defaults_are_left_out_and_multiline_text_is_a_block():
     text = dumps_spec(spec)
     assert "max_chars" not in text  # equals its default
     assert "user: |-" in text or "user: |" in text
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "First line  \nSecond line (a Markdown line break above)",
+        "def run(data):\n    x = 1 \n    return {'x': x}\n",
+        "ends with spaces\n  ",
+        "tab at the end\t\nnext",
+        "  starts with spaces\nand keeps them",
+        "no trailing spaces\nat all\n",
+    ],
+)
+def test_saving_keeps_multiline_text_exactly(text):
+    spec = parse_spec(
+        {
+            "name": "x",
+            "steps": [{"id": "prompt", "type": "instructions", "settings": {"user": text}}],
+        }
+    )
+    saved = dumps_spec(spec)
+    assert loads_spec(saved).steps[0].settings.user == text
+    if not re.search(r"[ \t]$", text, flags=re.M):
+        assert "user: |" in saved  # still a readable block when nothing needs quoting
 
 
 def test_json_form_has_all_defaults_and_aliases():
