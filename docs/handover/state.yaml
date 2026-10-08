@@ -59,11 +59,11 @@ waiting_for_review: false
 open_questions: []
 
 tests:
-  measured_at: 2026-10-04, after the Windows support and review fixes
-  python: {passed: 345, skipped: 0, on: "Windows 11 with SQLite and Postgres 18 (no pgvector); Linux in CI"}
-  web_unit: {passed: 36}
-  client: {passed: 4}
-  e2e: {passed: 31, skipped_unless_SCREENSHOTS: 1, on: "Linux (CI)"}
+  measured_at: 2026-10-09, after the review fixes (server, knowledge, web)
+  python: {passed: 378, skipped: 0, on: "Windows 11 with SQLite and Postgres 18 (no pgvector); Linux in CI"}
+  web_unit: {passed: 63}
+  client: {passed: 11}
+  e2e: {passed: 33, skipped_unless_SCREENSHOTS: 1, on: "Linux (CI)"}
   template_test_sets: {support-bot: "12/12", sql-analyst: "10/10", others: all pass}
   python_end_of_phase_3: {passed: 320}
   python_end_of_phase_2: {passed: 259, compiler_coverage: 0.94}

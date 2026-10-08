@@ -72,48 +72,82 @@ Open:
 - `{secret:NAME}` in Instructions text goes to the model literally; docs say it works.
 - Saving strips trailing spaces from every multi-line string.
 
-### Runtime, server and workers (open)
+### Runtime, server and workers
 
-- Done: `/resume` checks the run before marking Inbox items answered.
-- The SSE stream closes after 1 s of quiet, before slow notifications and `run_finished`.
-- A crash between `update_run(ok)` and `finish_job` skips after-flow triggers and notifications;
-  the exception path never writes `run_finished`.
-- Cancelling a finished run records "cancelled" in its events; `cancel_requested` isn't honoured
-  on re-lease.
-- The IMAP trigger treats sequence numbers as UIDs; one bad charset blocks it.
-- A line break in an Ask a Human question breaks email notifications (Subject header).
-- Settings `GET` returns the SMTP password, Slack webhook and MCP headers in plain text;
-  `/savepoints` returns Flow Data unredacted.
-- Long `thread_id`, `trigger` or names give a 500 on Postgres but work on SQLite.
-- `chmod 0600` does nothing on Windows (now documented in environment.md).
-- Done: deleted secrets now leave a separate worker's environment on reload.
+Done:
 
-### Knowledge, integrations, CLI and export (open unless marked)
+- Settings no longer return secrets: the SMTP password, Slack webhook and MCP header/env values
+  are shown as `••••••` (a `{secret:NAME}` reference is shown as written), and sending the mask
+  back keeps the saved value. Save Points hide vault secrets like run events do.
+- A line break in an Ask a Human question no longer breaks email notifications.
+- Too-long `thread_id`, trigger and names are a 422 with a plain message on every database
+  (they were a 500 on Postgres); a very long step name fits the Inbox.
+- Cancelling a finished run changes nothing; a run whose stop was asked for while its worker
+  was gone isn't run again.
+- The event stream waits for `run_finished` while notifications go out.
+- A worker crash before writing the end, or an unexpected error, still ends the run once.
+- The IMAP trigger uses real UIDs and skips a message it can't decode.
+- `/resume` checks the run before marking Inbox items answered; deleted secrets leave a
+  separate worker's environment on reload; `chmod 0600` on Windows is documented.
 
-- The MCP allow-list checks only the program name: approving `npx` or `python` allows anything.
-- pgvector's HNSW index supports at most 2,000 dimensions; the 3072-dimension embedding models
-  break Knowledge Bases on Postgres.
-- The exported `.env.example` misses Agent, Memory and embedding models and SQL/MCP secrets.
-- The docs give the wrong shape for `EASYCHAIN_MCP_SERVERS`.
-- Text decoding tries UTF-16 before Latin-1, so accented Latin-1 files ingest as garbage.
-- URL fetching has no size cap and follows redirects; `/api/knowledge-preview` returns what it
-  fetched.
-- `describe_database` counts every table's rows on each call.
-- Done: `max_rows` now streams plain reads; Postgres queries have a 60 s statement timeout;
-  `SELECT 'a;b'` is no longer refused.
+Open:
 
-### Web app and client (open)
+- The generic notification webhook URL and the MCP server URL are still shown in full (they may
+  carry a token in the query string).
 
-- Run streams outlive their flow (switching flows mid-run shows the old run's results; Replay
-  twice runs two loops).
-- `?try=1` is never cleared, so reload starts a new run; "Try it" turns the stand-in on for
-  every flow.
-- Uncontrolled inputs in index-keyed rows show stale values after a row is removed.
-- Keyboard delete of a connected step makes two undo entries.
-- `@easychain/client` `wait()` returns a stale "paused" event for resumed runs.
-- SMTP/IMAP passwords, the Slack webhook and MCP auth headers are plain-text inputs.
-- A dropped event stream leaves the run panel on "Running"; the client leaves the stream open.
-- `aria-live` on streamed tokens; field errors not linked with `aria-describedby`.
+### Knowledge, integrations, CLI and export
+
+Done:
+
+- 3072-dimension embedding models work on Postgres with pgvector (a `halfvec` index above 2,000
+  dimensions; the first ingest never fails on the index).
+- Accented files in cp1252/Latin-1 are read correctly (UTF-16 only with a byte order mark or
+  clear UTF-16 data).
+- Web pages and OpenAPI specs are read with a size cap (50 MB / 25 MB); files that can't be
+  parsed give a clear 4xx error.
+- A relative OpenAPI `servers` URL is resolved against the spec's address.
+- The exported `.env.example` lists every model key, every `{secret:…}`, and the MCP and
+  Knowledge Base variables the flow needs; the README's run hints quote correctly in bash and
+  PowerShell.
+- `describe_database` quotes table names per database and caps its row counts.
+- The MCP approved list can hold a whole command line (matched exactly); the UI and docs say
+  plainly that approving `npx` or `python` approves anything they can run.
+- `max_rows` streams plain reads; Postgres queries time out after 60 s; `SELECT 'a;b'` works.
+- The docs give the right shape for `EASYCHAIN_MCP_SERVERS`.
+
+Open:
+
+- Server-side fetches (Knowledge Base web pages, OpenAPI import) have no address filter, so they
+  can reach internal addresses, and `/api/knowledge-preview` returns what it fetched (planned
+  egress allow-list: Phase 5).
+- The pre-run check for missing secrets looks only at Database query and Web request steps.
+
+### Web app and client
+
+Done:
+
+- Run streams belong to the panel that started them: opening another flow or replaying stops
+  the old stream, and a late-ending stream can't take over the new one.
+- `?try=1` is removed once the run starts (reload and Back don't start another run); "Try it"
+  turns the stand-in on for that flow only.
+- Inputs in rows follow the saved value (`DraftInput`, stable row keys): removing a row no
+  longer renames the next field, and undo refreshes them.
+- Deleting a connected step with the keyboard is one undo step.
+- `@easychain/client`: `wait()` returns the end of the newest part; streams close on `break`;
+  `approve_tool` types. Both the web app and the React hook reconnect a dropped event stream
+  from the last event, then say the connection was lost.
+- Passwords, webhooks and auth headers are password inputs with Show/Hide and a nudge to
+  `{secret:NAME}`; a hidden saved value stays hidden and is kept.
+- Screen readers hear one status line (`RunAnnouncer`), not every streamed token; field
+  problems are linked to their inputs.
+- The code editor's completion inserts what it shows.
+
+Open:
+
+- The generic Webhook URL in Notifications and header values in the Web request step's
+  key-value editor are still plain inputs.
+- Field problems of composite editors (input-field rows, the reply builder, the code editor)
+  aren't linked to a single input.
 
 ### Tests and docs
 
