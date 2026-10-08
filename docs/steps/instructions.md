@@ -47,3 +47,5 @@ write_prompt_template = ChatPromptTemplate.from_messages(
 - Click **+ Insert field** to add a variable. Variables that aren't Flow Data fields show in
   red, and the checks suggest the closest name ("Did you mean `{page}`?").
 - Only `{name}` is a variable. Other braces, such as JSON examples, are kept as written.
+- `{secret:NAME}` can't be used here: everything in Instructions is sent to the AI model, so the
+  checks refuse it. Keep keys in the step that uses them (a Web request header, a database URL).

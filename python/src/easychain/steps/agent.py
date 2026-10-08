@@ -14,7 +14,7 @@ from ..compiler.issues import Fix, Issue, error, warning
 from ..compiler.pycode import docstring, py_literal, py_str
 from ..compiler.schema_code import check_schema, emit_schema, spread_types
 from ..compiler.templates import variables
-from .ai import check_model, missing_field_issue
+from .ai import check_model, missing_field_issue, secrets_in_prompt
 from .base import FormField, StepCode, StepHandler
 
 # Step types an agent can use as tools.
@@ -203,6 +203,7 @@ class AgentHandler(StepHandler):
         elif field not in an.available_fields(step.id):
             issues.append(missing_field_issue(step, field, an, "input", "This agent works on"))
         available = an.available_fields(step.id)
+        issues += secrets_in_prompt(step, [("instructions", s.instructions)], "the role and rules")
         for name in variables(s.instructions):
             if name not in available:
                 issues.append(

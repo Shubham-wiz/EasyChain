@@ -137,12 +137,18 @@ and *Rejected*, or its options) and For Each (*Each item* and *When done*).
 
 ## Placeholders
 
-Text settings of Instructions and Web request steps can use:
+Text settings such as Instructions, a Web request's URL, headers and body, or an Ask a Human
+question can use:
 
 | Placeholder | Becomes |
 |---|---|
 | `{field}` | The value of a Flow Data field |
 | `{secret:NAME}` | A secret from Settings (or the `NAME` environment variable in exported code) |
+
+Secrets only go where a service needs them: a Web request's URL, headers and body, a Database
+query's connection, an MCP tool's arguments. Text that is sent to an AI model (Instructions, an
+Agent's role and rules, an AI Decision's guidance) or shown to a person (an Ask a Human question)
+can't use them; the checks stop the flow with an error instead of sending the secret.
 
 Other braces are kept as literal text, so you can paste JSON into a prompt or a request body
 without escaping anything.

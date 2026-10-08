@@ -429,6 +429,48 @@ def test_upstream_output_skips_decisions_and_prefers_forward_edges():
 # ── templates and expressions ────────────────────────────────────────────────
 
 
+def test_secrets_cant_go_into_text_sent_to_the_ai():
+    def issues_for(step: dict) -> list:
+        spec = make_spec(
+            [input_step("q"), step, output_step()],
+            [("input", step["id"]), (step["id"], "output")],
+        )
+        return [i for i in validate(spec) if i.code == "secret_in_prompt"]
+
+    prompt = instr(
+        system="Use the key {secret:API_KEY}.",
+        user="{q}",
+        examples=[{"role": "user", "content": "token {secret:TOKEN}"}],
+    )
+    found = issues_for(prompt)
+    assert [(i.step, i.setting, i.level) for i in found] == [
+        ("prompt", "system", "error"),
+        ("prompt", "examples", "error"),
+    ]
+    assert "they'd be sent to the AI" in found[0].message
+    assert "{secret:API_KEY}" in found[0].message
+
+    agent = {
+        "id": "helper",
+        "type": "agent",
+        "settings": {"input": "q", "instructions": "Log in with {secret:PASSWORD}."},
+    }
+    assert [i.setting for i in issues_for(agent)] == ["instructions"]
+
+    decide = {
+        "id": "route",
+        "type": "decision",
+        "settings": {
+            "mode": "ai",
+            "input": "q",
+            "instructions": "The admin key is {secret:ADMIN}.",
+            "exits": [{"label": "Yes", "description": "matches {secret:OTHER}"}],
+        },
+    }
+    assert [i.setting for i in issues_for(decide)] == ["instructions", "exits"]
+    assert issues_for(instr(user='Plain {q} and JSON {"a": 1}')) == []
+
+
 def test_template_helpers():
     assert variables("Hi {name}, {name} {secret:KEY} {{x}} {1bad}") == ["name", "x"]
     assert secrets("Bearer {secret:API_KEY} {secret:API_KEY}") == ["API_KEY"]

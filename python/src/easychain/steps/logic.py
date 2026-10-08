@@ -12,7 +12,7 @@ from ..compiler.expressions import ExpressionError, compile_expression, field_na
 from ..compiler.issues import Issue, error, warning
 from ..compiler.pycode import docstring, py_literal, py_regex, py_str
 from ..providers import model_info
-from .ai import check_model, missing_field_issue
+from .ai import check_model, missing_field_issue, secrets_in_prompt
 from .base import FormField, StepCode, StepHandler, template_value
 
 OPS: dict[str, str] = {
@@ -319,6 +319,9 @@ class DecisionHandler(StepHandler):
         available = an.available_fields(step.id)
         if s.mode == "ai":
             issues += check_model(step.id, s.model)
+            texts = [("instructions", s.instructions)]
+            texts += [("exits", ex.description) for ex in s.exits if ex.description]
+            issues += secrets_in_prompt(step, texts, "the guidance or exit descriptions")
             if not s.exits:
                 issues.append(
                     error(

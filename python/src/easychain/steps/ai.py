@@ -8,7 +8,7 @@ from typing import Any
 from ..compiler.issues import Fix, Issue, error, warning
 from ..compiler.pycode import RawCode, docstring, py_str
 from ..compiler.schema_code import check_schema, emit_schema, spread_types
-from ..compiler.templates import to_fstring_template, variables
+from ..compiler.templates import secrets, to_fstring_template, variables
 from ..providers import PROVIDERS, model_info, split_model
 from .base import FormField, StepCode, StepHandler
 
@@ -64,6 +64,26 @@ def missing_field_issue(step: Any, name: str, an: Any, setting: str, what: str) 
         else f"{what} `{name}`, which isn't a Flow Data field."
     )
     return Issue(level, "missing_field", message, step=step.id, setting=setting, hint=hint, fix=fix)
+
+
+def secrets_in_prompt(step: Any, texts: list[tuple[str, str]], where: str) -> list[Issue]:
+    """An error for each setting whose text, sent to an AI model, names a {secret:NAME}."""
+    issues: list[Issue] = []
+    for setting, text in texts:
+        names = secrets(text)
+        if names and setting not in {i.setting for i in issues}:
+            issues.append(
+                error(
+                    "secret_in_prompt",
+                    f"Secrets can't go into {where}; they'd be sent to the AI. "
+                    f"Remove {{secret:{names[0]}}}.",
+                    step=step.id,
+                    setting=setting,
+                    hint="Keys belong in the steps that use them: a Web request's headers, a "
+                    "database URL or an MCP server. Put anything the AI should read in Flow Data.",
+                )
+            )
+    return issues
 
 
 class AIModelHandler(StepHandler):
@@ -435,6 +455,9 @@ class InstructionsHandler(StepHandler):
                     hint="Write what you want the AI to do, for example: Summarise {page}.",
                 )
             )
+        texts = [("system", s.system), ("user", s.user)]
+        texts += [("examples", e.content) for e in s.examples]
+        issues += secrets_in_prompt(step, texts, "Instructions")
         available = an.available_fields(step.id)
         for name in self.template_vars(step):
             if name not in available:
