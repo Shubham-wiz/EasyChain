@@ -11,7 +11,7 @@ of them (map-reduce).
 | Go through | A list field. Empty means: what the previous step saved. |
 | Call each item | The field that holds the current item for the step that runs per item (default `item`). |
 | Save the results as | A list with what that step produced for each item, in the original order (default `results`). |
-| At most this many at once *(More options)* | Limits how many items run at the same time (LangGraph `max_concurrency`). |
+| At most this many at once *(More options)* | Sends the items to the step in groups of this size: the next group starts once a group is done. It limits this step only, in a sub-flow too; other branches of the run keep going. (The flow setting **Most steps at the same time** limits the whole run, LangGraph `max_concurrency`.) |
 
 ## Exits
 
@@ -49,14 +49,23 @@ Compiles to (shortened):
 ```python
 def send_each_page(data: FlowData) -> list[Send] | str:
     items = data.get("urls") or []
-    if not items:
+    start = len(data.get("each_page_results") or [])  # how many are done
+    if start >= len(items):
         return "each_page__done"
-    return [Send("fetch_page", {**data, "url": item, "each_page_index": number}) for number, item in enumerate(items)]
+    return [
+        Send("fetch_page", {**data, "url": item, "each_page_index": number})
+        for number, item in enumerate(items[start : start + 4], start)
+    ]
 
 def fetch_page_for_each_page(data: FlowData) -> dict[str, Any]:
     result = fetch_page(data) or {}
     return {"each_page_results": [(data["each_page_index"], result.get("page"))]}
 
 builder.add_conditional_edges("each_page", send_each_page, ["fetch_page", "each_page__done"])
+builder.add_edge("fetch_page", "each_page__next")  # once a group is done, send the next
+builder.add_conditional_edges("each_page__next", send_each_page, ["fetch_page", "each_page__done"])
 builder.add_node("each_page__done", each_page_done, defer=True)
 ```
+
+Without a limit, `send_each_page` sends every item at once and each one leads straight to
+`each_page__done`.

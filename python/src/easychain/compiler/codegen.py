@@ -728,15 +728,10 @@ def _run_config(spec: FlowSpec) -> dict[str, Any]:
     config: dict[str, Any] = {}
     if spec.settings.max_steps != DEFAULT_MAX_STEPS:
         config["recursion_limit"] = spec.settings.max_steps
-    limits = [
-        s.settings.concurrency
-        for s in spec.steps
-        if s.type == "for_each" and s.settings.concurrency
-    ]
+    # A For Each's "at most this many at once" is kept by its own code (see ForEachHandler), so
+    # it limits that step only; the flow's max_parallel limits the whole run.
     if spec.settings.max_parallel:
-        limits.append(spec.settings.max_parallel)
-    if limits:
-        config["max_concurrency"] = min(limits)
+        config["max_concurrency"] = spec.settings.max_parallel
     return config
 
 

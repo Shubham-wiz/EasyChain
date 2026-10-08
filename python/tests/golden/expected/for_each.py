@@ -49,9 +49,6 @@ class FlowOutput(TypedDict, total=False):
     shouted: list[Any]
 
 
-RUN_CONFIG: dict[str, Any] = {"max_concurrency": 2}
-
-
 # ── Steps ────────────────────────────────────────────────────────────────────
 
 
@@ -64,17 +61,20 @@ def each(data: FlowData) -> dict[str, Any]:
 
 
 def send_each(data: FlowData) -> list[Send] | str:
-    """Send every item of `topics` to its own run of the step (they run side by side)."""
+    """Send the next 2 items of `topics` to their own runs of the step (they run side by side); the
+    next 2 go once those are done.
+    """
     items = data.get("topics")
     if items is None:
         items = []
     elif not isinstance(items, list):
         items = [items]
-    if not items:
+    start = len(data.get("each_results") or [])  # how many are done
+    if start >= len(items):
         return "each__done"
     return [
         Send("shout", {**data, "topic": item, "each_index": number})
-        for number, item in enumerate(items)
+        for number, item in enumerate(items[start : start + 2], start)
     ]
 
 
@@ -82,6 +82,11 @@ def shout_for_each(data: FlowData) -> dict[str, Any]:
     """Run `shout` for one item of “each” and keep `loud`."""
     result = shout(data) or {}
     return {"each_results": [(data["each_index"], result.get("loud"))]}
+
+
+def each_next(data: FlowData) -> dict[str, Any]:
+    """Wait until the items send_each sent are done; then send_each sends the next."""
+    return {}
 
 
 def each_done(data: FlowData) -> dict[str, Any]:
@@ -107,13 +112,15 @@ def build_graph(checkpointer=None, *, store=None, cache=None):
     builder = StateGraph(FlowData, input_schema=FlowInput, output_schema=FlowOutput)
 
     builder.add_node("each", each)
+    builder.add_node("each__next", each_next)
     builder.add_node("each__done", each_done, defer=True)
     builder.add_node("shout", shout_for_each)
 
     builder.add_edge(START, "each")
     builder.add_conditional_edges("each", send_each, ["shout", "each__done"])
+    builder.add_conditional_edges("each__next", send_each, ["shout", "each__done"])
     builder.add_edge("each__done", END)
-    builder.add_edge("shout", "each__done")
+    builder.add_edge("shout", "each__next")
     return builder.compile(checkpointer=checkpointer, store=store, cache=cache)
 
 
@@ -123,5 +130,5 @@ graph = build_graph()
 if __name__ == "__main__":
     example = {"topics": ["a", "b", "c"]}
     inputs = json.loads(sys.argv[1]) if len(sys.argv) > 1 else example
-    result = graph.invoke(inputs, RUN_CONFIG)
+    result = graph.invoke(inputs)
     print(json.dumps(result, indent=2, ensure_ascii=False, default=str))

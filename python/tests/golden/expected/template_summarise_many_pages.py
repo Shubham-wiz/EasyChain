@@ -61,9 +61,6 @@ class FlowOutput(TypedDict, total=False):
     pages: list[Any]
 
 
-RUN_CONFIG: dict[str, Any] = {"max_concurrency": 4}
-
-
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
@@ -132,17 +129,20 @@ def each_page(data: FlowData) -> dict[str, Any]:
 
 
 def send_each_page(data: FlowData) -> list[Send] | str:
-    """Send every item of `urls` to its own run of the step (they run side by side)."""
+    """Send the next 4 items of `urls` to their own runs of the step (they run side by side); the
+    next 4 go once those are done.
+    """
     items = data.get("urls")
     if items is None:
         items = []
     elif not isinstance(items, list):
         items = [items]
-    if not items:
+    start = len(data.get("each_page_results") or [])  # how many are done
+    if start >= len(items):
         return "each_page__done"
     return [
         Send("fetch_page", {**data, "url": item, "each_page_index": number})
-        for number, item in enumerate(items)
+        for number, item in enumerate(items[start : start + 4], start)
     ]
 
 
@@ -150,6 +150,11 @@ def fetch_page_for_each_page(data: FlowData) -> dict[str, Any]:
     """Run `fetch_page` for one item of “For each page” and keep `page`."""
     result = fetch_page(data) or {}
     return {"each_page_results": [(data["each_page_index"], result.get("page"))]}
+
+
+def each_page_next(data: FlowData) -> dict[str, Any]:
+    """Wait until the items send_each_page sent are done; then send_each_page sends the next."""
+    return {}
 
 
 def each_page_done(data: FlowData) -> dict[str, Any]:
@@ -218,6 +223,7 @@ def build_graph(checkpointer=None, *, store=None, cache=None):
     builder = StateGraph(FlowData, input_schema=FlowInput, output_schema=FlowOutput)
 
     builder.add_node("each_page", each_page)
+    builder.add_node("each_page__next", each_page_next)
     builder.add_node("each_page__done", each_page_done, defer=True)
     builder.add_node(
         "fetch_page",
@@ -229,8 +235,9 @@ def build_graph(checkpointer=None, *, store=None, cache=None):
 
     builder.add_edge(START, "each_page")
     builder.add_conditional_edges("each_page", send_each_page, ["fetch_page", "each_page__done"])
+    builder.add_conditional_edges("each_page__next", send_each_page, ["fetch_page", "each_page__done"])
     builder.add_edge("each_page__done", "write_prompt")
-    builder.add_edge("fetch_page", "each_page__done")
+    builder.add_edge("fetch_page", "each_page__next")
     builder.add_edge("write_prompt", "summarise")
     builder.add_edge("summarise", END)
     return builder.compile(checkpointer=checkpointer, store=store, cache=cache)
@@ -247,5 +254,5 @@ if __name__ == "__main__":
         ],
     }
     inputs = json.loads(sys.argv[1]) if len(sys.argv) > 1 else example
-    result = graph.invoke(inputs, RUN_CONFIG)
+    result = graph.invoke(inputs)
     print(json.dumps(result, indent=2, ensure_ascii=False, default=str))

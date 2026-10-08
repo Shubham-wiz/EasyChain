@@ -707,6 +707,8 @@ async def stream_run(
             if step_id not in fan.steps:
                 continue
             is_done_node = step_id != name
+            if is_done_node and not name.endswith("__done"):
+                continue  # a For Each's "send the next items" node: bookkeeping, not a step
             key = "|".join([*ns, f"{name}:{payload.get('id')}"])
 
             if "input" in payload:

@@ -97,6 +97,85 @@ async def test_for_each_concurrency_limit_is_respected():
     assert elapsed >= 0.38, "four 0.2 s items, two at a time, take at least 0.4 s"
 
 
+_SPAN = (
+    "import time\n\ndef run(data):\n    began = time.perf_counter()\n    time.sleep(0.2)\n"
+    "    return {'span': [began, time.perf_counter()]}\n"
+)
+
+
+def _most_at_once(spans: list[list[float]]) -> int:
+    """The most items that were running at the same moment."""
+    points = sorted([(s, 1) for s, _ in spans] + [(e, -1) for _, e in spans])
+    running = most = 0
+    for _, change in points:
+        running += change
+        most = max(most, running)
+    return most
+
+
+def _limited_each(step_id: str, items: str, limit: int | None, save_as: str) -> list[dict]:
+    settings = {"items": items, "item_name": f"{step_id}_item", "save_as": save_as}
+    if limit:
+        settings["concurrency"] = limit
+    return [
+        {"id": step_id, "type": "for_each", "settings": settings},
+        {"id": f"{step_id}_work", "type": "code", "settings": {"code": _SPAN}},
+    ]
+
+
+async def test_for_each_limit_holds_inside_a_sub_flow():
+    child = make_spec(
+        [
+            input_step({"name": "words", "type": "list"}),
+            *_limited_each("each", "words", 2, "spans"),
+            output_step("spans"),
+        ],
+        [("input", "each"), ("each", "Each item", "each_work"), ("each", "When done", "output")],
+        name="Timed",
+    )
+    parent = make_spec(
+        [
+            input_step({"name": "words", "type": "list"}),
+            {"id": "timed", "type": "subflow", "settings": {"flow": "timed"}},
+            output_step("spans"),
+        ],
+        [("input", "timed"), ("timed", "output")],
+    )
+    final, _ = await run(parent, {"words": ["a", "b", "c", "d"]}, resolve={"timed": child}.get)
+    assert final["status"] == "ok", final
+    spans = final["output"]["spans"]
+    assert len(spans) == 4
+    assert _most_at_once(spans) <= 2  # it used to be ignored inside a sub-flow (4 at once)
+
+
+async def test_for_each_limit_doesnt_hold_back_other_branches():
+    spec = make_spec(
+        [
+            input_step({"name": "words", "type": "list"}),
+            *_limited_each("slow", "words", 1, "spans_slow"),
+            *_limited_each("fast", "words", None, "spans_fast"),
+            output_step("spans_slow", "spans_fast"),
+        ],
+        [
+            ("input", "slow"),
+            ("input", "fast"),
+            ("slow", "Each item", "slow_work"),
+            ("fast", "Each item", "fast_work"),
+            ("slow", "When done", "output"),
+            ("fast", "When done", "output"),
+        ],
+    )
+    assert "max_concurrency" not in compile_flow(spec).run_config  # not a run-wide limit
+    final, events = await run(spec, {"words": ["a", "b", "c", "d"]})
+    assert final["status"] == "ok", final
+    out = final["output"]
+    assert len(out["spans_slow"]) == len(out["spans_fast"]) == 4
+    assert _most_at_once(out["spans_slow"]) == 1
+    assert _most_at_once(out["spans_fast"]) >= 2  # was 1: the limit applied to the whole run
+    done = [e["step"] for e in of(events, "step_finished") if e["step"] in ("slow", "fast")]
+    assert sorted(done) == ["fast", "slow"]  # each For Each finished once
+
+
 # ── Ask a Human ──────────────────────────────────────────────────────────────
 
 

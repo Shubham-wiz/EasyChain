@@ -197,6 +197,10 @@ class Names:
         "run_tool",
         "agent",
         "result",
+        # Locals of a For Each item wrapper that also calls the step it runs per item.
+        "items",
+        "update",
+        "following",
         "np",
         "sa",
         "search_knowledge",

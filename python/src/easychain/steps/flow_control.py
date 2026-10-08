@@ -310,6 +310,11 @@ def done_node(step: Any) -> str:
     return f"{step.id}__done"
 
 
+def next_node(step: Any) -> str:
+    """With "at most this many at once": the node that sends the next items once some are done."""
+    return f"{step.id}__next"
+
+
 class ForEachHandler(StepHandler):
     type = "for_each"
     label = "For Each"
@@ -345,8 +350,9 @@ class ForEachHandler(StepHandler):
             min=1,
             max=100,
             advanced=True,
-            help="Lower it if a service limits how fast you can call it.",
-            technical="max_concurrency",
+            help="Lower it if a service limits how fast you can call it. Items go in groups of "
+            "this size, the next group once one is done; other steps aren't held back.",
+            technical="Send in groups",
         ),
     ]
 
@@ -502,10 +508,17 @@ class ForEachHandler(StepHandler):
             )
             + f"\n    return {{{py_str(results)}: None}}  # None starts the list again"
         )
+        # "At most this many at once" sends the items in groups of that size: the next group
+        # goes once a group is done. It limits this step only (LangGraph's max_concurrency
+        # would limit the whole run, other branches included).
+        limit = s.concurrency if body else None
         lines = [
             f"def {router}(data: {ctx.data_class}) -> list[Send] | str:",
             docstring(
-                f"Send every item of `{field}` to its own run of the step (they run side by side)."
+                f"Send the next {limit} items of `{field}` to their own runs of the step (they run "
+                f"side by side); the next {limit} go once those are done."
+                if limit
+                else f"Send every item of `{field}` to its own run of the step (they run side by side)."
             ),
             f"    items = data.get({py_str(field)})",
             "    if items is None:",
@@ -513,12 +526,23 @@ class ForEachHandler(StepHandler):
             "    elif not isinstance(items, list):",
             "        items = [items]",
         ]
-        if body:
+        send = f"Send({py_str(body)}, {{**data, {py_str(s.item_name)}: item, {py_str(index)}: number}})"
+        if limit:
+            lines += [
+                f"    start = len(data.get({py_str(results)}) or [])  # how many are done",
+                "    if start >= len(items):",
+                f"        return {py_str(done)}",
+                "    return [",
+                f"        {send}",
+                f"        for number, item in enumerate(items[start : start + {limit}], start)",
+                "    ]",
+            ]
+        elif body:
             lines += [
                 "    if not items:",
                 f"        return {py_str(done)}",
                 "    return [",
-                f"        Send({py_str(body)}, {{**data, {py_str(s.item_name)}: item, {py_str(index)}: number}})",
+                f"        {send}",
                 "        for number, item in enumerate(items)",
                 "    ]",
             ]
@@ -542,7 +566,17 @@ class ForEachHandler(StepHandler):
                 f"    return {{{py_str(results)}: [(data[{py_str(index)}], {kept})]}}"
             )
             ctx.node_override[body] = wrapper
-            ctx.edge_override[body] = [f"builder.add_edge({py_str(body)}, {py_str(done)})"]
+            after_item = next_node(step) if limit else done
+            ctx.edge_override[body] = [f"builder.add_edge({py_str(body)}, {py_str(after_item)})"]
+        if limit:
+            next_fn = ctx.names.claim(f"{step.id}_next")
+            definitions.append(
+                f"def {next_fn}(data: {ctx.data_class}) -> dict[str, Any]:\n"
+                + docstring(
+                    f"Wait until the items {router} sent are done; then {router} sends the next."
+                )
+                + "\n    return {}"
+            )
 
         definitions.append(
             f"def {done_fn}(data: {ctx.data_class}) -> dict[str, Any]:\n"
@@ -553,12 +587,19 @@ class ForEachHandler(StepHandler):
             f"    return {{{py_str(s.save_as)}: [result for _, result in collected]}}"
         )
         targets = [py_str(done)] if not body else [py_str(body), py_str(done)]
+        extra_nodes = [f"builder.add_node({py_str(done)}, {done_fn}, defer=True)"]
         if body:
             wiring = [
                 f"builder.add_conditional_edges({py_str(step.id)}, {router}, [{', '.join(targets)}])"
             ]
         else:
             wiring = [f"builder.add_edge({py_str(step.id)}, {py_str(done)})"]
+        if limit:
+            extra_nodes.insert(0, f"builder.add_node({py_str(next_node(step))}, {next_fn})")
+            wiring.append(
+                f"builder.add_conditional_edges({py_str(next_node(step))}, {router}, "
+                f"[{', '.join(targets)}])"
+            )
         after = [c for c in an.outgoing[step.id] if c.exit == WHEN_DONE]
         if after:
             target = an.steps[after[0].target]
@@ -566,12 +607,7 @@ class ForEachHandler(StepHandler):
         else:
             goto = "END"
         wiring.append(f"builder.add_edge({py_str(done)}, {goto})")
-        return StepCode(
-            definitions,
-            node=fn,
-            wiring=wiring,
-            extra_nodes=[f"builder.add_node({py_str(done)}, {done_fn}, defer=True)"],
-        )
+        return StepCode(definitions, node=fn, wiring=wiring, extra_nodes=extra_nodes)
 
 
 # ── Sub-flow ─────────────────────────────────────────────────────────────────
