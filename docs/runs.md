@@ -66,6 +66,10 @@ the job. It looks at the run's last Save Point and carries on from there:
   so a service that honours it ignores a repeat that happened in the instant between sending and
   recording.
 
+If the run was stopped while its worker was gone, the next worker ends it as `cancelled` instead
+of carrying on. If the worker died just after saving the run's outcome, the next worker only
+writes the missing `run_finished` event; after-flow triggers don't fire a second time.
+
 `tests/test_durability.py` kills a worker with SIGKILL in the middle of a run and checks all of
 this, on SQLite and on Postgres.
 
@@ -84,6 +88,9 @@ later, after restarts and redeploys.
   triggers and the API.
 - **Notifications** (Settings → Notifications): a webhook (JSON POST), Slack (incoming webhook)
   and email (SMTP). Each links to the Inbox item. Use `{secret:NAME}` for URLs and passwords.
+  Once saved, the SMTP password and the Slack webhook URL are shown as `••••••` (unless they
+  are a `{secret:NAME}`); leave them as they are to keep them. The email's subject is the
+  question on one line; the body has all of it.
 
 Answering resumes the run with `Command(resume=…)` on a worker. When several steps wait at once
 (Ask a Human inside a For Each), each can be answered on its own.
@@ -114,6 +121,7 @@ interrupt the current run, or roll the current run back and start over from befo
 | **Schedule** | Cron (`minute hour day month weekday`, names, ranges, steps, `@daily`) in a time zone. Each slot fires once even with several workers. |
 | **File upload** | `POST /api/hooks/<id>/upload?filename=report.pdf` with the file as the body. The saved file's path goes into the chosen input field. |
 | **After another flow** | When the other flow finishes (or fails too, if chosen), with its results as inputs. |
+| **Email** | New messages in an IMAP mailbox, checked every minute (`poll_seconds`). Each starts a run with `subject`, `sender`, `to`, `date`, `message_id` and `body`, and is marked as read once its run has started. A message that can't be read (an unknown character set, say) is marked as read and skipped; the worker's log names it. The password is shown as `••••••` once saved. |
 
 Manage them in the editor (the ⚡ button) or with `/api/triggers`.
 
@@ -124,21 +132,23 @@ All endpoints are under `/api`; the OpenAPI document is at `/api/openapi.json` a
 
 | | |
 |---|---|
-| `POST /runs` | Start a run: `{flow_id, inputs, thread_id?, stand_in?, pause_before?, pause_after?, background?}`. Streams its events (SSE) unless `background: true`, which returns `{run_id, thread_id}`. |
+| `POST /runs` | Start a run: `{flow_id, inputs, thread_id?, stand_in?, pause_before?, pause_after?, background?, trigger?}`. Streams its events (SSE) unless `background: true`, which returns `{run_id, thread_id}`. `thread_id` and `flow_id` take up to 100 characters, `trigger` up to 40. |
 | `GET /runs?flow_id=&thread_id=&status=` | Recent runs. |
 | `GET /runs/{id}` | A run with its events (without tokens). |
-| `GET /runs/{id}/events?after=` | Follow a run (SSE). Each event has an `id`; reconnect with `Last-Event-ID` to pick up where you left off. |
+| `GET /runs/{id}/events?after=` | Follow a run (SSE) until its `run_finished` event. Each event has an `id`; reconnect with `Last-Event-ID` to pick up where you left off. |
 | `WS /runs/{id}/ws` | The same over a WebSocket; send `{"type": "cancel"}` to stop the run. |
 | `POST /runs/{id}/resume` | Answer waiting steps: `{answers: {waiting_id: {action, value, comment}}}` (or `{answer}` when one step waits). |
 | `POST /runs/{id}/continue` | Carry on after a breakpoint, an error or a stop. |
 | `POST /runs/{id}/fork` | Re-run from a Save Point: `{checkpoint_id, update?}`. |
-| `POST /runs/{id}/cancel` | Stop a run. |
-| `GET /runs/{id}/savepoints` | The Save Points of the run's conversation, newest first. |
+| `POST /runs/{id}/cancel` | Stop a run. Returns its `status`: `cancelled`, or `cancelling` while a worker stops it. A run that has already finished stays as it was, and its status is returned. |
+| `GET /runs/{id}/savepoints` | The Save Points of the run's conversation, newest first. Secret values are hidden (`••••••`), as in events. |
 | `GET /inbox`, `POST /inbox/{id}/answer` | What waits for a person, and answering it. |
-| `GET/POST /triggers`, `PATCH/DELETE /triggers/{id}` | Triggers. |
-| `GET/PUT /settings/notifications`, `POST /settings/notifications/test` | Notifications. |
+| `GET/POST /triggers`, `PATCH/DELETE /triggers/{id}` | Triggers. Names take up to 200 characters. |
+| `GET/PUT /settings/notifications`, `POST /settings/notifications/test` | Notifications. Passwords and webhook URLs come back as `••••••`; send that back to keep the saved value. |
 | `GET /flows/{id}/versions`, `GET /versions/{id}` | Flow versions (saved on every save and run). |
 | `GET /threads?flow_id=` | Conversations of a flow. |
+
+A request the API can't take gets status 422 with a `message` that says what to change.
 
 ### Events
 

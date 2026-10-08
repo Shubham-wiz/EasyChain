@@ -19,10 +19,30 @@ from cryptography.fernet import Fernet, InvalidToken
 
 NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
 
+# How settings that hold a password, token or webhook URL are shown by the API.
+MASK = "••••••"
+# "{secret:NAME}", optionally after an auth scheme ("Bearer {secret:NAME}"): it only names a
+# secret in the vault, so it is safe to show.
+_REFERENCE = re.compile(r"\s*(?:[A-Za-z][A-Za-z0-9_-]*\s+)?\{secret:[A-Za-z_][A-Za-z0-9_]*\}\s*")
+
 NEW_KEY_HINT = (
     'Make one with: python -c "from cryptography.fernet import Fernet; '
     'print(Fernet.generate_key().decode())"'
 )
+
+
+def masked(value: str | None) -> str:
+    """A saved password, token or webhook URL as the API shows it: hidden, unless it is a
+    ``{secret:NAME}`` reference."""
+    if not value:
+        return ""
+    return value if _REFERENCE.fullmatch(value) else MASK
+
+
+def unmasked(value: str | None, saved: str | None) -> str:
+    """What to save when a client sends a setting back: the mask, unchanged, keeps the saved
+    value."""
+    return (saved or "") if value == MASK else (value or "")
 
 
 class VaultLocked(ValueError):

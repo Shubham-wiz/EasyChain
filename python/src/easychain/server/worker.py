@@ -155,16 +155,7 @@ class Worker:
         except Exception:
             log.exception("Job %s failed", job_id)
             if not lost.is_set():
-                await self.db.update_run(
-                    job["run_id"],
-                    status="error",
-                    finished_at=time.time(),
-                    error={
-                        "kind": "worker_error",
-                        "message": "The worker hit an unexpected problem.",
-                    },
-                )
-                await self.db.finish_job(job_id, self.name, "failed")
+                await self._failed(job)
         finally:
             # Let the heartbeat finish its current write rather than cutting it off.
             done.set()
@@ -198,15 +189,85 @@ class Worker:
             if cancel:
                 stop.set()
 
+    async def _failed(self, job: dict[str, Any]) -> None:
+        """The job hit an unexpected problem: the run ends with an error, and says so."""
+        run = await self.db.get_run(job["run_id"])
+        if run is None:
+            return
+        if run["status"] in (*FINISHED, "paused"):
+            # Its outcome was saved before the problem (sending notifications, say): keep it.
+            await self.db.finish_job(job["id"], self.name, "done")
+            await self._write_missing_end(run)
+            return
+        error = {
+            "kind": "worker_error",
+            "message": "The worker hit an unexpected problem.",
+            "hint": "Try the run again. If it keeps happening, the worker's log says what went "
+            "wrong.",
+            "fixes": [],
+        }
+        await self.db.update_run(run["id"], status="error", finished_at=time.time(), error=error)
+        await self.db.finish_job(job["id"], self.name, "failed")
+        await self._write_end(run, {"status": "error", "error": error})
+
+    async def _write_missing_end(self, run: dict[str, Any]) -> None:
+        """Write the run_finished event for the run's saved outcome, if it isn't there yet (its
+        worker stopped between saving the outcome and writing the event)."""
+        if await self.db.end_event_id(run["id"], run["status"]) is not None:
+            return
+        end: dict[str, Any] = {
+            "status": run["status"],
+            "output": run.get("output"),
+            "usage": run.get("usage"),
+            "cost": run.get("cost"),
+            "checkpoint_id": run.get("checkpoint_id"),
+        }
+        if run.get("error"):
+            end["error"] = run["error"]
+        if run["status"] == "paused":
+            end.update(run.get("pending") or {})
+        await self._write_end(run, end)
+
+    async def _write_end(self, run: dict[str, Any], end: dict[str, Any]) -> None:
+        event = {
+            "type": "run_finished",
+            "run_id": run["id"],
+            "ts": time.time() * 1000,
+            "thread_id": run["thread_id"],
+            **end,
+        }
+        await self.db.add_events(run["id"], [event])
+        self.hub.bus.notify(run["id"])
+
     async def _run_job(self, job: dict[str, Any], stop: asyncio.Event, lost: asyncio.Event) -> None:
         db, hub = self.db, self.hub
         run = await db.get_run(job["run_id"])
-        if run is None or run["status"] in FINISHED:
+        if run is None:
             await db.finish_job(job["id"], self.name, "done")
+            return
+        if run["status"] in FINISHED:
+            # A worker finished the run but stopped before closing the job. Its after-flow
+            # triggers may have fired already, so they don't fire again; the end is written if
+            # it's missing, for anyone waiting on it.
+            await db.finish_job(job["id"], self.name, "done")
+            await self._write_missing_end(run)
             return
         if hasattr(hub.vault, "reload"):
             hub.vault.reload()
         spec, children = await hub.flow_from_version(run["version_id"])
+        if job.get("cancel_requested"):
+            # Someone stopped the run while the worker that had it was gone: don't run it again.
+            # It ends as a run stopped by its own worker does (it can be continued later).
+            cancelled = {
+                "status": "cancelled",
+                "output": run.get("output"),
+                "usage": {},
+                "cost": 0.0,
+                "checkpoint_id": run.get("checkpoint_id"),
+            }
+            await self._finish(job, run, spec, cancelled)
+            await self._write_end(run, cancelled)
+            return
         options = run.get("options") or {}
         action, payload = job["action"], dict(job.get("payload") or {})
         handed_back = bool(payload.pop("handed_back", False))

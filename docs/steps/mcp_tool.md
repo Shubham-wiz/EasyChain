@@ -28,6 +28,10 @@ In **Settings → MCP servers**, add a server with a name, an id and how to reac
 
 **Show its tools** connects and lists the server's tools, to check it works.
 
+Once saved, a header or environment value written out in full is shown as `••••••`; leave it
+as it is to keep it, or type a new one. A value that only names a secret
+(`Bearer {secret:DOCS_TOKEN}`) is shown as written.
+
 ## Example
 
 ```yaml

@@ -20,6 +20,8 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Body, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
     FileResponse,
@@ -54,7 +56,7 @@ from .hostguard import HostGuard, allowed_hosts
 from .hub import Busy, Hub, Invalid, NotFound
 from .integrations_api import add_integration_routes
 from .knowledge_api import add_knowledge_routes, use_database
-from .secrets import SecretStore, VaultLocked
+from .secrets import SecretStore, VaultLocked, masked, unmasked
 from .store import FlowNotFound, FlowStore
 from .worker import Worker
 from .worker import fire as fire_trigger
@@ -64,24 +66,32 @@ log = logging.getLogger("easychain.server")
 STATIC_DIR = Path(__file__).parent / "static"
 
 
+# Longest texts the run database keeps (column sizes in db.py), so SQLite and Postgres
+# accept the same requests.
+MAX_FLOW_ID = 100
+MAX_THREAD_ID = 100
+MAX_TRIGGER = 40
+MAX_NAME = 200
+
+
 class RunRequest(BaseModel):
-    flow_id: str | None = None
+    flow_id: str | None = Field(default=None, max_length=MAX_FLOW_ID)
     spec: dict[str, Any] | None = None
     inputs: dict[str, Any] = Field(default_factory=dict)
-    thread_id: str | None = None
+    thread_id: str | None = Field(default=None, max_length=MAX_THREAD_ID)
     stand_in: bool = False
     pause_before: list[str] = Field(default_factory=list)
     pause_after: list[str] = Field(default_factory=list)
     # Return {run_id} straight away instead of streaming the run's events.
     background: bool = False
-    trigger: str | None = None
+    trigger: str | None = Field(default=None, max_length=MAX_TRIGGER)
 
 
 class ResumeRequest(BaseModel):
     # {interrupt_id: answer}; or one answer when only one step is waiting.
     answers: dict[str, Any] | None = None
     answer: Any = None
-    by: str | None = None
+    by: str | None = Field(default=None, max_length=MAX_NAME)
     background: bool = False
 
 
@@ -97,19 +107,19 @@ class AnswerRequest(BaseModel):
     action: str = "approve"
     value: Any = None
     comment: str = ""
-    by: str | None = None
+    by: str | None = Field(default=None, max_length=MAX_NAME)
 
 
 class TriggerRequest(BaseModel):
-    flow_id: str
+    flow_id: str = Field(max_length=MAX_FLOW_ID)
     kind: str = Field(pattern="^(webhook|schedule|upload|after_flow|email)$")
-    name: str | None = None
+    name: str | None = Field(default=None, max_length=MAX_NAME)
     config: dict[str, Any] = Field(default_factory=dict)
 
 
 class TriggerUpdate(BaseModel):
     enabled: bool | None = None
-    name: str | None = None
+    name: str | None = Field(default=None, max_length=MAX_NAME)
     config: dict[str, Any] | None = None
 
 
@@ -825,7 +835,7 @@ def create_app(
         if trig["kind"] == "schedule":
             out["describe"] = describe_cron(cfg.get("cron", ""))
         if trig["kind"] == "email":
-            out["config"] = {**cfg, "password": "••••••" if cfg.get("password") else ""}
+            out["config"] = {**cfg, "password": masked(cfg.get("password"))}
             out["describe"] = f"New mail for {cfg.get('username')} on {cfg.get('host')}"
         return out
 
@@ -880,8 +890,13 @@ def create_app(
         if req.name is not None:
             values["name"] = req.name
         if req.config is not None:
+            config = dict(req.config)
+            if trig["kind"] == "email" and "password" in config:
+                # The password is shown hidden; sent back unchanged, it stays as it was.
+                saved = (trig.get("config") or {}).get("password")
+                config["password"] = unmasked(config["password"], saved)
             cfg, next_at = await _validated_trigger(
-                TriggerRequest(flow_id=trig["flow_id"], kind=trig["kind"], config=req.config),
+                TriggerRequest(flow_id=trig["flow_id"], kind=trig["kind"], config=config),
                 trig["flow_id"],
             )
             values.update(config=cfg, next_fire_at=next_at)
@@ -945,13 +960,13 @@ def create_app(
 
     @app.get("/api/settings/notifications")
     async def get_notifications() -> dict[str, Any]:
-        return notify.merged(await hub().db.get_setting("notifications", {}))
+        return notify.shown(await hub().db.get_setting("notifications", {}))
 
     @app.put("/api/settings/notifications")
     async def set_notifications(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
-        value = notify.merged(body)
+        value = notify.to_save(body, await hub().db.get_setting("notifications", {}))
         await hub().db.set_setting("notifications", value)
-        return value
+        return notify.shown(value)
 
     @app.post("/api/settings/notifications/test")
     async def test_notifications() -> dict[str, Any]:
@@ -1013,6 +1028,18 @@ def create_app(
     async def http_error(request: Request, exc: HTTPException) -> JSONResponse:
         detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
         return JSONResponse(detail, status_code=exc.status_code)
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_request(request: Request, exc: RequestValidationError) -> JSONResponse:
+        # FastAPI's own list stays under "detail"; "message" says it in words.
+        problems = []
+        for err in exc.errors():
+            where = ".".join(str(p) for p in err.get("loc", ()) if p not in ("body", "query"))
+            problems.append(f"{where}: {err.get('msg')}" if where else str(err.get("msg")))
+        message = "The request isn't valid. " + "; ".join(problems) + "."
+        return JSONResponse(
+            {"message": message, "detail": jsonable_encoder(exc.errors())}, status_code=422
+        )
 
     # ── the web app ─────────────────────────────────────────────────────────
 

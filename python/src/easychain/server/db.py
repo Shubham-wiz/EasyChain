@@ -493,6 +493,29 @@ class Database:
         async with self.reader.connect() as conn:
             return [{**r.data, "event_id": r.id} for r in await conn.execute(query)]
 
+    async def end_event_id(self, run_id: str, status: str) -> int | None:
+        """The id of the run_finished event that ends the run's latest part (since it was last
+        queued) with this status, or None if it hasn't been written."""
+        async with self.reader.connect() as conn:
+            queued = (
+                await conn.execute(
+                    sa.select(sa.func.max(run_events.c.id)).where(
+                        run_events.c.run_id == run_id, run_events.c.type == "run_queued"
+                    )
+                )
+            ).scalar() or 0
+            last = (
+                await conn.execute(
+                    sa.select(run_events.c.id, run_events.c.data)
+                    .where(run_events.c.run_id == run_id, run_events.c.type == "run_finished")
+                    .order_by(run_events.c.id.desc())
+                    .limit(1)
+                )
+            ).first()
+        if last is None or last.id < queued or (last.data or {}).get("status") != status:
+            return None
+        return int(last.id)
+
     async def drop_old_tokens(self, finished_before: float) -> None:
         """Token events are only for watching live; step_finished keeps the full text.
 
@@ -599,9 +622,15 @@ class Database:
         """Stop a run: queued jobs are dropped, a running one is told to stop.
 
         Returns the run's new status: cancelled now, or cancelling (a worker will stop it).
+        A run that has already finished is left as it is, and its status is returned.
         """
         now = time.time()
         async with self._tx() as conn:
+            current = (
+                await conn.execute(sa.select(runs.c.status).where(runs.c.id == run_id))
+            ).scalar()
+            if current is None or current in FINISHED:
+                return str(current or "cancelled")
             await conn.execute(
                 jobs.update()
                 .where(jobs.c.run_id == run_id, jobs.c.status == "queued")
@@ -622,11 +651,21 @@ class Database:
             )
             if leased is not None:
                 return "cancelling"
-            await conn.execute(
-                runs.update()
-                .where(runs.c.id == run_id, runs.c.status.notin_(FINISHED))
-                .values(status="cancelled", finished_at=now, pending=None)
-            )
+            stopped = (
+                await conn.execute(
+                    runs.update()
+                    .where(runs.c.id == run_id, runs.c.status.notin_(FINISHED))
+                    .values(status="cancelled", finished_at=now, pending=None)
+                    .returning(runs.c.id)
+                )
+            ).first()
+            if stopped is None:
+                # It finished meanwhile (another process): its own end stays as it is.
+                return str(
+                    (
+                        await conn.execute(sa.select(runs.c.status).where(runs.c.id == run_id))
+                    ).scalar()
+                )
             await conn.execute(
                 run_events.insert().values(
                     run_id=run_id,

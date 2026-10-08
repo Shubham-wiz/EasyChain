@@ -84,7 +84,9 @@ def to_jsonable(value: Any, depth: int = 0) -> Any:
     return str(value)
 
 
-class _Redactor:
+class Redactor:
+    """Hides secret values (``extra``, and the API keys in the environment) in run data."""
+
     def __init__(self, extra: list[str]):
         values = list(extra)
         for provider in PROVIDERS.values():
@@ -393,7 +395,7 @@ async def stream_run(
     opts = options or RunOptions()
     run_id = opts.run_id or uuid.uuid4().hex
     thread_id = opts.thread_id or uuid.uuid4().hex
-    redact = _Redactor(opts.redact)
+    redact = Redactor(opts.redact)
     started = time.perf_counter()
     action = opts.action
 

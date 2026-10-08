@@ -12,6 +12,10 @@ from pydantic import BaseModel, Field
 
 from ..integrations import mcp as mcp_module
 from ..integrations import openapi
+from .secrets import MASK, masked
+
+# Parts of an MCP server's settings that can hold tokens: never shown by the API.
+_SECRET_PARTS = {"headers": "header", "env": "environment variable"}
 
 
 class McpServer(BaseModel):
@@ -47,6 +51,42 @@ class OpenApiStepsRequest(OpenApiRequest):
     taken: list[str] = Field(default_factory=list, description="Step ids already in the flow.")
 
 
+def _shown(settings: dict[str, Any]) -> dict[str, Any]:
+    """MCP settings as the API returns them: header and environment values hidden."""
+    servers = []
+    for server in settings["servers"]:
+        server = dict(server)
+        for part in _SECRET_PARTS:
+            server[part] = {k: masked(v) for k, v in (server.get(part) or {}).items()}
+        servers.append(server)
+    return {**settings, "servers": servers}
+
+
+def _restored(server: dict[str, Any], saved: list[dict[str, Any]]) -> dict[str, Any]:
+    """A server sent back by a client: hidden values, unchanged, keep what was saved."""
+    before = next((s for s in saved if s["id"] == server["id"]), {})
+    out = dict(server)
+    for part, label in _SECRET_PARTS.items():
+        values = dict(server.get(part) or {})
+        for key, value in values.items():
+            if value != MASK:
+                continue
+            kept = (before.get(part) or {}).get(key)
+            if kept is None:
+                name = server.get("name") or server["id"]
+                raise HTTPException(
+                    422,
+                    detail={
+                        "message": f"The {key} {label} of the MCP server “{name}” is hidden "
+                        "(••••••) and nothing is saved for it under this server id. Type its "
+                        "value again."
+                    },
+                )
+            values[key] = kept
+        out[part] = values
+    return out
+
+
 def add_integration_routes(app: FastAPI, hub: Callable[[], Any]) -> None:
     async def mcp_settings() -> dict[str, Any]:
         stored = await hub().db.get_setting("mcp", {}) or {}
@@ -54,22 +94,24 @@ def add_integration_routes(app: FastAPI, hub: Callable[[], Any]) -> None:
 
     @app.get("/api/settings/mcp")
     async def get_mcp() -> dict[str, Any]:
-        return await mcp_settings()
+        return _shown(await mcp_settings())
 
     @app.put("/api/settings/mcp")
     async def put_mcp(body: McpSettings) -> dict[str, Any]:
         ids = [s.id for s in body.servers]
         if len(ids) != len(set(ids)):
             raise HTTPException(422, detail={"message": "Two MCP servers share an id."})
+        saved = (await mcp_settings())["servers"]
         value = body.model_dump()
+        value["servers"] = [_restored(s, saved) for s in value["servers"]]
         value["allowed_commands"] = sorted({c.strip() for c in body.allowed_commands if c.strip()})
         await hub().db.set_setting("mcp", value)
-        return value
+        return _shown(value)
 
     @app.post("/api/mcp/tools")
     async def mcp_tools(req: McpToolsRequest) -> dict[str, Any]:
         settings = await mcp_settings()
-        server = req.server.model_dump() if req.server else None
+        server = _restored(req.server.model_dump(), settings["servers"]) if req.server else None
         if server is None:
             server = next((s for s in settings["servers"] if s["id"] == req.server_id), None)
         if server is None:

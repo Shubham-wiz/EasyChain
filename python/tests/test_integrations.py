@@ -434,6 +434,59 @@ def test_mcp_settings_and_tool_listing_api(tmp_path, http_mcp):
         assert dupes.status_code == 422
 
 
+def test_mcp_headers_and_env_are_hidden_and_kept(tmp_path, monkeypatch):
+    app = create_app(
+        workspace=tmp_path / "flows",
+        home=tmp_path / "home",
+        static_dir=tmp_path / "web",
+        database_url=f"sqlite:///{tmp_path / 'app.db'}",
+        worker=False,
+    )
+    server = {
+        "id": "docs",
+        "name": "Docs",
+        "transport": "http",
+        "url": "https://docs.example.com/mcp",
+        "headers": {"Authorization": "Bearer tok-123456", "X-Team": "Bearer {secret:DOCS_TEAM}"},
+        "env": {"API_KEY": "key-abcdef"},
+    }
+    with TestClient(app) as client:
+        shown = client.put("/api/settings/mcp", json={"servers": [server]}).json()
+        hidden = shown["servers"][0]
+        # A {secret:NAME} reference isn't a secret, so it is shown as written.
+        assert hidden["headers"] == {
+            "Authorization": "••••••",
+            "X-Team": "Bearer {secret:DOCS_TEAM}",
+        }
+        assert hidden["env"] == {"API_KEY": "••••••"}
+        assert client.get("/api/settings/mcp").json() == shown
+        assert "tok-123456" not in json.dumps(shown) and "key-abcdef" not in json.dumps(shown)
+
+        # The settings page sends everything back: hidden values, unchanged, stay as they were.
+        hidden["name"] = "Company docs"
+        client.put("/api/settings/mcp", json={"servers": [hidden]})
+        [saved] = client.portal.call(client.app.state.hub.db.get_setting, "mcp")["servers"]
+        assert saved["name"] == "Company docs"
+        assert saved["headers"]["Authorization"] == "Bearer tok-123456"
+        assert saved["env"] == {"API_KEY": "key-abcdef"}
+
+        # "Show its tools" sends the server as shown; it connects with the saved token.
+        used = []
+
+        async def list_tools(server: dict, allowed: list[str]) -> list[dict]:
+            used.append(server)
+            return []
+
+        monkeypatch.setattr(mcp_module, "list_tools", list_tools)
+        assert client.post("/api/mcp/tools", json={"server": hidden}).json() == {"tools": []}
+        assert used[0]["headers"]["Authorization"] == "Bearer tok-123456"
+
+        # A hidden value with nothing saved behind it has to be typed again.
+        renamed = client.put("/api/settings/mcp", json={"servers": [{**hidden, "id": "docs2"}]})
+        assert renamed.status_code == 422
+        assert "Authorization header" in renamed.json()["message"]
+
+
 # ── OpenAPI import ───────────────────────────────────────────────────────────
 
 PETSTORE = {

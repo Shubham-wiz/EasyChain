@@ -200,6 +200,110 @@ def test_inbox_answer_resumes_the_run_and_notifies_people(client, fake_server, s
     assert client.post("/api/settings/notifications/test").json()["results"]
 
 
+def test_notification_secrets_are_hidden_and_kept(client):
+    sent = {
+        "slack": {"enabled": True, "webhook_url": "https://hooks.slack.com/services/T0/B0/xyz789"},
+        "email": {
+            "enabled": True,
+            "smtp_host": "mail.example.com",
+            "username": "bot",
+            "password": "hunter2-smtp",
+            "to": ["me@example.com"],
+        },
+    }
+    shown = client.put("/api/settings/notifications", json=sent).json()
+    assert shown["slack"]["webhook_url"] == "••••••" and shown["email"]["password"] == "••••••"
+    got = client.get("/api/settings/notifications").json()
+    assert got == shown
+    assert "xyz789" not in json.dumps(got) and "hunter2" not in json.dumps(got)
+
+    # The settings page sends everything back: hidden values, unchanged, stay as they were.
+    got["email"]["smtp_host"] = "smtp.example.com"
+    client.put("/api/settings/notifications", json=got)
+    saved = client.portal.call(client.app.state.hub.db.get_setting, "notifications")
+    assert saved["slack"]["webhook_url"] == "https://hooks.slack.com/services/T0/B0/xyz789"
+    assert saved["email"]["password"] == "hunter2-smtp"
+    assert saved["email"]["smtp_host"] == "smtp.example.com"
+
+    # A {secret:NAME} reference isn't a secret itself, so it is shown as written.
+    got["email"]["password"] = "{secret:SMTP_PASSWORD}"
+    shown = client.put("/api/settings/notifications", json=got).json()
+    assert shown["email"]["password"] == "{secret:SMTP_PASSWORD}"
+    # A new value replaces the old one.
+    got["slack"]["webhook_url"] = "https://hooks.slack.com/services/T0/B0/new"
+    client.put("/api/settings/notifications", json=got)
+    saved = client.portal.call(client.app.state.hub.db.get_setting, "notifications")
+    assert saved["slack"]["webhook_url"] == "https://hooks.slack.com/services/T0/B0/new"
+
+
+async def test_an_email_notification_with_a_multi_line_question(smtp):
+    from email import message_from_string
+    from email.policy import default
+
+    from easychain.server import notify
+
+    config = {
+        "email": {
+            "enabled": True,
+            "smtp_host": "127.0.0.1",
+            "smtp_port": smtp,
+            "starttls": False,
+            "sender": "bot@example.com",
+            "to": ["me@example.com"],
+        }
+    }
+    # Filled in from a model's reply, the question has line breaks.
+    question = "Send this reply?\n\nHello Ann,\r\nyour order shipped."
+    item = {"id": "i1", "run_id": "r1", "flow_name": "Support", "request": {"question": question}}
+    assert await notify.send_all(config, item) == [{"channel": "email", "ok": True}]
+    sent = message_from_string(_SMTP.messages[0], policy=default)
+    assert sent["subject"] == (
+        "“Support” is waiting for you: Send this reply? Hello Ann, your order shipped."
+    )
+    # The whole question, line breaks and all, is in the body.
+    assert "Hello Ann,\nyour order shipped." in sent.get_content().replace("\r\n", "\n")
+    assert len(notify.subject_line("word " * 100)) == 150
+
+
+def test_save_points_hide_secret_values(client, monkeypatch):
+    monkeypatch.setenv("SHOP_TOKEN", "")  # the vault sets it; this takes it away afterwards
+    assert client.put("/api/secrets/SHOP_TOKEN", json={"value": "tok-shop-98765"}).json()["saved"]
+    spec = {
+        "name": "Uses a token",
+        "steps": [
+            input_step("x"),
+            code("read", "    import os\n    return {'token': os.environ['SHOP_TOKEN']}"),
+            output_step("token"),
+        ],
+        "connections": [{"from": "input", "to": "read"}, {"from": "read", "to": "output"}],
+    }
+    run_id = start(client, create(client, spec), {"x": "go"})
+    assert wait(client, run_id)["output"] == {"token": "••••••"}
+    points = client.get(f"/api/runs/{run_id}/savepoints").json()
+    assert any(p["values"].get("token") == "••••••" for p in points)
+    assert "tok-shop-98765" not in json.dumps(points)
+
+
+def test_names_too_long_for_the_run_database_are_refused(client):
+    """Postgres keeps at most 100 characters of a conversation id, 40 of a trigger and 200 of a
+    name; SQLite would keep more. Both refuse the same requests, with a plain message."""
+    flow_id = create(client, SLOW)
+    for field, value in (("thread_id", "t" * 101), ("trigger", "x" * 41), ("flow_id", "f" * 101)):
+        body = {"flow_id": flow_id, "inputs": {"x": "0"}, "background": True, field: value}
+        response = client.post("/api/runs", json=body)
+        assert response.status_code == 422, field
+        assert field in response.json()["message"]
+        assert "at most" in response.json()["message"]
+    long_name = {"flow_id": flow_id, "kind": "webhook", "name": "n" * 201}
+    assert client.post("/api/triggers", json=long_name).status_code == 422
+    trig = client.post("/api/triggers", json={**long_name, "name": "n" * 200}).json()
+    assert client.patch(f"/api/triggers/{trig['id']}", json={"name": "n" * 201}).status_code == 422
+    # Right up to the limits is fine.
+    run_id = start(client, flow_id, {"x": "0"}, thread_id="t" * 100, trigger="x" * 40)
+    run = wait(client, run_id)
+    assert run["status"] == "ok" and run["thread_id"] == "t" * 100
+
+
 def test_resume_endpoint_streams_the_rest_of_the_run(client):
     flow_id = create(client, APPROVAL)
     with client.stream(
@@ -581,33 +685,51 @@ def test_sub_flows_resolve_from_the_workspace(client):
 
 
 class _IMAP(socketserver.StreamRequestHandler):
-    """Just enough IMAP4rev1 for imaplib: login, select, search, fetch, store, logout."""
+    """Just enough IMAP4rev1 for imaplib: login, select, search, fetch, store, logout, by
+    sequence number or (UID SEARCH/FETCH/STORE) by UID."""
 
     mailbox: list[dict[str, Any]] = []
 
     def reply(self, line: str) -> None:
         self.wfile.write(line.encode() + b"\r\n")
 
+    def find(self, key: str, by_uid: bool) -> tuple[int, dict[str, Any]] | None:
+        for number, message in enumerate(self.mailbox, start=1):
+            if (message["uid"] if by_uid else number) == int(key):
+                return number, message
+        return None
+
     def handle(self) -> None:
         self.reply("* OK test IMAP ready")
         while line := self.rfile.readline():
             parts = line.decode().strip().split(" ")
             tag, command, args = parts[0], parts[1].upper(), parts[2:]
+            by_uid = command == "UID"
+            if by_uid:
+                command, args = args[0].upper(), args[1:]
             if command == "CAPABILITY":
                 self.reply("* CAPABILITY IMAP4rev1")
             elif command == "SELECT":
                 self.reply(f"* {len(self.mailbox)} EXISTS")
             elif command == "SEARCH":
-                unseen = [str(i + 1) for i, m in enumerate(self.mailbox) if not m["seen"]]
+                unseen = [
+                    str(m["uid"] if by_uid else n)
+                    for n, m in enumerate(self.mailbox, start=1)
+                    if not m["seen"]
+                ]
                 self.reply("* SEARCH " + " ".join(unseen))
-            elif command == "FETCH":
-                raw = self.mailbox[int(args[0]) - 1]["raw"]
+            elif command == "FETCH" and (found := self.find(args[0], by_uid)):
+                number, message = found
+                raw = message["raw"]
                 self.wfile.write(
-                    f"* {args[0]} FETCH (BODY[] {{{len(raw)}}}\r\n".encode() + raw + b")\r\n"
+                    f"* {number} FETCH (UID {message['uid']} BODY[] {{{len(raw)}}}\r\n".encode()
+                    + raw
+                    + b")\r\n"
                 )
-            elif command == "STORE":
-                self.mailbox[int(args[0]) - 1]["seen"] = True
-                self.reply(f"* {args[0]} FETCH (FLAGS (\\Seen))")
+            elif command == "STORE" and (found := self.find(args[0], by_uid)):
+                number, message = found
+                message["seen"] = True
+                self.reply(f"* {number} FETCH (UID {message['uid']} FLAGS (\\Seen))")
             elif command == "LOGOUT":
                 self.reply("* BYE")
                 self.reply(f"{tag} OK LOGOUT completed")
@@ -617,16 +739,20 @@ class _IMAP(socketserver.StreamRequestHandler):
 
 @pytest.fixture
 def imap() -> Iterator[int]:
-    def message(subject: str, body: str) -> bytes:
+    def message(subject: str, body: str, charset: str = "utf-8") -> bytes:
         return (
             f"From: Ann <ann@example.com>\r\nTo: help@example.com\r\nSubject: {subject}\r\n"
-            f"Message-ID: <{subject.replace(' ', '')}@example.com>\r\n\r\n{body}\r\n"
+            f"Message-ID: <{subject.replace(' ', '')}@example.com>\r\n"
+            f'Content-Type: text/plain; charset="{charset}"\r\n\r\n{body}\r\n'
         ).encode()
 
+    # UIDs differ from sequence numbers, as they do in a real mailbox.
     _IMAP.mailbox = [
-        {"raw": message("Order late", "Where is order 12?"), "seen": False},
-        {"raw": message("Old", "Already read"), "seen": True},
-        {"raw": message("Refund", "Please refund me."), "seen": False},
+        {"uid": 101, "raw": message("Order late", "Where is order 12?"), "seen": False},
+        {"uid": 102, "raw": message("Old", "Already read"), "seen": True},
+        {"uid": 103, "raw": message("Refund", "Please refund me."), "seen": False},
+        # One message nobody can decode mustn't block the others.
+        {"uid": 104, "raw": message("Garbled", "????", "x-no-such-charset"), "seen": False},
     ]
     server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), _IMAP)
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -635,7 +761,19 @@ def imap() -> Iterator[int]:
     server.server_close()
 
 
-def test_email_trigger_starts_a_run_per_new_message(client, imap):
+def test_email_trigger_starts_a_run_per_new_message(client, imap, monkeypatch):
+    from easychain.server import mail
+
+    mark_seen = mail.mark_seen
+
+    def deleted_meanwhile(cfg: dict, uids: list[str]) -> None:
+        # Someone deletes the first message while the runs start, so every later message's
+        # sequence number moves down by one; UIDs stay the same.
+        if uids:
+            _IMAP.mailbox.pop(0)
+        mark_seen(cfg, uids)
+
+    monkeypatch.setattr(mail, "mark_seen", deleted_meanwhile)
     spec = {
         "name": "Mail desk",
         "steps": [
@@ -669,11 +807,18 @@ def test_email_trigger_starts_a_run_per_new_message(client, imap):
         },
     ).json()
     assert trig["config"]["password"] == "••••••"
+    # Sent back unchanged, the hidden password stays as it was.
+    patched = client.patch(f"/api/triggers/{trig['id']}", json={"config": trig["config"]})
+    assert patched.json()["config"]["password"] == "••••••"
+    saved = client.portal.call(client.app.state.hub.db.get_trigger, trig["id"])
+    assert saved["config"]["password"] == "secret-pass"
     worker = client.app.state.worker
     started = client.portal.call(worker.check_schedules, time.time() + 1)
     assert len(started) == 2
     labels = sorted(wait(client, run_id)["output"]["label"] for run_id in started)
     assert labels == ["ORDER LATE: Where is order 12?", "REFUND: Please refund me."]
+    # The message that was deleted is gone; the rest, the unreadable one too, are seen.
+    assert [m["uid"] for m in _IMAP.mailbox] == [102, 103, 104]
     assert all(m["seen"] for m in _IMAP.mailbox)
     # The next poll is a minute later, and finds nothing new.
     assert client.portal.call(worker.check_schedules, time.time() + 120) == []

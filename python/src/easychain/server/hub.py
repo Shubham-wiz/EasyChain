@@ -23,6 +23,9 @@ from .db import FINISHED, Database
 from .store import FlowNotFound, FlowStore
 
 TERMINAL_EVENTS = {"run_finished"}
+# How long a watcher waits for run_finished once a run's status is final (notifications are
+# sent in between: a webhook can take 10 s, an email 15 s).
+FINAL_WAIT = 60.0
 
 
 class Busy(Exception):
@@ -273,9 +276,13 @@ class Hub:
         or paused); ``until="end"`` keeps going through pauses until the run is over.
         Either way it stops straight away for a run that has nothing more to say, or when
         ``stop`` is set.
+
+        A worker saves the run's status, then sends notifications (which can take a while),
+        then writes run_finished; so once the status is final this waits for that event, up
+        to ``FINAL_WAIT`` seconds.
         """
         last = after
-        idle_since = time.monotonic()
+        final_since: float | None = None
         ends = (*FINISHED, "paused") if until == "segment" else FINISHED
         while stop is None or not stop.is_set():
             events = await self.db.events_after(run_id, last)
@@ -285,13 +292,21 @@ class Hub:
                 if ev.get("type") in TERMINAL_EVENTS and ev.get("status") in ends:
                     return
             if events:
-                idle_since = time.monotonic()
                 continue
             run = await self.db.get_run(run_id)
             if run is None:
                 return
-            if run["status"] in ends and time.monotonic() - idle_since > 1:
-                return
+            if run["status"] in ends:
+                end = await self.db.end_event_id(run_id, run["status"])
+                if end is not None and end <= last:
+                    return  # the watcher is already past the end (it reconnected after it)
+                if end is not None:
+                    continue  # written just now: read it
+                final_since = final_since or time.monotonic()
+                if time.monotonic() - final_since > FINAL_WAIT:
+                    return  # the end was never written (a worker died before it could)
+            else:
+                final_since = None
             await self.bus.wait(run_id, poll)
 
     # ── Save Points ──────────────────────────────────────────────────────────
@@ -305,11 +320,18 @@ class Hub:
         return graph
 
     async def save_points(self, run_id: str) -> list[dict[str, Any]]:
-        """Every Save Point in the run's conversation, newest first, marked with its run."""
+        """Every Save Point in the run's conversation, newest first, marked with its run.
+
+        Secret values are hidden, as in the run's events.
+        """
         from ..runtime import to_jsonable
+        from ..runtime.runner import Redactor
 
         run = await self._run(run_id)
         graph = await self._graph(run)
+        if hasattr(self.vault, "reload"):
+            self.vault.reload()  # secrets saved by another process
+        redact = Redactor(self.vault.values() if self.vault is not None else [])
         out = []
         async for snap in graph.aget_state_history(
             {"configurable": {"thread_id": run["thread_id"]}}
@@ -326,8 +348,8 @@ class Hub:
                     "source": md.get("source"),
                     "next": list(snap.next),
                     "created_at": snap.created_at,
-                    "values": to_jsonable(snap.values),
-                    "waiting": [to_jsonable(i.value) for i in snap.interrupts],
+                    "values": redact(to_jsonable(snap.values)),
+                    "waiting": [redact(to_jsonable(i.value)) for i in snap.interrupts],
                 }
             )
         return out

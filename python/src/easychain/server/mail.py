@@ -1,7 +1,9 @@
 """Email trigger: new messages in an IMAP mailbox start runs.
 
 Messages are read without marking them, the runs are started, and only then are the messages
-marked as seen, so a message is never lost between the two.
+marked as seen, so a message is never lost between the two. Messages are named by their UID,
+which stays the same across connections (a message's sequence number changes when another
+one is deleted).
 """
 
 from __future__ import annotations
@@ -10,11 +12,14 @@ import contextlib
 import email
 import email.policy
 import imaplib
+import logging
 import os
 import re
 from typing import Any
 
 MAX_PER_POLL = 20
+
+log = logging.getLogger("easychain.mail")
 
 
 def _secret(text: str) -> str:
@@ -38,30 +43,49 @@ def _connect(cfg: dict[str, Any]) -> imaplib.IMAP4:
     return imap
 
 
+def _read(raw: bytes) -> dict[str, Any]:
+    msg = email.message_from_bytes(raw, policy=email.policy.default)
+    body_part = msg.get_body(preferencelist=("plain", "html"))
+    body = body_part.get_content() if body_part is not None else ""
+    return {
+        "subject": str(msg["subject"] or ""),
+        "sender": str(msg["from"] or ""),
+        "to": str(msg["to"] or ""),
+        "date": str(msg["date"] or ""),
+        "message_id": str(msg["message-id"] or ""),
+        "body": body.strip(),
+    }
+
+
 def fetch_unseen(cfg: dict[str, Any]) -> list[dict[str, Any]]:
-    """New messages as {uid, subject, sender, to, date, message_id, body}, oldest first."""
+    """New messages as {uid, subject, sender, to, date, message_id, body}, oldest first.
+
+    A message that can't be read (an unknown character set, say) is marked as seen and
+    skipped, so it doesn't stop the messages after it.
+    """
     imap = _connect(cfg)
     try:
-        _, found = imap.search(None, "UNSEEN")
-        numbers = (found[0] or b"").split()[:MAX_PER_POLL]
+        _, found = imap.uid("SEARCH", "UNSEEN")
+        uids = (found[0] or b"").split()[:MAX_PER_POLL]
         out = []
-        for number in numbers:
-            _, parts = imap.fetch(number, "(BODY.PEEK[])")
+        for uid in uids:
+            _, parts = imap.uid("FETCH", uid, "(BODY.PEEK[])")
             raw = next((p[1] for p in parts if isinstance(p, tuple)), b"")
-            msg = email.message_from_bytes(raw, policy=email.policy.default)
-            body_part = msg.get_body(preferencelist=("plain", "html"))
-            body = body_part.get_content() if body_part is not None else ""
-            out.append(
-                {
-                    "uid": number.decode(),
-                    "subject": str(msg["subject"] or ""),
-                    "sender": str(msg["from"] or ""),
-                    "to": str(msg["to"] or ""),
-                    "date": str(msg["date"] or ""),
-                    "message_id": str(msg["message-id"] or ""),
-                    "body": body.strip(),
-                }
-            )
+            if not raw:
+                continue  # deleted since the search
+            try:
+                message = _read(raw)
+            except Exception as exc:
+                log.warning(
+                    "Skipped email %s in %s: it can't be read (%s). It is marked as seen.",
+                    uid.decode(),
+                    cfg.get("username") or cfg.get("host"),
+                    exc,
+                )
+                with contextlib.suppress(Exception):
+                    imap.uid("STORE", uid, "+FLAGS", "\\Seen")
+                continue
+            out.append({"uid": uid.decode(), **message})
         return out
     finally:
         with contextlib.suppress(Exception):
@@ -74,7 +98,7 @@ def mark_seen(cfg: dict[str, Any], uids: list[str]) -> None:
     imap = _connect(cfg)
     try:
         for uid in uids:
-            imap.store(uid, "+FLAGS", "\\Seen")
+            imap.uid("STORE", uid, "+FLAGS", "\\Seen")
     finally:
         with contextlib.suppress(Exception):
             imap.logout()

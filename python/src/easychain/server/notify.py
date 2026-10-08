@@ -15,6 +15,8 @@ from typing import Any
 
 import httpx
 
+from .secrets import masked, unmasked
+
 DEFAULTS: dict[str, Any] = {
     "webhook": {"enabled": False, "url": ""},
     "slack": {"enabled": False, "webhook_url": ""},
@@ -31,6 +33,9 @@ DEFAULTS: dict[str, Any] = {
     "public_url": "",
 }
 
+# Settings the API never shows: (section, key).
+SECRET_SETTINGS = (("slack", "webhook_url"), ("email", "password"))
+
 
 def merged(saved: dict[str, Any] | None) -> dict[str, Any]:
     out: dict[str, Any] = {}
@@ -40,6 +45,22 @@ def merged(saved: dict[str, Any] | None) -> dict[str, Any]:
             out[key] = {**default, **(saved.get(key) or {})}
         else:
             out[key] = saved.get(key, default)
+    return out
+
+
+def shown(saved: dict[str, Any] | None) -> dict[str, Any]:
+    """The settings as the API returns them, with the password and Slack webhook hidden."""
+    out = merged(saved)
+    for section, key in SECRET_SETTINGS:
+        out[section][key] = masked(out[section][key])
+    return out
+
+
+def to_save(sent: dict[str, Any] | None, saved: dict[str, Any] | None) -> dict[str, Any]:
+    """Settings sent by a client; a hidden value sent back unchanged keeps the saved one."""
+    out, before = merged(sent), merged(saved)
+    for section, key in SECRET_SETTINGS:
+        out[section][key] = unmasked(out[section][key], before[section][key])
     return out
 
 
@@ -96,10 +117,17 @@ async def _post(channel: str, url: str, payload: dict[str, Any]) -> dict[str, An
         return {"channel": channel, "ok": False, "error": str(exc)[:300]}
 
 
+def subject_line(text: str, limit: int = 150) -> str:
+    """An email subject: one line (a header can't hold line breaks), at most ``limit`` long.
+    The whole question is in the body."""
+    line = " ".join(text.split())
+    return line if len(line) <= limit else line[: limit - 1].rstrip() + "…"
+
+
 def _send_email(email: dict[str, Any], msg: dict[str, Any]) -> dict[str, Any]:
     try:
         message = EmailMessage()
-        message["Subject"] = msg["text"][:150]
+        message["Subject"] = subject_line(msg["text"])
         message["From"] = email["sender"] or email["username"] or "easychain@localhost"
         recipients = email["to"] if isinstance(email["to"], list) else [email["to"]]
         message["To"] = ", ".join(recipients)
