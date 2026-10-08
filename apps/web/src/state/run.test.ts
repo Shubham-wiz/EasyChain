@@ -116,6 +116,19 @@ describe("run streams belong to the panel that started them", () => {
     expect(useRun.getState()).toMatchObject({ replaying: false, controller: null });
   });
 
+  it("a replay that reaches the run's end stops replaying", async () => {
+    vi.useFakeTimers();
+    const replay = replayRun([
+      ev("run_started", { stand_in: false, thread_id: "t" }),
+      ev("step_started", { step: "a", ts: 2 }),
+      ev("step_finished", { step: "a", ts: 3 }),
+      ev("run_finished", { status: "ok", output: {}, ts: 4 }),
+    ]);
+    await vi.advanceTimersByTimeAsync(5000);
+    await replay;
+    expect(useRun.getState()).toMatchObject({ replaying: false, status: "ok", controller: null });
+  });
+
   it("a replay stops a live run's stream", async () => {
     vi.useFakeTimers();
     const a = manual();

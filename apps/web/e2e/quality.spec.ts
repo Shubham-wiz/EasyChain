@@ -42,21 +42,35 @@ test("the canvas stays responsive with 300 steps", async ({ page, request }) => 
   await page.mouse.up();
   const dragMs = Date.now() - t0;
 
-  // Frame timing while panning across the canvas.
-  const frames = await page.evaluate(async () => {
-    const times: number[] = [];
+  // Frame timing while zooming out with the mouse wheel (the canvas zooms on scroll; with this
+  // many steps it renders more of them as it zooms out). Frames are timed in the page.
+  const viewport = page.locator(".react-flow__viewport");
+  const before = await viewport.getAttribute("style");
+  await page.evaluate(() => {
+    const w = window as unknown as { frameTimes: number[]; timing: boolean };
+    w.frameTimes = [];
+    w.timing = true;
     let last = performance.now();
-    const pane = document.querySelector(".react-flow__pane")!;
-    for (let i = 0; i < 30; i++) {
-      pane.dispatchEvent(new WheelEvent("wheel", { deltaX: 40, deltaY: 0, bubbles: true }));
-      await new Promise((r) => requestAnimationFrame(r));
-      const now = performance.now();
-      times.push(now - last);
+    const tick = (now: number) => {
+      w.frameTimes.push(now - last);
       last = now;
-    }
-    times.sort((a, b) => a - b);
+      if (w.timing) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  const pane = (await page.locator(".react-flow__pane").boundingBox())!;
+  await page.mouse.move(pane.x + pane.width / 2, pane.y + pane.height / 2);
+  for (let i = 0; i < 15; i++) {
+    await page.mouse.wheel(0, 120);
+    await page.waitForTimeout(30);
+  }
+  const frames = await page.evaluate(() => {
+    const w = window as unknown as { frameTimes: number[]; timing: boolean };
+    w.timing = false;
+    const times = w.frameTimes.slice(1).sort((a, b) => a - b);
     return { median: times[Math.floor(times.length / 2)], p95: times[Math.floor(times.length * 0.95)] };
   });
+  expect(await viewport.getAttribute("style"), "the wheel really zoomed the canvas").not.toEqual(before);
   console.log(`300 steps: open ${openMs} ms, drag ${dragMs} ms, frame median ${frames.median.toFixed(1)} ms, p95 ${frames.p95.toFixed(1)} ms`);
   expect(openMs).toBeLessThan(15_000);
   expect(dragMs).toBeLessThan(2_000);

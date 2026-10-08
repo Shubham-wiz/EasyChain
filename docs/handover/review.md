@@ -159,6 +159,9 @@ Done:
   says `stand_in: true` (the template Test Sets' notes said this happened by itself; it didn't).
 - The "day later" durability test now also runs the workers' clean-up of old run data on the
   day-old run, and no longer checks its own timestamp edit.
+- The Playwright checks that couldn't fail now can: Replay must restart the steps and finish
+  (it found two bugs: a replay never switched off, and streamed words replayed at 0.12 s each);
+  the 300-step check really zooms the canvas; the build-and-run budget is 60 s.
 - Tests no longer touch the developer's own `~/.easychain` or database; the web build docs;
   `EASYCHAIN_SECRET_KEY` documented.
 
@@ -167,4 +170,3 @@ Open:
 - Phase 3's "Done when" is still proven only with the scripted stand-in AI in CI. Run
   `easychain test python/src/easychain/templates/sql-analyst.tests.yaml --real-model` (and the
   support bot's) with a key before a release.
-- Some Playwright checks can't fail (Replay, "panning", "build under 300 s").

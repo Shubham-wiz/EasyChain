@@ -604,14 +604,20 @@ export async function replayRun(events: RunEvent[], speed = 1) {
   const controller = takeOver();
   useRun.setState({ ...empty, replaying: true });
   useUi.getState().setRightTab("run");
-  const playing = () => owns(controller) && !controller.signal.aborted && useRun.getState().replaying;
+  // Another replay or run aborts this one's controller. (Handling a recorded run_finished clears
+  // the panel's controller as a live stream's end does, so ownership is checked by the signal.)
+  const playing = () => !controller.signal.aborted && useRun.getState().replaying;
   let last = events[0]?.ts ?? 0;
   for (const event of events) {
-    const wait = Math.min(Math.max((event.ts - last) / speed, 120), 900);
+    const gap = (event.ts - last) / speed;
+    // Steps light up at a pace people can follow; streamed words keep their own pace (a long
+    // reply would otherwise take a minute to replay).
+    const wait = event.type === "token" ? Math.min(gap, 40) : Math.min(Math.max(gap, 120), 900);
     last = event.ts;
     await sleep(event.type === "run_started" || event.type === "run_queued" ? 0 : wait, controller.signal);
     if (!playing()) break;
     useRun.getState().handle(event);
+    if (!owns(controller)) useRun.setState({ controller });
   }
-  if (owns(controller)) useRun.setState({ replaying: false, controller: null });
+  if (!controller.signal.aborted) useRun.setState({ replaying: false, controller: null });
 }

@@ -27,10 +27,15 @@ test("Try it: a Decision lights up the exit it took, and runs replay", async ({ 
   await expect(step(page, "thank")).toHaveAttribute("data-status", "idle");
   await expect(page.getByTestId("badges-what_kind")).toContainText("Complaint");
 
-  // Run Replay plays the recorded run back on the canvas.
+  // Run Replay plays the recorded run back on the canvas: the steps start again from nothing
+  // and light up one by one, ending as the run did.
   await page.getByRole("button", { name: "Recent runs" }).click();
   await page.getByRole("button", { name: "Replay" }).first().click();
+  await expect(page.getByRole("button", { name: "Stop replay" })).toBeVisible();
+  await expect(step(page, "draft_reply")).not.toHaveAttribute("data-status", "done");
   await expect(step(page, "draft_reply")).toHaveAttribute("data-status", "done", { timeout: 20_000 });
+  await expect(step(page, "thank")).toHaveAttribute("data-status", "idle");
+  await expect(page.getByRole("button", { name: "Stop replay" })).toBeHidden({ timeout: 20_000 });
 });
 
 test("Try it runs once: reload, Back and Forward don't start another run", async ({ page, request }) => {

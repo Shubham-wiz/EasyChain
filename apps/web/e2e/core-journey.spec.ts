@@ -60,7 +60,9 @@ test("build, run, debug and export a summarise-this-URL flow", async ({ page }) 
   await expect(page.getByTestId("badges-ai_model")).toContainText("tok");
   const buildAndRunSeconds = (Date.now() - started) / 1000;
   console.log(`Built and ran the flow in ${buildAndRunSeconds.toFixed(1)} s`);
-  expect(buildAndRunSeconds).toBeLessThan(300);
+  // The goal is "under 5 minutes" for a person; the scripted journey must stay far below it, and
+  // a 60 s budget can actually fail inside the 90 s test timeout (300 s never could).
+  expect(buildAndRunSeconds).toBeLessThan(60);
 
   // Debug: a missing page fails on the web request, in plain words, pinned to that step.
   await page.getByLabel("url").fill(`${FAKE_URL}/pages/missing`);
