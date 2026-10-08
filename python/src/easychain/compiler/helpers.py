@@ -249,6 +249,45 @@ def in_thread(step: Callable[[Any], Any]) -> Callable[[Any], Any]:
     from_imports=(("typing", "Any"), ("collections.abc", "Callable")),
 )
 
+WITH_RUN_POLICY = Helper(
+    "with_run_policy",
+    '''
+async def with_run_policy(
+    step: Callable[[Any], Any],
+    data: Any,
+    *,
+    timeout: float | None = None,
+    retry: RetryPolicy | None = None,
+) -> Any:
+    """Run a step that an agent uses as a tool with the step's own time limit and retries,
+    the way LangGraph runs a step in the flow."""
+    attempt = 1
+    while True:
+        work = step(data) if inspect.iscoroutinefunction(step) else asyncio.to_thread(step, data)
+        try:
+            return await asyncio.wait_for(work, timeout)
+        except GraphBubbleUp:
+            raise  # a pause (Ask a Human, an approval) isn't a failure
+        except Exception as error:
+            if retry is None or attempt >= retry.max_attempts or not retry.retry_on(error):
+                if isinstance(error, TimeoutError) and timeout and not str(error):
+                    message = f"It took longer than its time limit ({timeout:g} s)."
+                    raise TimeoutError(message) from None
+                raise
+            backoff = retry.initial_interval * retry.backoff_factor ** (attempt - 1)
+            jitter = random.uniform(0, 1) if retry.jitter else 0
+            await asyncio.sleep(min(retry.max_interval, backoff) + jitter)
+        attempt += 1
+''',
+    imports=("asyncio", "inspect", "random"),
+    from_imports=(
+        ("typing", "Any"),
+        ("collections.abc", "Callable"),
+        ("langgraph.errors", "GraphBubbleUp"),
+        ("langgraph.types", "RetryPolicy"),
+    ),
+)
+
 IDEMPOTENCY_KEY = Helper(
     "idempotency_key",
     '''
@@ -437,6 +476,7 @@ HELPERS = {
         PICK_EXIT,
         PICK_OPTION,
         IN_THREAD,
+        WITH_RUN_POLICY,
         IDEMPOTENCY_KEY,
         RUN_ONCE,
         ASK_IN_TERMINAL,

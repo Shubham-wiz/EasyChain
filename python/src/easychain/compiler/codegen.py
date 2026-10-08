@@ -20,7 +20,7 @@ from ..spec.models import SPEC_VERSION, FlowSpec
 from .analysis import FlowAnalysis, Resolver
 from .helpers import HELPERS
 from .issues import CompileError, Issue, error
-from .pycode import Imports, Names, docstring, py_literal, py_str
+from .pycode import Imports, Names, docstring, py_literal, py_str, retry_policy_code
 
 _BASE_TYPES = {
     "text": "str",
@@ -597,11 +597,7 @@ def _node_lines(sid: str, an: FlowAnalysis, ctx: EmitContext, code: Any) -> list
             fn = f"in_thread({fn})"
         kwargs["timeout"] = py_literal(policy.timeout)
     if policy.retries:
-        ctx.imports.add_from("langgraph.types", "RetryPolicy")
-        retry = [f"max_attempts={policy.retries + 1}"]
-        if policy.retry_wait != 1.0:
-            retry.append(f"initial_interval={py_literal(policy.retry_wait)}")
-        kwargs["retry_policy"] = f"RetryPolicy({', '.join(retry)})"
+        kwargs["retry_policy"] = retry_policy_code(policy, ctx.imports)
     if policy.cache:
         ctx.imports.add_from("langgraph.types", "CachePolicy")
         ctx.module.uses_cache = True

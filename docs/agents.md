@@ -23,7 +23,9 @@ tool** in the agent's inspector). The step then:
   request to `…/orders/{order_id}` becomes `get_order(order_id)`. Describe `order_id` in the
   Flow Data panel and the model sees that description too;
 - keeps its own run policy (retries, time limit) and its "send at most once" protection, so an
-  agent retrying a POST doesn't send it twice.
+  agent retrying a POST doesn't send it twice. A tool that runs out of retries or time fails that
+  call, and the agent is told (or the run stops, if **When a tool fails** says so). "Reuse
+  results" and "Wait for all branches" don't apply to tools; the checks point them out.
 
 While a run is going, each call appears under the agent with its arguments, status and time, and
 the dashed line to the tool lights up. Click the agent in the trace to see every call and result.

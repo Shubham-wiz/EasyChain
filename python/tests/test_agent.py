@@ -221,6 +221,103 @@ async def test_model_call_limit_ends_the_agent(shop):
     assert "never said" not in str(final["output"])
 
 
+async def test_a_tool_keeps_its_own_retries(shop):
+    spec = agent_flow(shop.url)
+    send = spec.step("send_note")
+    send.settings.url = shop.url + "/effects?fail=2"  # the first two tries get a 500
+    send.run.retries, send.run.retry_wait = 3, 0.01
+    script = Script([{"call": "send_note", "args": {"note": "hi"}}, "Sent."])
+    final, events = await run(spec, {"question": "send a note"}, script=script)
+    assert final["status"] == "ok", final
+    [done] = of(events, "tool_finished")
+    assert done["status"] == "success", done
+    log = httpx.get(f"{shop.url}/effects").json()
+    assert len(log["calls"]) == 3  # retried
+    assert len({c["key"] for c in log["calls"]}) == 1  # with the same idempotency key
+    assert len(log["applied"]) == 1  # and sent once
+
+
+async def test_a_tool_keeps_its_own_time_limit(shop):
+    import time
+
+    slow = {
+        "id": "slow",
+        "type": "code",
+        "description": "Thinks for a long time.",
+        "run": {"timeout": 0.3},
+        "settings": {
+            "code": "import time\n\ndef run(data):\n    time.sleep(3)\n    return {'y': 1}\n"
+        },
+    }
+    spec = make_spec(
+        [
+            input_step("question"),
+            {"id": "helper", "type": "agent", "settings": {"input": "question", "tools": ["slow"]}},
+            slow,
+            output_step("answer"),
+        ],
+        [("input", "helper"), ("helper", "output")],
+    )
+    script = Script([{"call": "slow", "args": {}}, "It was too slow."])
+    began = time.perf_counter()
+    final, events = await run(spec, {"question": "think"}, script=script)
+    assert time.perf_counter() - began < 2.5
+    assert final["status"] == "ok", final
+    [done] = of(events, "tool_finished")
+    assert done["status"] == "error"
+    assert "longer than its time limit (0.3 s)" in done["result"]
+    assert final["output"]["answer"] == "It was too slow."
+
+
+async def test_with_run_policy_retries_like_langgraph():
+    from langgraph.errors import GraphInterrupt
+    from langgraph.types import RetryPolicy
+
+    from easychain.compiler.helpers import HELPERS
+
+    namespace: dict[str, Any] = {}
+    helper = HELPERS["with_run_policy"]
+    head = "\n".join(f"import {m}" for m in helper.imports)
+    head += "".join(f"\nfrom {m} import {n}" for m, n in helper.from_imports)
+    exec(head + "\n" + helper.code, namespace)
+    with_run_policy = namespace["with_run_policy"]
+    retry = RetryPolicy(max_attempts=3, initial_interval=0.01, jitter=False)
+    calls: list[str] = []
+
+    def flaky(data: dict) -> dict:
+        calls.append("flaky")
+        if len(calls) < 3:
+            raise ConnectionError("dropped")
+        return {"ok": data["n"]}
+
+    assert await with_run_policy(flaky, {"n": 1}, retry=retry) == {"ok": 1}
+    assert len(calls) == 3
+
+    def wrong(data: dict) -> dict:
+        calls.append("wrong")
+        raise ValueError("bad input")  # retrying won't help, as in LangGraph
+
+    with pytest.raises(ValueError):
+        await with_run_policy(wrong, {}, retry=retry)
+    assert calls.count("wrong") == 1
+
+    async def pauses(data: dict) -> dict:
+        calls.append("pauses")
+        raise GraphInterrupt(())
+
+    with pytest.raises(GraphInterrupt):
+        await with_run_policy(pauses, {}, retry=retry)
+    assert calls.count("pauses") == 1
+
+
+def test_caching_a_tool_is_flagged(shop):
+    spec = agent_flow(shop.url)
+    spec.step("read_page").run.cache = True
+    found = [i for i in validate(spec) if i.code == "tool_run_policy_unused"]
+    assert [(i.step, i.level) for i in found] == [("read_page", "warning")]
+    assert "Reuse results" in found[0].message
+
+
 async def test_sub_flow_tool_makes_the_agent_async(shop):
     from .test_compiler_golden import resolve
 

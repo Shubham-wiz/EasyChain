@@ -124,6 +124,15 @@ class Imports:
         return 1 if root in sys.stdlib_module_names else 2
 
 
+def retry_policy_code(policy: Any, imports: Imports) -> str:
+    """``RetryPolicy(...)`` for a step's retries (from its run policy)."""
+    imports.add_from("langgraph.types", "RetryPolicy")
+    retry = [f"max_attempts={policy.retries + 1}"]
+    if policy.retry_wait != 1.0:
+        retry.append(f"initial_interval={py_literal(policy.retry_wait)}")
+    return f"RetryPolicy({', '.join(retry)})"
+
+
 def _isort_key(name: str) -> tuple[int, str]:
     """isort's default order for imported names: CONSTANTS, then Classes, then functions."""
     base = name.split(" ")[0]

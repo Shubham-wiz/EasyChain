@@ -10,11 +10,15 @@ It needs only LangChain and LangGraph:
 The compiled graph is `graph`; call `build_graph(checkpointer=...)` to keep Save Points.
 Ask a Human steps and tool approvals pause the run (LangGraph interrupt); resume with
 Command(resume=...).
+Some steps are async (time limits, MCP), so call it with `await graph.ainvoke(...)`.
 """
 
+import asyncio
 import hashlib
+import inspect
 import json
 import os
+import random
 import re
 import sys
 import uuid
@@ -39,9 +43,10 @@ from langchain_core.messages import HumanMessage
 from langchain_core.tools import BaseTool, tool
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.config import get_config, get_store
+from langgraph.errors import GraphBubbleUp
 from langgraph.graph import END, START, StateGraph
 from langgraph.store.memory import InMemoryStore
-from langgraph.types import Command
+from langgraph.types import Command, RetryPolicy
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
@@ -117,6 +122,34 @@ def fill_url(template: str, data: dict[str, Any]) -> str:
             )
         parts.append(filled)
     return start + "/".join(parts) + mark + encoded(query)
+
+
+async def with_run_policy(
+    step: Callable[[Any], Any],
+    data: Any,
+    *,
+    timeout: float | None = None,
+    retry: RetryPolicy | None = None,
+) -> Any:
+    """Run a step that an agent uses as a tool with the step's own time limit and retries,
+    the way LangGraph runs a step in the flow."""
+    attempt = 1
+    while True:
+        work = step(data) if inspect.iscoroutinefunction(step) else asyncio.to_thread(step, data)
+        try:
+            return await asyncio.wait_for(work, timeout)
+        except GraphBubbleUp:
+            raise  # a pause (Ask a Human, an approval) isn't a failure
+        except Exception as error:
+            if retry is None or attempt >= retry.max_attempts or not retry.retry_on(error):
+                if isinstance(error, TimeoutError) and timeout and not str(error):
+                    message = f"It took longer than its time limit ({timeout:g} s)."
+                    raise TimeoutError(message) from None
+                raise
+            backoff = retry.initial_interval * retry.backoff_factor ** (attempt - 1)
+            jitter = random.uniform(0, 1) if retry.jitter else 0
+            await asyncio.sleep(min(retry.max_interval, backoff) + jitter)
+        attempt += 1
 
 
 def as_text(value: Any) -> str:
@@ -325,8 +358,13 @@ def lookup_order_tool(data: FlowData) -> BaseTool:
         "lookup_order",
         description="Finds an order by its number and returns its status and items.",
     )
-    def run_tool(order_id: Annotated[str, "The order number, like A-1001."]) -> str:
-        result = lookup_order({**data, "order_id": order_id})
+    async def run_tool(order_id: Annotated[str, "The order number, like A-1001."]) -> str:
+        result = await with_run_policy(
+            lookup_order,
+            {**data, "order_id": order_id},
+            timeout=10.0,
+            retry=RetryPolicy(max_attempts=3),
+        )
         return as_text(result.get("order"))
 
     return run_tool
@@ -393,7 +431,7 @@ def calculate_tool(data: FlowData) -> BaseTool:
     return run_tool
 
 
-def support(data: FlowData) -> dict[str, Any]:
+async def support(data: FlowData) -> dict[str, Any]:
     """Agent · Support agent
 
     Works on `question` using openai:gpt-4o-mini and the tools lookup_order, refund and
@@ -427,7 +465,7 @@ def support(data: FlowData) -> dict[str, Any]:
         response_format=ToolStrategy(SupportAnswer),
         name="support",
     )
-    result = agent.invoke(
+    result = await agent.ainvoke(
         {"messages": [HumanMessage(str(data.get("question", "")))]},
         {"recursion_limit": 100},
     )
@@ -463,13 +501,17 @@ def build_graph(checkpointer=None, *, store=None, cache=None):
 graph = build_graph()
 
 
-if __name__ == "__main__":
+async def main() -> None:
     app = build_graph(checkpointer=InMemorySaver(), store=InMemoryStore())
     config = {"configurable": {"thread_id": "terminal"}}
     example = {"question": "Where is my order A-1001?", "customer_id": "C-42"}
     inputs = json.loads(sys.argv[1]) if len(sys.argv) > 1 else example
-    result = app.invoke(inputs, config)
+    result = await app.ainvoke(inputs, config)
     while "__interrupt__" in result:
         answer = ask_in_terminal(result["__interrupt__"][0].value)
-        result = app.invoke(Command(resume=answer), config)
+        result = await app.ainvoke(Command(resume=answer), config)
     print(json.dumps(result, indent=2, ensure_ascii=False, default=str))
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

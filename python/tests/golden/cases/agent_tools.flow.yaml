@@ -47,6 +47,7 @@ steps:
   type: http_request
   name: Look up an order
   description: Finds an order by its number and returns its status and items.
+  run: {retries: 2, timeout: 10}
   settings:
     url: https://shop.example.com/api/orders/{order_id}?customer={customer_id}
     response: json

@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..compiler.issues import Fix, Issue, error, warning
-from ..compiler.pycode import docstring, py_literal, py_str
+from ..compiler.pycode import docstring, py_literal, py_str, retry_policy_code
 from ..compiler.schema_code import check_schema, emit_schema, spread_types
 from ..compiler.templates import variables
 from .ai import check_model, missing_field_issue, secrets_in_prompt
@@ -45,6 +45,11 @@ def _camel(name: str) -> str:
 def tool_description(step: Any, handler: Any) -> str:
     text = (step.description or step.name or handler.summary).strip()
     return " ".join(text.split())
+
+
+def has_run_policy(step: Any) -> bool:
+    """A tool step with retries or a time limit runs through ``with_run_policy`` (async)."""
+    return bool(step.run.retries or step.run.timeout)
 
 
 class AgentHandler(StepHandler):
@@ -180,7 +185,10 @@ class AgentHandler(StepHandler):
     def is_async(self, step: Any, an: Any) -> bool:
         if step.settings.mcp:
             return True
-        return any(an.handlers[t.id].is_async(t, an) for t in self.tool_steps(step, an))
+        return any(
+            an.handlers[t.id].is_async(t, an) or has_run_policy(t)
+            for t in self.tool_steps(step, an)
+        )
 
     # ── checks ───────────────────────────────────────────────────────────────
 
@@ -248,6 +256,18 @@ class AgentHandler(StepHandler):
                         "also be connected to other steps.",
                         step=tool_id,
                         hint="Remove its connections, or take it off the agent's tools.",
+                    )
+                )
+            if tool.run.cache or tool.run.wait_for_all:
+                what = "Reuse results" if tool.run.cache else "Wait for all branches"
+                issues.append(
+                    warning(
+                        "tool_run_policy_unused",
+                        f"“{what}” doesn't apply when an agent uses this step as a tool: it runs "
+                        "every time the agent calls it. Its retries and time limit still apply.",
+                        step=tool_id,
+                        setting="run",
+                        hint=f"Switch off “{what}” under When it runs.",
                     )
                 )
             if not (tool.description or "").strip():
@@ -468,6 +488,24 @@ class AgentHandler(StepHandler):
         call_data = "{**data, " + ", ".join(fills) + "}" if fills else "data"
         is_async = code.is_async
         call = f"await {step_fn}({call_data})" if is_async else f"{step_fn}({call_data})"
+        if has_run_policy(tool):
+            # The step's own time limit and retries (LangGraph applies them to steps in the
+            # flow; a tool call isn't one, so the tool applies them itself).
+            policy = []
+            if tool.run.timeout:
+                policy.append(f"timeout={py_literal(tool.run.timeout)}")
+            if tool.run.retries:
+                policy.append(f"retry={retry_policy_code(tool.run, ctx.imports)}")
+            runner = ctx.helper("with_run_policy")
+            args = [step_fn, call_data, *policy]
+            call = f"await {runner}({', '.join(args)})"
+            if len(call) > 72:
+                call = (
+                    f"await {runner}(\n"
+                    + "".join(f"            {a},\n" for a in args)
+                    + "        )"
+                )
+            is_async = True
         head = "async def" if is_async else "def"
         description = tool_description(tool, handler)
         decorator = f"    @tool({py_str(tool.id)}, description={py_str(description)})"
