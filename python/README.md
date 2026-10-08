@@ -146,9 +146,11 @@ How runs, events, the Inbox and triggers behave is in [docs/runs.md](../docs/run
 
 ### `knowledge/` and `integrations/`
 
-- `knowledge/loaders.py` reads PDF, Word, HTML, Markdown, CSV and text, and web pages.
+- `knowledge/loaders.py` reads PDF, Word, HTML, Markdown, CSV and text, and web pages (through
+  `fetch.py`, which stops reading past a size limit; OpenAPI import uses it too).
 - `ingest.py` splits and embeds them. `store.py` keeps them in `kb_*` tables: pgvector on
-  Postgres when it's there, numpy otherwise, plus full-text search.
+  Postgres when it's there (an HNSW index per Knowledge Base, at half precision above 2,000
+  dimensions), numpy otherwise, plus full-text search.
 - `search.py` runs hybrid search and citations. This code is also copied into exports.
 - `memory.py` holds the long-term memory helpers (the LangGraph store).
 - `integrations/sql.py` runs SQL read-only by default, `mcp.py` connects to MCP servers, and

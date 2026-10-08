@@ -5,6 +5,8 @@ from __future__ import annotations
 import io
 import json
 import os
+import shlex
+import shutil
 import subprocess
 import sys
 import zipfile
@@ -13,10 +15,11 @@ from pathlib import Path
 import pytest
 
 from easychain.cli import main
+from easychain.compiler import compile_flow
 from easychain.export import export_files, export_zip
 from easychain.spec import load_spec
 
-from .conftest import ROOT, TEMPLATES
+from .conftest import ROOT, TEMPLATES, input_step, make_spec, output_step
 
 
 def test_new_validate_compile_and_run(tmp_path, capsys):
@@ -130,6 +133,113 @@ def test_export_lists_secrets_and_cli_writes_files(tmp_path, capsys):
     assert (tmp_path / "out" / "search_an_api.py").exists()
     assert main(["export", str(flow), "--zip", "-o", str(tmp_path / "x.zip")]) == 0
     assert zipfile.is_zipfile(tmp_path / "x.zip")
+
+
+def test_env_example_lists_everything_the_flow_reads():
+    child = make_spec(
+        [
+            input_step("question"),
+            {
+                "id": "answer_it",
+                "type": "ai_model",
+                "settings": {"model": "deepseek:deepseek-chat", "prompt": "question"},
+            },
+            output_step("answer"),
+        ],
+        [("input", "answer_it"), ("answer_it", "output")],
+        name="Answer",
+    )
+    spec = make_spec(
+        [
+            input_step("question", "user_id"),
+            {
+                "id": "helper",
+                "type": "agent",
+                "settings": {
+                    "model": "anthropic:claude-haiku-4-5",
+                    "input": "question",
+                    "tools": ["orders"],
+                    "mcp": [{"server": "docs"}],
+                    "addons": {"fallback_models": ["mistralai:mistral-small-latest"]},
+                },
+            },
+            {
+                "id": "orders",
+                "type": "sql_query",
+                "description": "Runs one read-only query.",
+                "settings": {
+                    "connection": "postgresql://app:{secret:DB_PASSWORD}@db/shop",
+                    "query": "{sql}",
+                },
+            },
+            {
+                "id": "search",
+                "type": "knowledge_search",
+                "settings": {
+                    "knowledge_base": "docs",
+                    "embedding_model": "google_genai:models/gemini-embedding-001",
+                    "query": "question",
+                },
+            },
+            {"id": "facts", "type": "memory", "settings": {"action": "recall"}},
+            {"id": "sub", "type": "subflow", "settings": {"flow": "answer"}},
+            output_step("answer"),
+        ],
+        [
+            ("input", "search"),
+            ("search", "facts"),
+            ("facts", "helper"),
+            ("helper", "sub"),
+            ("sub", "output"),
+        ],
+        data=[{"name": "sql", "description": "One SELECT statement."}],
+    )
+    env = export_files(spec, resolve={"answer": child}.get)[".env.example"]
+    names = [line.split("=")[0] for line in env.splitlines() if not line.startswith("#")]
+    assert names == [
+        "ANTHROPIC_API_KEY",  # the agent
+        "DEEPSEEK_API_KEY",  # the sub-flow's AI Model
+        "GOOGLE_API_KEY",  # the Knowledge Base's embedding model
+        "MISTRAL_API_KEY",  # the agent's fallback model
+        "DB_PASSWORD",  # {secret:…} in the database URL
+        "EASYCHAIN_MCP_SERVERS",
+        "EASYCHAIN_KNOWLEDGE_URL",
+    ]  # and no OpenAI key: the Memory step only recalls, so its model isn't used
+    assert '# {"docs": {"transport": "streamable_http"' in env
+
+
+def test_readme_run_hints_keep_quotes_in_the_example(tmp_path):
+    # The example input of the approval template says "hasn't".
+    spec = load_spec(TEMPLATES / "approve-reply.flow.yaml")
+    example = compile_flow(spec).example_input
+    assert "hasn't" in json.dumps(example)
+    files = export_files(spec)
+    module = next(name for name in files if name.endswith(".py"))[:-3]
+    blocks = files["README.md"].split("```")
+    bash = next(b for b in blocks if b.startswith("bash\n")).strip().splitlines()[-1]
+    powershell = next(b for b in blocks if b.startswith("powershell\n")).strip().splitlines()[-1]
+    run = f"python {module}.py "
+    assert bash.startswith(run) and powershell.startswith(run)
+    # bash quoting is POSIX shell quoting.
+    assert [json.loads(arg) for arg in shlex.split(bash.removeprefix(run))] == [example]
+
+    # Run each line in its shell where there is one, with a script that echoes the input.
+    echo = tmp_path / "echo_input.py"
+    echo.write_text(
+        "import json, sys\nprint(json.dumps(json.loads(sys.argv[1])))\n", encoding="utf-8"
+    )
+    commands = []
+    if os.name != "nt" and shutil.which("bash"):
+        line = f"{shlex.quote(sys.executable)} {shlex.quote(str(echo))} {bash.removeprefix(run)}"
+        commands.append((["bash", "-c", line], None))
+    if os.name == "nt":
+        shell = Path(os.environ.get("SYSTEMROOT", "C:/Windows"), "System32/WindowsPowerShell/v1.0")
+        line = f"& '{sys.executable}' '{echo}' {powershell.removeprefix(run)}\n"
+        commands.append(([str(shell / "powershell.exe"), "-NoProfile", "-Command", "-"], line))
+    for command, stdin in commands:
+        done = subprocess.run(command, input=stdin, capture_output=True, text=True, timeout=60)
+        assert done.returncode == 0, done.stderr
+        assert json.loads(done.stdout) == example
 
 
 def _run_exported(

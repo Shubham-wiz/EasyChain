@@ -2,7 +2,8 @@
 
 Chunks keep their text, where they came from (title, source, page, heading) and an
 embedding. On Postgres the embedding is a pgvector ``vector`` when the extension is
-available (with an HNSW index per Knowledge Base), and full-text search uses a
+available (with an HNSW index per Knowledge Base, at half precision for more than
+2,000 dimensions), and full-text search uses a
 generated ``tsvector`` column. On SQLite embeddings are float32 blobs searched with
 numpy, and full-text search uses FTS5. ``knowledge.search`` reads all of this.
 """
@@ -10,6 +11,7 @@ numpy, and full-text search uses FTS5. ``knowledge.search`` reads all of this.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import threading
 import time
@@ -20,8 +22,9 @@ from typing import Any
 import numpy as np
 from sqlalchemy import Engine, text
 
-from .search import knowledge_engine
+from .search import knowledge_engine, knowledge_vector_kind
 
+log = logging.getLogger("easychain.knowledge")
 _setup_lock = threading.Lock()
 _ready: set[str] = set()
 
@@ -44,6 +47,22 @@ def _now() -> float:
 def slug(name: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")[:40] or "knowledge"
     return s if s[0].isalpha() else f"kb_{s}"
+
+
+def vector_index_sql(kb_id: str, dims: int) -> str | None:
+    """The statement that makes one Knowledge Base's HNSW index on pgvector, or None.
+
+    Vectors of up to 2,000 numbers are indexed as they are; up to 4,000 at half precision
+    (halfvec), the most pgvector's HNSW index takes. Search orders by the same expression
+    (``knowledge_vector_kind``), so the index is used. Bigger vectors get no index.
+    """
+    kind = knowledge_vector_kind(int(dims))
+    if dims <= 0 or kind is None or not re.fullmatch(r"[a-z][a-z0-9_]*", kb_id):
+        return None
+    return (
+        f"CREATE INDEX IF NOT EXISTS kb_hnsw_{kb_id} ON kb_chunks USING hnsw "
+        f"((embedding::{kind}({int(dims)})) {kind}_cosine_ops) WHERE kb_id = '{kb_id}'"
+    )
 
 
 class KnowledgeStore:
@@ -221,14 +240,18 @@ class KnowledgeStore:
         return self.get_base(base_id) or {}
 
     def _vector_index(self, conn: Any, kb_id: str, dims: int) -> None:
-        """An HNSW index for one Knowledge Base's vectors (they all have the same size)."""
-        if self.pgvector and re.fullmatch(r"[a-z][a-z0-9_]*", kb_id):
-            conn.execute(
-                text(
-                    f"CREATE INDEX IF NOT EXISTS kb_hnsw_{kb_id} ON kb_chunks USING hnsw "
-                    f"((embedding::vector({int(dims)})) vector_cosine_ops) WHERE kb_id = '{kb_id}'"
-                )
-            )
+        """An HNSW index for one Knowledge Base's vectors (they all have the same size).
+
+        The index only makes search faster, so a Knowledge Base works without it: when it
+        can't be made (an older pgvector without halfvec, say), it is left out."""
+        sql = vector_index_sql(kb_id, dims) if self.pgvector else None
+        if sql is None:
+            return
+        try:
+            with conn.begin_nested():
+                conn.execute(text(sql))
+        except Exception as exc:
+            log.warning("No search index for the Knowledge Base %s (%s dims): %s", kb_id, dims, exc)
 
     def ensure_dims(self, kb_id: str, dims: int) -> None:
         """Record the embedding size on first use; refuse vectors of another size."""

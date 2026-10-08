@@ -205,8 +205,12 @@ def run_sql(
                 conn.exec_driver_sql("PRAGMA query_only = OFF")
 
 
-def describe_database(connection: str) -> str:
-    """The tables and their columns (with types, keys and row counts), for an AI to write SQL."""
+def describe_database(connection: str, count_up_to: int = 10000) -> str:
+    """The tables and their columns (with types, keys and row counts), for an AI to write SQL.
+
+    Counting reads at most ``count_up_to`` rows of a table, so big tables stay quick; past
+    that, Postgres gives its own estimate and other databases say "more than".
+    """
     engine = sql_engine(connection)
     inspector = sa.inspect(engine)
     lines = []
@@ -223,8 +227,21 @@ def describe_database(connection: str) -> str:
                     fk["constrained_columns"], fk["referred_columns"], strict=False
                 ):
                     parts.append(f"{col} references {fk['referred_table']}.{ref}")
-            count = conn.execute(sa.text(f'SELECT COUNT(*) FROM "{table}"')).scalar()
-            lines.append(f"{table} ({count} rows): " + ", ".join(parts))
+            # sa.table quotes the name the way this database does (`order` on MySQL).
+            rows = sa.select(sa.literal_column("1")).select_from(sa.table(table))
+            rows = rows.limit(count_up_to + 1).subquery()
+            count = conn.execute(sa.select(sa.func.count()).select_from(rows)).scalar() or 0
+            size = f"{count} rows"
+            if count > count_up_to:
+                size = f"more than {count_up_to} rows"
+                if engine.dialect.name == "postgresql":
+                    estimate = conn.execute(
+                        sa.text("SELECT reltuples FROM pg_class WHERE oid = to_regclass(:t)"),
+                        {"t": engine.dialect.identifier_preparer.quote(table)},
+                    ).scalar()
+                    if estimate and estimate > count_up_to:
+                        size = f"about {int(estimate)} rows"
+            lines.append(f"{table} ({size}): " + ", ".join(parts))
     return "\n".join(lines) or "The database has no tables."
 
 

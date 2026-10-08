@@ -26,8 +26,10 @@ function ServerCard({
   const mode = useUi((s) => s.mode);
   const [tools, setTools] = useState<McpTool[] | string | null>(null);
   const set = (patch: Partial<McpServer>) => onChange({ ...server, ...patch });
-  const command = server.command.trim().split(/\s+/)[0] ?? "";
-  const approved = server.transport !== "stdio" || allowed.includes(command);
+  const words = server.command.trim().split(/\s+/);
+  const command = words[0] ?? "";
+  // A program on its own approves it with any arguments; an entry with arguments, that exact command line.
+  const approved = server.transport !== "stdio" || allowed.some((a) => a === command || a.trim().split(/\s+/).join(" ") === words.join(" "));
   return (
     <div className="space-y-2 rounded-lg border border-border p-3" data-testid={`mcp-server-${server.id}`}>
       <div className="flex gap-1.5">
@@ -50,7 +52,7 @@ function ServerCard({
       {server.transport === "stdio" ? (
         <>
           <Input aria-label="Command" className="font-mono text-[12px]" placeholder="npx -y @modelcontextprotocol/server-filesystem /data" value={server.command} onChange={(e) => set({ command: e.target.value })} />
-          {!approved && <p className="text-xs text-warn">`{command || "?"}` isn't on the approved list below, so it won't run.</p>}
+          {!approved && <p className="text-xs text-warn">`{server.command.trim() || "?"}` isn't on the approved list below, so it won't run.</p>}
         </>
       ) : (
         <Input aria-label="Server URL" className="font-mono text-[12px]" placeholder="https://example.com/mcp" value={server.url} onChange={(e) => set({ url: e.target.value })} />
@@ -140,11 +142,16 @@ export function McpSection() {
           A server that runs as a program on this machine can do anything that program can, so only commands on this list may start. Edit it in
           Pro mode.
         </p>
+        <p className="text-xs text-muted">
+          A program on its own (<span className="font-mono">npx</span>, <span className="font-mono">uvx</span>,{" "}
+          <span className="font-mono">python</span>, <span className="font-mono">node</span>) approves it with any arguments: that is,
+          anything it can download or run. To approve one server only, write its whole command line; it must then match exactly.
+        </p>
         <Input
           aria-label="Approved commands"
           className="font-mono text-[12px]"
           disabled={mode !== "pro"}
-          placeholder="npx, uvx, python"
+          placeholder="npx -y @modelcontextprotocol/server-filesystem /data"
           defaultValue={settings.allowed_commands.join(", ")}
           key={settings.allowed_commands.join(",")}
           onBlur={(e) =>

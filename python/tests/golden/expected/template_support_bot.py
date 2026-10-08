@@ -96,23 +96,43 @@ def knowledge_words(query: str) -> list[str]:
     return [w for w in words if w not in common][:30]
 
 
+def knowledge_vector_kind(dims: int) -> str | None:
+    """The pgvector type a Knowledge Base's embeddings are indexed and searched as.
+
+    pgvector's HNSW index takes vectors of up to 2,000 numbers. Bigger ones (3,072 from
+    text-embedding-3-large) are indexed at half precision (halfvec), which goes up to
+    4,000. None means too big to index: search then compares every embedding.
+    """
+    if dims <= 2000:
+        return "vector"
+    if dims <= 4000:
+        return "halfvec"
+    return None
+
+
 def knowledge_by_meaning(
     conn: Any, base: str, vector: list[float], limit: int
 ) -> list[tuple[str, float]]:
     """(chunk id, cosine similarity) for the embeddings closest to the question's."""
     if conn.dialect.name == "postgresql":
-        kind = conn.execute(
+        found = conn.execute(
             sa.text(
-                "SELECT format_type(atttypid, atttypmod) FROM pg_attribute "
-                "WHERE attrelid = 'kb_chunks'::regclass AND attname = 'embedding'"
+                "SELECT format_type(atttypid, atttypmod), to_regtype('halfvec') IS NOT NULL "
+                "FROM pg_attribute WHERE attrelid = 'kb_chunks'::regclass AND attname = 'embedding'"
             )
-        ).scalar()
-        if kind and kind.startswith("vector"):
+        ).first()
+        if found and found[0] and found[0].startswith("vector"):
             dims = len(vector)
             distance = f"(embedding::vector({dims})) <=> CAST(:q AS vector({dims}))"
+            # Order by the same expression the Knowledge Base's index uses, so it is used.
+            kind = knowledge_vector_kind(dims)
+            if kind == "halfvec" and found[1]:
+                order = f"(embedding::halfvec({dims})) <=> CAST(:q AS halfvec({dims}))"
+            else:
+                order = distance
             sql = (
                 f"SELECT id, 1 - ({distance}) FROM kb_chunks WHERE kb_id = :kb "
-                f"AND embedding IS NOT NULL ORDER BY {distance} LIMIT :n"
+                f"AND embedding IS NOT NULL ORDER BY {order} LIMIT :n"
             )
             q = "[" + ",".join(f"{v:.7f}" for v in vector) + "]"
             rows = conn.execute(sa.text(sql), {"kb": base, "q": q, "n": limit})

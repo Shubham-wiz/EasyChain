@@ -79,6 +79,31 @@ def _same_command(a: str, b: str) -> bool:
     return a.lower() == b.lower() if os.name == "nt" else a == b
 
 
+def command_allowed(command: list[str], allowed_commands: list[str]) -> bool:
+    """Whether a command (program and arguments) is on the approved list.
+
+    An entry that is just a program (``npx``, ``python``) approves that program with any
+    arguments, so it approves anything the program can run. An entry with arguments
+    (``npx -y @modelcontextprotocol/server-filesystem /data``) approves exactly that
+    command line.
+    """
+    for allowed in allowed_commands:
+        if _same_command(command[0], allowed.strip()):
+            return True
+        try:
+            approved = split_command(allowed)
+        except ValueError:
+            continue
+        if (
+            len(approved) > 1
+            and len(approved) == len(command)
+            and _same_command(command[0], approved[0])
+            and approved[1:] == command[1:]
+        ):
+            return True
+    return False
+
+
 def connection(server: dict[str, Any], allowed_commands: list[str]) -> dict[str, Any]:
     """A langchain-mcp-adapters connection for one server from Settings → MCP servers."""
     transport = server.get("transport") or "http"
@@ -93,9 +118,12 @@ def connection(server: dict[str, Any], allowed_commands: list[str]) -> dict[str,
             ) from None
         if not parts:
             raise McpNotAllowed(f"The MCP server “{name}” has no command to run.")
-        if not any(_same_command(parts[0], allowed) for allowed in allowed_commands):
+        parts += [str(arg) for arg in server.get("args") or []]
+        if not command_allowed(parts, allowed_commands):
+            shown = " ".join(parts)
+            shown = shown if len(shown) <= 200 else shown[:199] + "…"
             raise McpNotAllowed(
-                f"The MCP server “{name}” runs `{parts[0]}` on "
+                f"The MCP server “{name}” runs `{shown}` on "
                 "this machine, and that command isn't on the approved list (Settings → MCP "
                 "servers, in Pro mode)."
             )
@@ -104,7 +132,7 @@ def connection(server: dict[str, Any], allowed_commands: list[str]) -> dict[str,
         return {
             "transport": "stdio",
             "command": parts[0],
-            "args": parts[1:] + list(server.get("args") or []),
+            "args": parts[1:],
             "env": {k: _secrets(v) for k, v in (server.get("env") or {}).items()},
         }
     out: dict[str, Any] = {

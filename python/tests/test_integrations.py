@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import socket
+import sqlite3
 import subprocess
 import sys
 import time
@@ -77,6 +79,23 @@ def test_run_sql_reads_safely(shop):
     assert "customer_id references customers.id" in schema
 
 
+def test_describing_a_database_quotes_names_and_counts_only_so_far(tmp_path):
+    db = tmp_path / "odd.db"
+    with contextlib.closing(sqlite3.connect(db)) as conn:
+        conn.execute('CREATE TABLE "order" (id INTEGER PRIMARY KEY)')
+        conn.execute('CREATE TABLE "my ""odd"" table" (id INTEGER PRIMARY KEY, note TEXT)')
+        conn.executemany('INSERT INTO "order" VALUES (?)', [(n,) for n in range(50)])
+        conn.execute("""INSERT INTO "my ""odd"" table" VALUES (1, 'hi')""")
+        conn.commit()
+    try:
+        schema = describe_database(f"sqlite:///{db}", count_up_to=20).splitlines()
+    finally:
+        SQL_ENGINES.clear()
+    assert 'my "odd" table (1 rows): id INTEGER primary key, note TEXT' in schema
+    # Big tables aren't counted to the end: at most count_up_to + 1 rows are read.
+    assert "order (more than 20 rows): id INTEGER primary key" in schema
+
+
 def test_changes_that_return_rows_are_saved(shop):
     added = run_sql(
         shop,
@@ -122,6 +141,18 @@ def test_run_sql_read_only_on_postgres():
         assert added == [{"id": 2}]
         assert run_sql(url, "SELECT COUNT(*) AS n FROM notes") == [{"n": 2}]
         SQL_ENGINES.clear()
+
+
+@pytest.mark.skipif(not pg.available(), reason="Postgres isn't installed")
+def test_describing_a_big_postgres_table_gives_its_estimate():
+    with pg.server() as url:
+        run_sql(url, 'CREATE TABLE "Order" (id int)', read_only=False)
+        run_sql(url, 'INSERT INTO "Order" SELECT generate_series(1, 50)', read_only=False)
+        run_sql(url, 'ANALYZE "Order"', read_only=False)
+        try:
+            assert describe_database(url, count_up_to=20).startswith("Order (about 50 rows): id")
+        finally:
+            SQL_ENGINES.clear()
 
 
 def _sql_flow(connection: str, query: str, **settings):
@@ -348,6 +379,32 @@ def test_local_mcp_servers_get_only_their_own_secrets(monkeypatch):
     server = {**_stdio_server(), "env": {"TOKEN": "{secret:GITHUB_TOKEN}"}}
     conn = mcp_module.connections({"servers": [server], "allowed_commands": [sys.executable]})
     assert conn["facts"]["env"] == {"TOKEN": "ghp-for-mcp"}
+
+
+def test_an_approved_command_line_must_match_exactly():
+    files = {
+        "id": "files",
+        "transport": "stdio",
+        "command": "npx -y @modelcontextprotocol/server-filesystem /data",
+    }
+    exact = ["npx -y @modelcontextprotocol/server-filesystem /data"]
+    assert mcp_module.connections({"servers": [files], "allowed_commands": exact})["files"] == {
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/data"],
+        "env": {},
+    }
+    for other in (
+        {**files, "command": "npx -y some-other-package"},
+        {**files, "command": "npx -y @modelcontextprotocol/server-filesystem /"},
+        {**files, "args": ["--and-more"]},  # extra arguments count too
+    ):
+        refused = mcp_module.connections({"servers": [other], "allowed_commands": exact})
+        assert "isn't on the approved list" in refused["files"]["error"]
+    # A program on its own still approves it with any arguments.
+    anything = {**files, "command": "npx -y some-other-package"}
+    allowed = mcp_module.connections({"servers": [anything], "allowed_commands": ["npx"]})
+    assert allowed["files"]["args"] == ["-y", "some-other-package"]
 
 
 def test_a_broken_mcp_command_is_reported_not_raised():
@@ -609,6 +666,29 @@ def test_openapi_operations_become_typed_steps():
         openapi.load('{"hello": "world"}')
     with pytest.raises(openapi.OpenApiError, match="isn't JSON or YAML"):
         openapi.load("{not json")
+
+
+def test_a_relative_server_is_resolved_against_the_spec_address(web_server, monkeypatch):
+    # Like the Swagger Petstore v3: servers: [{url: /api/v3}], served from /api/v3/openapi.json.
+    spec = {**PETSTORE, "servers": [{"url": "/api/v3"}]}
+    web_server.pages["/api/v3/openapi.json"] = ("application/json", json.dumps(spec).encode())
+    doc = openapi.load(f"{web_server.url}/api/v3/openapi.json")
+    assert openapi.base_url(doc) == f"{web_server.url}/api/v3"
+    made = openapi.to_steps(doc, ["get_pet_by_id"])
+    assert made["steps"][0]["settings"]["url"] == f"{web_server.url}/api/v3/pets/{{pet_id}}"
+    # No server at all means the host that serves the spec; pasted text can't be resolved.
+    spec = {k: v for k, v in PETSTORE.items() if k != "servers"}
+    web_server.pages["/openapi.yaml"] = ("application/yaml", json.dumps(spec).encode())
+    assert openapi.base_url(openapi.load(f"{web_server.url}/openapi.yaml")) == web_server.url
+    assert openapi.base_url(openapi.load(json.dumps({**PETSTORE, "servers": []}))) == ""
+    pasted = openapi.load(json.dumps({**PETSTORE, "servers": [{"url": "/v1"}]}))
+    assert openapi.base_url(pasted) == "/v1"
+    # A spec read from an address may only be so big.
+    monkeypatch.setattr(openapi, "MAX_SPEC_BYTES", 100)
+    with pytest.raises(openapi.OpenApiError, match="larger than 100 bytes"):
+        openapi.load(f"{web_server.url}/api/v3/openapi.json")
+    with pytest.raises(openapi.OpenApiError, match="larger than 100 bytes"):
+        openapi.load(f"{web_server.url}/endless")
 
 
 def test_openapi_api(tmp_path, fake_server):

@@ -10,17 +10,20 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text as sql_text
 
 from easychain.compiler import compile_flow
 from easychain.compiler.validate import validate
+from easychain.knowledge import loaders
 from easychain.knowledge import search as search_module
 from easychain.knowledge.ingest import build_embeddings, ingest
-from easychain.knowledge.loaders import LoadError, load_bytes, split
-from easychain.knowledge.search import cite_passages, search_knowledge
-from easychain.knowledge.store import KnowledgeStore
+from easychain.knowledge.loaders import LoadError, load_bytes, load_url, split
+from easychain.knowledge.search import cite_passages, knowledge_by_meaning, search_knowledge
+from easychain.knowledge.store import ChunkDraft, KnowledgeStore, vector_index_sql
 from easychain.runtime import RunOptions, run_flow
 from easychain.runtime.standin import Script
 from easychain.server.app import create_app
@@ -133,6 +136,52 @@ def test_reads_every_supported_format():
         load_bytes("scan.pdf", tiny_pdf(""))
 
 
+def test_text_in_other_encodings_is_read_correctly():
+    # Windows-1252 / Latin-1 files used to be read as UTF-16, which "decodes" almost anything.
+    western = "Café crème, naïve façade"
+    assert load_bytes("menu.txt", western.encode("cp1252")).sections[0].text == western
+    assert load_bytes("menu.txt", "Price: 5 € “net”".encode("cp1252")).sections[0].text == (
+        "Price: 5 € “net”"
+    )
+    table = load_bytes("people.csv", "name,city\nJosé,Málaga\n".encode("cp1252"))
+    assert table.sections[0].text == "name: José; city: Málaga"
+    # UTF-16 with a byte order mark, or clearly UTF-16 without one; UTF-8 loses its mark.
+    greeting = "Grüße aus Köln"
+    for encoded in (
+        greeting.encode("utf-16"),
+        greeting.encode("utf-16-le"),
+        greeting.encode("utf-16-be"),
+        greeting.encode("utf-8-sig"),
+        greeting.encode("utf-8"),
+    ):
+        assert load_bytes("note.txt", encoded).sections[0].text == greeting
+
+
+def test_files_that_cant_be_parsed_give_a_clear_error(monkeypatch):
+    # A CSV value over 131,072 characters (often a quote that's never closed).
+    with pytest.raises(LoadError, match="isn't a CSV file I can read"):
+        load_bytes("broken.csv", b'name,notes\nAda,"' + b"x" * 200_000 + b"\n")
+
+    def crash(data: bytes, name: str) -> None:
+        raise KeyError("/Root")
+
+    monkeypatch.setitem(loaders.READERS, "pdf", crash)
+    with pytest.raises(LoadError, match=r"couldn't read odd\.pdf as a PDF \('/Root'\)"):
+        load_bytes("odd.pdf", b"%PDF-1.4")
+
+
+def test_web_pages_are_read_up_to_a_limit(web_server, monkeypatch):
+    web_server.pages["/notes.md"] = ("text/markdown", b"# Notes\n\nShips in two days.\n")
+    assert load_url(f"{web_server.url}/notes.md").title == "Notes"
+    monkeypatch.setattr(loaders, "MAX_BYTES", 20)
+    with pytest.raises(LoadError, match="larger than 20 bytes"):
+        load_url(f"{web_server.url}/notes.md")  # says how long it is
+    with pytest.raises(LoadError, match="larger than 20 bytes, so I stopped reading it"):
+        load_url(f"{web_server.url}/endless")  # doesn't say: reading stops past the limit
+    with pytest.raises(LoadError, match="Couldn't fetch"):
+        load_url(f"{web_server.url}/missing")
+
+
 def test_split_keeps_where_each_chunk_came_from():
     loaded = load_bytes("help.md", HELP)
     chunks = split(loaded, "help.md", chunk_size=120, chunk_overlap=20)
@@ -214,6 +263,76 @@ def test_hybrid_search_finds_and_cites_passages(knowledge_url):
     assert not search_knowledge(kb, "reset password", embeddings, mode="words")
     store.delete_base(kb)
     assert store.list_bases() == []
+
+
+def test_big_embeddings_go_in_and_are_found(knowledge_url):
+    """3,072-number embeddings (text-embedding-3-large, Gemini) are more than pgvector's HNSW
+    index takes (2,000): the first document still goes in, indexed at half precision."""
+    store = KnowledgeStore().setup()
+    kb = store.create_base("Large", "openai:text-embedding-3-large", 0)["id"]
+    store.ensure_dims(kb, 3072)
+    doc = store.add_document(kb, "Notes", "notes.txt", "text")
+    vectors = [[1.0 if i == n else 0.0 for i in range(3072)] for n in range(3)]
+    chunks = [ChunkDraft(text=f"Passage {n}", position=n) for n in range(3)]
+    store.write_chunks(kb, doc["id"], chunks, vectors)
+    texts = {c["id"]: c["text"] for c in store.list_chunks(doc["id"])}
+    question = [0.0] * 3072
+    question[2], question[1] = 1.0, 0.5
+    with store.engine.connect() as conn:
+        near = knowledge_by_meaning(conn, kb, question, 2)
+    assert [texts[cid] for cid, _ in near] == ["Passage 2", "Passage 1"]
+    assert near[0][1] == pytest.approx(0.894, abs=0.01)
+    if store.pgvector:
+        with store.engine.connect() as conn:
+            halfvec = conn.execute(sql_text("SELECT to_regtype('halfvec') IS NOT NULL")).scalar()
+            index = conn.execute(
+                sql_text("SELECT indexdef FROM pg_indexes WHERE indexname = :name"),
+                {"name": f"kb_hnsw_{kb}"},
+            ).scalar()
+        if halfvec:
+            assert "halfvec(3072)" in index and "halfvec_cosine_ops" in index
+        else:  # pgvector before 0.7: no index, and search reads every embedding
+            assert index is None
+    store.delete_base(kb)
+
+
+class _PostgresWithPgvector:
+    """Records the SQL that meaning search sends to Postgres with pgvector."""
+
+    dialect = SimpleNamespace(name="postgresql")
+
+    def __init__(self, halfvec: bool):
+        self.halfvec = halfvec
+        self.sent: list[str] = []
+
+    def execute(self, statement, params=None):
+        self.sent.append(str(statement))
+        if "format_type" in self.sent[-1]:
+            return SimpleNamespace(first=lambda: ("vector", self.halfvec))
+        return [("chunk_1", 0.9)]
+
+
+def test_meaning_search_orders_by_the_index_expression():
+    assert vector_index_sql("docs", 1536) == (
+        "CREATE INDEX IF NOT EXISTS kb_hnsw_docs ON kb_chunks USING hnsw "
+        "((embedding::vector(1536)) vector_cosine_ops) WHERE kb_id = 'docs'"
+    )
+    assert "((embedding::halfvec(3072)) halfvec_cosine_ops)" in vector_index_sql("docs", 3072)
+    assert vector_index_sql("docs", 4001) is None  # more than pgvector's HNSW index takes
+    assert vector_index_sql("docs", 0) is None
+    assert vector_index_sql("Robert'); DROP TABLE kb_chunks; --", 1536) is None
+    for dims, halfvec, kind in (
+        (1536, True, "vector"),
+        (3072, True, "halfvec"),
+        (3072, False, "vector"),  # pgvector before 0.7 has no halfvec (and no index)
+        (5000, True, "vector"),
+    ):
+        conn = _PostgresWithPgvector(halfvec)
+        assert knowledge_by_meaning(conn, "docs", [0.1] * dims, 4) == [("chunk_1", 0.9)]
+        order = conn.sent[-1].split(" ORDER BY ")[1]
+        assert order == f"(embedding::{kind}({dims})) <=> CAST(:q AS {kind}({dims})) LIMIT :n"
+        if kind == "halfvec":  # the same expression as the index, so the index is used
+            assert f"(embedding::{kind}({dims}))" in vector_index_sql("docs", dims)
 
 
 # ── the API ──────────────────────────────────────────────────────────────────
@@ -303,6 +422,13 @@ def test_knowledge_api(client, fake_server):
     assert client.get(f"/api/knowledge/{second['id']}").status_code == 404
 
 
+def test_chunk_preview_says_what_is_wrong_with_a_file(client):
+    broken = b'name,notes\nAda,"' + b"x" * 200_000 + b"\n"  # a quote that's never closed
+    bad = client.post("/api/knowledge-preview", files={"file": ("broken.csv", broken, "text/csv")})
+    assert bad.status_code == 422
+    assert "broken.csv isn't a CSV file I can read" in bad.json()["message"]
+
+
 def test_documents_cut_off_by_a_restart_say_so(tmp_path, monkeypatch):
     monkeypatch.delenv("EASYCHAIN_KNOWLEDGE_URL", raising=False)
 
@@ -354,6 +480,9 @@ def test_checks_warn_about_a_missing_base_or_another_model(client):
     assert ("knowledge_base_missing", "search") in codes
     mismatch = next(i for i in issues if i["code"] == "knowledge_model_mismatch")
     assert mismatch["fix"]["params"] == {"key": "embedding_model", "value": "keywords"}
+    # Searching by meaning with OpenAI embeddings needs the OpenAI key.
+    [missing] = [i for i in issues if i["code"] == "missing_key"]
+    assert (missing["step"], missing["setting"]) == ("search2", "embedding_model")
 
 
 # ── in a run, and in exported code ───────────────────────────────────────────

@@ -26,6 +26,14 @@ In **Settings → MCP servers**, add a server with a name, an id and how to reac
   Such a server can do anything that program can, so only commands on the **approved list** may
   start.
 
+The approved list (Settings → MCP servers, in Pro mode) takes two kinds of entry:
+
+- **A program on its own**, such as `npx`: that program may start with **any** arguments.
+  Approving `npx`, `uvx`, `python` or `node` therefore approves anything they can download or
+  run, not just the server you had in mind.
+- **A whole command line**, such as `npx -y @modelcontextprotocol/server-filesystem /data`:
+  only that exact command (the same program and the same arguments) may start. Prefer this.
+
 **Show its tools** connects and lists the server's tools, to check it works.
 
 Once saved, a header or environment value written out in full is shown as `••••••`; leave it
@@ -62,5 +70,5 @@ the shape `langchain-mcp-adapters` takes:
 | Message | What to do |
 |---|---|
 | Pick the MCP server / Pick the tool to call | Choose them in the inspector. |
-| The MCP server "…" runs `…` on this machine, and that command isn't on the approved list | Add the command to the approved list in Settings → MCP servers (Pro), if you trust it. |
+| The MCP server "…" runs `…` on this machine, and that command isn't on the approved list | Add the whole command line to the approved list in Settings → MCP servers (Pro), if you trust it. |
 | No connection for the MCP server(s) … | The flow uses a server id that isn't in Settings (or in `EASYCHAIN_MCP_SERVERS`). |

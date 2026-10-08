@@ -10,7 +10,7 @@ from functools import cache
 from pathlib import Path
 from typing import Any
 
-from ..providers import PROVIDERS, split_model
+from ..providers import flow_models, get_provider
 from ..spec import FlowSpec, load_spec
 
 HERE = Path(__file__).parent
@@ -72,11 +72,8 @@ def load_template(template_id: str) -> FlowSpec:
 
 def keys_needed(spec: FlowSpec) -> list[dict[str, str]]:
     seen: dict[str, dict[str, str]] = {}
-    for step in spec.steps:
-        model = getattr(step.settings, "model", None)
-        if not model or (step.type == "decision" and step.settings.mode != "ai"):
-            continue
-        provider = PROVIDERS.get(split_model(model)[0] or "")
+    for _, _, model in flow_models(spec):
+        provider = get_provider(model)
         if provider and provider.key_env:
             seen[provider.id] = {
                 "provider": provider.id,

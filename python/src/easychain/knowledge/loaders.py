@@ -7,6 +7,7 @@ chunk can be cited precisely.
 
 from __future__ import annotations
 
+import codecs
 import csv
 import io
 import re
@@ -14,9 +15,9 @@ from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import PurePosixPath
 
-import httpx
 from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 
+from ..fetch import FetchError, TooLarge, fetch, size_text
 from .store import ChunkDraft
 
 KINDS = {
@@ -69,13 +70,44 @@ def kind_for(name: str, content_type: str | None = None) -> str:
     }.get(ctype, "")
 
 
+def _utf16_without_bom(data: bytes) -> str | None:
+    """The UTF-16 codec for text saved without a byte order mark, or None.
+
+    Text in UTF-16 has a zero byte beside nearly every Latin letter; other text has almost
+    none. (Simply trying UTF-16 would "succeed" on most files, giving garbage.)
+    """
+    sample = data[:4096]
+    pairs = len(sample) // 2
+    if pairs < 2 or len(data) % 2:
+        return None
+    if sample[1::2].count(0) > pairs * 0.3 and sample[0::2].count(0) < pairs * 0.05:
+        return "utf-16-le"
+    if sample[0::2].count(0) > pairs * 0.3 and sample[1::2].count(0) < pairs * 0.05:
+        return "utf-16-be"
+    return None
+
+
 def _decode(data: bytes) -> str:
-    for encoding in ("utf-8", "utf-16", "latin-1"):
+    """Text from bytes: UTF-8, UTF-16 or UTF-32 (with a byte order mark, or UTF-16 that
+    clearly is), else Windows-1252 (Western European), which also covers Latin-1."""
+    for bom, encoding in (
+        (codecs.BOM_UTF32_LE, "utf-32"),
+        (codecs.BOM_UTF32_BE, "utf-32"),
+        (codecs.BOM_UTF8, "utf-8-sig"),
+        (codecs.BOM_UTF16_LE, "utf-16"),
+        (codecs.BOM_UTF16_BE, "utf-16"),
+    ):
+        if data.startswith(bom):
+            return data.decode(encoding, errors="replace")
+    utf16 = _utf16_without_bom(data)
+    if utf16:
+        return data.decode(utf16, errors="replace")
+    for encoding in ("utf-8", "cp1252"):
         try:
             return data.decode(encoding)
         except UnicodeDecodeError:
             continue
-    return data.decode("utf-8", errors="replace")
+    return data.decode("latin-1")  # every byte is a Latin-1 character
 
 
 def _stem(name: str) -> str:
@@ -231,7 +263,13 @@ def _markdown(data: bytes, name: str) -> Loaded:
 
 def _csv(data: bytes, name: str) -> Loaded:
     reader = csv.reader(io.StringIO(_decode(data)))
-    rows = [row for row in reader if any(cell.strip() for cell in row)]
+    try:
+        rows = [row for row in reader if any(cell.strip() for cell in row)]
+    except csv.Error as exc:  # e.g. a value over 131,072 characters
+        raise LoadError(
+            f"{name} isn't a CSV file I can read ({exc}). Check for a quote (\") that's never "
+            "closed, or save the file as text (.txt) instead."
+        ) from exc
     if not rows:
         raise LoadError(f"{name} is empty.")
     header, body = rows[0], rows[1:]
@@ -261,34 +299,57 @@ READERS = {
 }
 
 
+def _read(kind: str, data: bytes, name: str) -> Loaded:
+    """Read with the reader for ``kind``; whatever goes wrong becomes a LoadError."""
+    try:
+        return READERS[kind](data, name)
+    except LoadError:
+        raise
+    except Exception as exc:  # a damaged or unusual file: say so, don't crash
+        what = {
+            "pdf": "a PDF",
+            "docx": "a Word document",
+            "html": "a web page",
+            "markdown": "a Markdown file",
+            "csv": "a CSV file",
+        }.get(kind, "text")
+        reason = " ".join(str(exc).split())[:300] or type(exc).__name__
+        raise LoadError(
+            f"I couldn't read {name} as {what} ({reason}). Check that the file isn't "
+            "damaged, or save it in another format and add it again."
+        ) from exc
+
+
 def load_bytes(name: str, data: bytes, content_type: str | None = None) -> Loaded:
     if len(data) > MAX_BYTES:
-        raise LoadError(f"{name} is larger than 50 MB.")
+        raise LoadError(
+            f"{name} is larger than {size_text(MAX_BYTES)}. Split it into smaller files."
+        )
     kind = kind_for(name, content_type)
     if not kind:
         raise LoadError(
             f"I can't read {PurePosixPath(name).suffix or 'this kind of'} files yet. "
             "Use PDF, Word (.docx), HTML, Markdown, CSV or text."
         )
-    return READERS[kind](data, name)
+    return _read(kind, data, name)
 
 
 def load_url(url: str, timeout: float = 30) -> Loaded:
     if not re.match(r"^https?://", url):
         raise LoadError(f"“{url}” isn't a web address (it should start with https://).")
     try:
-        response = httpx.get(
+        page = fetch(
             url,
+            limit=MAX_BYTES,
             timeout=timeout,
-            follow_redirects=True,
             headers={"User-Agent": "Mozilla/5.0 (compatible; EasyChain/0.3)"},
         )
-        response.raise_for_status()
-    except httpx.HTTPError as exc:
-        raise LoadError(f"Couldn't fetch {url}: {exc}") from exc
-    kind = kind_for(url, response.headers.get("content-type")) or "html"
-    loaded = READERS[kind](response.content, url)
-    return loaded
+    except TooLarge as exc:
+        raise LoadError(f"{exc} Download it and add the parts you need as files.") from None
+    except FetchError as exc:
+        raise LoadError(str(exc)) from None
+    kind = kind_for(url, page.content_type) or "html"
+    return _read(kind, page.content, url)
 
 
 # ── chunks ───────────────────────────────────────────────────────────────────

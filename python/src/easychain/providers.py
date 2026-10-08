@@ -8,6 +8,7 @@ Prices are list prices in USD per million tokens, used for cost estimates only.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -342,8 +343,38 @@ def split_model(model: str) -> tuple[str | None, str]:
 
 
 def get_provider(model: str) -> Provider | None:
+    """The provider of a chat or embedding model (None for keywords or one we don't know)."""
+    embedding = EMBEDDING_MODELS.get(model)
+    if embedding is not None:
+        return PROVIDERS.get(embedding.provider or "")
     provider, _ = split_model(model)
     return PROVIDERS.get(provider or "")
+
+
+def flow_models(spec: Any) -> list[tuple[str, str, str]]:
+    """Every model a flow's steps call, as (step id, setting, model).
+
+    AI Models, AI Decisions, Agents (and their fallback models), Memory steps that
+    summarise, and Knowledge Base searches (the embedding model and the re-ranking model).
+    This is how Easy Chain works out which API keys a flow needs.
+    """
+    found: list[tuple[str, str, str]] = []
+    for step in spec.steps:
+        s = step.settings
+        if (
+            step.type in ("ai_model", "agent")
+            or (step.type == "decision" and s.mode == "ai")
+            or (step.type == "memory" and s.action == "summarise")
+        ):
+            found.append((step.id, "model", s.model))
+        if step.type == "agent":
+            found += [(step.id, "addons", model) for model in s.addons.fallback_models]
+        if step.type == "knowledge_search":
+            if s.embedding_model != "keywords":
+                found.append((step.id, "embedding_model", s.embedding_model))
+            if s.rerank_model:
+                found.append((step.id, "rerank_model", s.rerank_model))
+    return [(step_id, key, model) for step_id, key, model in found if model]
 
 
 def model_info(model: str) -> ModelInfo | None:

@@ -54,7 +54,10 @@ described on the [step page](steps/agent.md#add-ons).
 2. **Over the web**: paste its URL; if it needs a token, put `Bearer {secret:NAME}` in the
    Authorization header and add the secret under Settings. **A program on this machine** (Pro):
    the command to start it; only commands on the **approved list** can start, because such a
-   server can do anything that program can.
+   server can do anything that program can. Approve the whole command line
+   (`npx -y @modelcontextprotocol/server-filesystem /data`), which must then match exactly.
+   Approving a program on its own (`npx`, `uvx`, `python`, `node`) lets it start with any
+   arguments, so it approves anything that program can download or run.
 3. **Show its tools** checks the connection and lists what it offers. **Save**.
 
 Then tick the server's tools in an agent's **MCP tools**, or call one tool from an
@@ -68,9 +71,11 @@ Then tick the server's tools in an agent's **MCP tools**, or call one tool from 
 request steps:
 
 1. Paste the description's address (`https://…/openapi.json`) or the JSON/YAML itself, and
-   **Read it**.
+   **Read it**. A description read from an address may be up to 25 MB.
 2. Tick the operations you need. Choose to add them **as steps on the canvas** or **as tools of
-   an agent**, the server address, and optionally a header and secret for the API key.
+   an agent**, the server address, and optionally a header and secret for the API key. A server
+   address the description gives relative to itself (like `/api/v3`) is completed from the
+   description's own address.
 3. Each operation becomes a Web request with its summary as the description, path and required
    query parameters as `{fields}`, and a JSON body. Their parameters become Flow Data fields with
    the API's types and descriptions, so an agent knows how to fill them.

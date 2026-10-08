@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
@@ -86,6 +88,56 @@ def pytest_terminal_summary(terminalreporter: Any) -> None:
 def fake_server() -> Any:
     with FakeOpenAI() as fake:
         yield fake
+
+
+class _Pages(BaseHTTPRequestHandler):
+    """Serves WebServer.pages; /endless sends data with no length until the client stops."""
+
+    def do_GET(self) -> None:
+        if self.path == "/endless":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            try:
+                for _ in range(10_000):
+                    self.wfile.write(b"x" * 65536)
+            except OSError:  # the client stopped reading
+                pass
+            return
+        page = self.server.pages.get(self.path)  # type: ignore[attr-defined]
+        if page is None:
+            self.send_error(404)
+            return
+        content_type, body = page
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args: Any) -> None:  # keep test output quiet
+        pass
+
+
+class WebServer:
+    """A local web server for fetching tests: put (content type, bytes) in ``pages``."""
+
+    def __init__(self) -> None:
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), _Pages)
+        self.httpd.daemon_threads = True
+        self.pages: dict[str, tuple[str, bytes]] = {}
+        self.httpd.pages = self.pages  # type: ignore[attr-defined]
+        self.url = f"http://127.0.0.1:{self.httpd.server_address[1]}"
+
+
+@pytest.fixture
+def web_server() -> Any:
+    server = WebServer()
+    thread = threading.Thread(target=server.httpd.serve_forever, daemon=True)
+    thread.start()
+    yield server
+    server.httpd.shutdown()
+    server.httpd.server_close()
 
 
 @pytest.fixture

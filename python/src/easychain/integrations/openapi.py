@@ -10,12 +10,18 @@ from __future__ import annotations
 import json
 import re
 from typing import Any
+from urllib.parse import urljoin
 
-import httpx
 import yaml
+
+from ..fetch import FetchError, TooLarge, fetch
 
 METHODS = ("get", "post", "put", "patch", "delete")
 _TYPES = {"string": "text", "integer": "number", "number": "number", "boolean": "yes_no"}
+# The most of a spec read from a URL (big public specs, like GitHub's, are about 12 MB).
+MAX_SPEC_BYTES = 25 * 1024 * 1024
+# Where a fetched spec came from (an OpenAPI extension field, so the document stays valid).
+SOURCE_KEY = "x-easychain-source"
 
 
 class OpenApiError(ValueError):
@@ -23,15 +29,23 @@ class OpenApiError(ValueError):
 
 
 def load(source: str) -> dict[str, Any]:
-    """An OpenAPI document from a URL, or from JSON or YAML text."""
+    """An OpenAPI document from a URL, or from JSON or YAML text.
+
+    A document fetched from a URL remembers where it came from (``SOURCE_KEY``), so a
+    relative server address in it can be resolved (``base_url``).
+    """
     text = source.strip()
+    where = None
     if re.match(r"^https?://", text):
         try:
-            response = httpx.get(text, timeout=30, follow_redirects=True)
-            response.raise_for_status()
-        except httpx.HTTPError as exc:
-            raise OpenApiError(f"Couldn't fetch the spec: {exc}") from exc
-        text = response.text
+            fetched = fetch(text, limit=MAX_SPEC_BYTES)
+        except TooLarge as exc:
+            raise OpenApiError(
+                f"The spec at {exc} Paste only the part you need (its JSON or YAML) instead."
+            ) from None
+        except FetchError as exc:
+            raise OpenApiError(str(exc)) from None
+        text, where = fetched.content.decode("utf-8-sig", errors="replace").strip(), fetched.url
     try:
         doc = json.loads(text) if text.startswith("{") else yaml.safe_load(text)
     except (json.JSONDecodeError, yaml.YAMLError) as exc:
@@ -40,6 +54,8 @@ def load(source: str) -> dict[str, Any]:
         raise OpenApiError("That doesn't look like an OpenAPI (or Swagger) document.")
     if not isinstance(doc.get("paths"), dict) or not doc["paths"]:
         raise OpenApiError("The spec has no operations (paths).")
+    if where:
+        doc[SOURCE_KEY] = where
     return doc
 
 
@@ -62,16 +78,24 @@ def _resolve(doc: dict[str, Any], node: Any, depth: int = 0) -> Any:
 
 
 def base_url(doc: dict[str, Any]) -> str:
+    """The API's address: its first server. A relative one (``/api/v3``), or none at all,
+    is relative to where the spec was fetched from, as OpenAPI says."""
+    where = doc.get(SOURCE_KEY)
     servers = doc.get("servers") or []
     if servers and isinstance(servers[0], dict):
-        url = servers[0].get("url", "")
+        url = str(servers[0].get("url") or "")
         for name, var in (servers[0].get("variables") or {}).items():
-            url = url.replace("{" + name + "}", str(var.get("default", "")))
-        return url.rstrip("/")
-    if doc.get("host"):  # Swagger 2
+            url = url.replace("{" + name + "}", str((var or {}).get("default", "")))
+    elif doc.get("host"):  # Swagger 2
         scheme = (doc.get("schemes") or ["https"])[0]
-        return f"{scheme}://{doc['host']}{doc.get('basePath', '')}".rstrip("/")
-    return ""
+        url = f"{scheme}://{doc['host']}{doc.get('basePath', '')}"
+    elif where:  # no server: the host that serves the spec (Swagger 2 adds its basePath)
+        url = str(doc.get("basePath") or "/")
+    else:
+        return ""
+    if where and not re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://", url):
+        url = urljoin(str(where), url or "/")
+    return url.rstrip("/")
 
 
 def operations(doc: dict[str, Any]) -> list[dict[str, Any]]:

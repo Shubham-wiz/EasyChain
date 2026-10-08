@@ -39,7 +39,7 @@ from ..compiler.issues import Fix, warning
 from ..compiler.templates import secrets as template_secrets
 from ..export import export_zip
 from ..knowledge.store import KnowledgeStore
-from ..providers import EMBEDDING_MODELS, PROVIDERS, split_model
+from ..providers import EMBEDDING_MODELS, PROVIDERS, flow_models, get_provider
 from ..runtime import key_status
 from ..runtime.resources import open_resources
 from ..spec import FlowSpec, SpecError, loads_spec, parse_spec, spec_json
@@ -481,18 +481,21 @@ def create_app(
         """Checks that depend on this machine: missing API keys and secrets."""
         issues = []
         status = key_status()
-        for step in spec.steps:
-            model = getattr(step.settings, "model", None)
-            if not model or (step.type == "decision" and step.settings.mode != "ai"):
-                continue
-            provider = PROVIDERS.get(split_model(model)[0] or "")
-            if provider and not status.get(provider.id, True):
+        warned: set[tuple[str, str]] = set()
+        for step_id, setting, model in flow_models(spec):
+            provider = get_provider(model)
+            if (
+                provider
+                and not status.get(provider.id, True)
+                and (step_id, provider.id) not in warned
+            ):
+                warned.add((step_id, provider.id))
                 issues.append(
                     warning(
                         "missing_key",
                         f"Add your {provider.key_label} to run this step (or use the stand-in AI).",
-                        step=step.id,
-                        setting="model",
+                        step=step_id,
+                        setting=setting,
                         fix=Fix(
                             "add_key",
                             "Add your API key",

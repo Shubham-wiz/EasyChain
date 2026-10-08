@@ -19,8 +19,10 @@ Open **Knowledge** in the top bar, then **New Knowledge Base**:
 
 ## Adding documents
 
-- **Files**: drop PDF, Word (`.docx`), HTML, Markdown, CSV, text, JSON or YAML files.
-- **Web pages**: one address per line; the page is fetched and its readable text kept.
+- **Files**: drop PDF, Word (`.docx`), HTML, Markdown, CSV, text, JSON or YAML files, up to
+  50 MB each. Text files may be UTF-8, UTF-16 or Windows-1252 (Latin-1).
+- **Web pages**: one address per line; the page is fetched and its readable text kept. Pages
+  over 50 MB are not read.
 - **Text**: paste it with a title.
 
 Each document is read in the background: *queued*, *processing*, then *ready* with its number of
@@ -68,13 +70,18 @@ database as runs, or the one in `EASYCHAIN_KNOWLEDGE_URL`:
 
 | Database | Meaning search | Words search |
 |---|---|---|
-| Postgres with **pgvector** | a `vector` column with an HNSW index per Knowledge Base | `tsvector` full-text search |
+| Postgres with **pgvector** | a `vector` column with an HNSW index per Knowledge Base (see below) | `tsvector` full-text search |
 | Postgres without pgvector | embeddings stored as bytes, compared with numpy | `tsvector` full-text search |
 | SQLite (local) | embeddings stored as bytes, compared with numpy | FTS5 |
 
 Uploaded files are also kept under the Easy Chain data folder (`knowledge/`). Docker Compose
 uses the `pgvector/pgvector:pg16` image, so pgvector is there; on your own Postgres, run
 `CREATE EXTENSION vector` once (or let Easy Chain do it, if its user may).
+
+pgvector's HNSW index takes embeddings of up to 2,000 numbers. Bigger ones, such as the 3,072
+of OpenAI `text-embedding-3-large` and Google Gemini, are indexed at half precision
+(`halfvec`, pgvector 0.7 or later), which goes up to 4,000. Where no index can be made, search
+still works: it compares every passage, which is slower on large Knowledge Bases.
 
 ## In exported code
 
