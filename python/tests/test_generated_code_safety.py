@@ -86,6 +86,28 @@ def test_steps_cant_take_names_the_helpers_use():
     assert names.claim("quote") == "quote_2"
 
 
+@pytest.mark.parametrize("body", ["items", "update", "following", "start", "pick_option"])
+async def test_a_for_each_step_may_be_named_like_its_wrapper_locals(body):
+    from easychain.runtime import RunOptions, run_flow
+
+    spec = make_spec(
+        [
+            input_step({"name": "words", "type": "list"}),
+            {
+                "id": "each",
+                "type": "for_each",
+                "settings": {"items": "words", "item_name": "word", "concurrency": 1},
+            },
+            code_step(body, "def run(data):\n    return {'loud': data['word'].upper()}\n"),
+            output_step("results"),
+        ],
+        [("input", "each"), ("each", "Each item", body), ("each", "When done", "output")],
+    )
+    final, _ = await run_flow(spec, {"words": ["a", "b"]}, RunOptions())
+    assert final["status"] == "ok", final
+    assert final["output"] == {"results": ["A", "B"]}
+
+
 def test_a_web_request_step_called_quote_still_fills_its_url():
     spec = make_spec(
         [
