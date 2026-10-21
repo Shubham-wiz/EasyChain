@@ -79,6 +79,21 @@ TEMPLATES: list[dict[str, Any]] = [
         "pattern": "plan-and-execute",
         "proves": ["plan-and-execute pattern", "structured plan", "For Each", "Agent per step"],
     },
+    {
+        "id": "research-assistant",
+        "category": "Research",
+        "proves": ["Deep Agent", "Helpers", "Skills", "to-do list", "files"],
+    },
+    {
+        "id": "inbox-triage",
+        "category": "Customer support",
+        "proves": [
+            "supervisor pattern",
+            "structured sorting",
+            "Knowledge Base tool",
+            "Ask a Human for urgent email",
+        ],
+    },
 ]
 
 

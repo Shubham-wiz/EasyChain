@@ -83,3 +83,27 @@ code didn't change, but every commit got a new ID. The cleaned history was publi
 replacing `claude/tender-fermat-4kj4k6`. The rule is in AGENTS.md, CLAUDE.md and decisions
 R.1–R.2.
 
+
+---
+
+**6. Windows, the review, and Phase 4's questions:**
+
+> we need it to be platform independent, Linux and Windows both can run it
+
+> OK go on
+
+> done and delete the other branchers
+
+These led to Windows support with a Windows CI job (decision R.4), the review fixes before
+Phase 4 (R.5), the retired branch being deleted (R.3), and the recommended answers to the Phase 3
+report's questions being taken (decisions 4.1–4.3).
+
+---
+
+**7. Phase 4:**
+
+> finish what u started
+
+Phase 4 was built to its "Done when": the Code sandbox, the Deep Agent and Helpers, Skills, the
+agent team patterns, the describe-it copilot, and the Research assistant and Inbox triage
+templates. The [Phase 4 report](../phases/phase-4.md) ends with questions about Phase 5.

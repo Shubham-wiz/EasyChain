@@ -192,6 +192,23 @@ _QUERY_NAMES = re.compile(
 )
 
 
+# Arguments that take a web address, and the addresses written in a request.
+_URL_NAMES = re.compile(r"^(url|link|href|address|web_address|page)s?$|_(url|link)$|^(url|link)_")
+_URL = re.compile(r"https?://[^\s<>\"'`)\]]+")
+
+
+def _unread_urls(question: str, calls: list[dict[str, Any]]) -> list[str]:
+    """The addresses in the request that no call so far was given."""
+    used = {str(v) for args in calls for v in args.values()}
+    found = [u.rstrip(".,;:!?") for u in _URL.findall(question)]
+    return [u for n, u in enumerate(found) if u not in used and u not in found[:n]]
+
+
+def _takes_url(spec: dict[str, Any]) -> bool:
+    props = spec["parameters"].get("properties") or {}
+    return any(_URL_NAMES.search(name.lower()) for name in props)
+
+
 def _numbers(text: str) -> list[str]:
     return re.findall(r"-?\d+(?:\.\d+)?", text)
 
@@ -241,6 +258,10 @@ def _schema_value(name: str, schema: dict[str, Any], ctx: dict[str, Any], defs: 
         return [question]
     if kind == "object":
         return {}
+    if _URL_NAMES.search(name.lower()):
+        unread = _unread_urls(question, ctx["calls"])
+        if unread:
+            return unread[0]
     named = _named_value(name, question)
     if named:
         return named
@@ -298,6 +319,8 @@ def answer_from_results(question: str, results: list[tuple[str, str]]) -> str:
     """Answer from what the tools returned, citing numbered sources when there are any."""
     if not results:
         return stand_in_reply([])
+    # A Helper played by the stand-in replies with its label; the reply is what counts.
+    results = [(tool, text.replace(LABEL, "").strip()) for tool, text in results]
     tool, latest = results[-1]
     if latest.lstrip()[:1] in ("[", "{") and not _PASSAGE.match(latest.lstrip()):
         # Data (like query rows): answer with it as it is, so no number is made up.
@@ -478,6 +501,12 @@ def stand_in_turn(
         handed = any(c["name"] == "task" for c in calls)
         regular = [] if handed else [s for s in regular if s["name"] not in DEEP_TOOLS]
         calls = [c for c in calls if c["name"] not in DEEP_TOOLS]
+    reader = next((s for s in regular if _takes_url(s)), None)
+    done = [c["args"] for c in calls]
+    if reader is not None and _unread_urls(question, done):
+        # The request names pages to read: read each one, in order.
+        args = fill_arguments(reader["parameters"], question, calls=done)
+        return AIMessage(content="", tool_calls=[_tool_call(reader["name"], args)])
     if regular and not calls:
         found = words(question)
         best, best_score = None, 0
@@ -510,7 +539,8 @@ def stand_in_turn(
         asked = f"{question}\n" if "task" in by_name else ""
         target = _target_file(system) or _target_file(f"{asked}{skills_read}")
         if target and not wrote:
-            content = f"# {_short(question, 60)}\n\n{answer}\n"
+            title = _short(question.strip().splitlines()[0], 60)
+            content = f"# {title}\n\n{answer.replace(LABEL, '').strip()}\n"
             return _call("write_file", {"file_path": target, "content": content})
         if target and wrote:
             answer = f"{answer}\n\nIt's written to {target}."

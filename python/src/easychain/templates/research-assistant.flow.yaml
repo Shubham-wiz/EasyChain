@@ -1,0 +1,96 @@
+version: 1
+name: Research assistant
+description: Ask a question and give it a few pages to read. A Deep Agent plans the work, has its
+  researcher read the pages and take notes with sources, writes a short report with sources to
+  /report.md, and has its reviewer check the report before it answers.
+data:
+- name: url
+  description: The address of the web page to read, starting with http:// or https://
+steps:
+- id: input
+  type: input
+  name: Input
+  settings:
+    fields:
+    - name: request
+      description: What to find out, and the addresses of the pages to read (one per line)
+      example: |-
+        How do honey bees live and work together?
+        https://en.wikipedia.org/wiki/Honey_bee
+        https://en.wikipedia.org/wiki/Beehive
+- id: lead
+  type: deep_agent
+  name: Research lead
+  description: Plans the research, writes the report and has it checked.
+  settings:
+    instructions: |-
+      You research questions for a busy reader and write short, accurate reports.
+
+      1. Plan the work as a to-do list, and keep it up to date.
+      2. Hand the reading to the researcher: the question, and the addresses of the pages to read. Only use the pages the person gave you.
+      3. Write the report to /report.md, following your research-report skill, using only the researcher's notes. Keep the notes in /notes.md.
+      4. Hand the report and the notes to the reviewer, and fix what the reviewer finds.
+      5. Answer with the report's two-sentence summary, and say the report is in /report.md.
+
+      If the pages don't answer part of the question, say so in the report; don't guess.
+    input: request
+    helpers: [researcher, reviewer]
+    skills: [research-report]
+    save_todos: plan
+- id: researcher
+  type: helper
+  name: Researcher
+  description: Reads web pages and takes notes with their sources. Give it the question and the
+    addresses of the pages to read.
+  settings:
+    instructions: You read web pages and take notes for a research report. Read each address you are
+      given with read_page, follow your source-notes skill, and reply with the notes. Never add a fact
+      the pages don't say.
+    tools: [read_page]
+    skills: [source-notes]
+    addons:
+      max_tool_calls: 8
+- id: reviewer
+  type: helper
+  name: Reviewer
+  description: Checks a draft report against the notes. Give it the report and the notes; it replies
+    with what to fix, or OK.
+  settings:
+    instructions: You check research reports. Compare the report with the notes you are given. List
+      each fact in the report that the notes don't support, and each fact without a source number.
+      If there is nothing to fix, reply with OK.
+- id: read_page
+  type: http_request
+  name: Read a page
+  description: Reads the web page at an address and returns its text.
+  settings:
+    url: '{url}'
+    save_as: page
+- id: output
+  type: output
+  name: Output
+  settings:
+    fields:
+    - answer
+    - files
+    - plan
+connections:
+- {from: input, to: lead}
+- {from: lead, to: output}
+canvas:
+  steps:
+    input: {x: 0, y: 140}
+    lead: {x: 320, y: 140}
+    output: {x: 680, y: 140}
+    researcher: {x: 180, y: 420}
+    reviewer: {x: 460, y: 420}
+    read_page: {x: 180, y: 680}
+  notes:
+  - id: how
+    x: 640
+    y: 360
+    width: 300
+    height: 150
+    text: The lead plans and writes; the Helpers under it do the reading and the checking. Skills
+      (research-report, source-notes) tell them how. The report and the notes are files the run
+      panel shows as they are written.

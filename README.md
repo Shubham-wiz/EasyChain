@@ -10,12 +10,14 @@ with no Easy Chain runtime required.
 
 ![The Easy Chain editor running a flow with a Decision](docs/images/editor-run.png)
 
-> **Status: Phase 3 (Agents and knowledge) of the build plan** ([Phase 3 report](docs/phases/phase-3.md),
-> [Phase 2](docs/phases/phase-2.md), [Phases 0 and 1](docs/phases/phase-0-1.md)). Agents use
-> your steps, APIs, databases and MCP servers as tools, with a person approving what matters;
-> Knowledge Bases answer from your documents with citations; runs are durable and can wait for
-> people as long as it takes. Autopilot agents, evaluation and one-click publishing come in later
-> phases (see the [roadmap](#roadmap)).
+> **Status: Phase 4 (Autopilot and teams) of the build plan** ([Phase 4 report](docs/phases/phase-4.md),
+> [Phase 3](docs/phases/phase-3.md), [Phase 2](docs/phases/phase-2.md),
+> [Phases 0 and 1](docs/phases/phase-0-1.md)). Deep Agents plan, keep files and hand work to
+> Helpers that follow your Skills; agent teams are made of ordinary steps; Code runs in a
+> sandbox; and a copilot drafts flows from a description. Agents use your steps, APIs, databases
+> and MCP servers as tools, Knowledge Bases answer with citations, and runs are durable and can
+> wait for people as long as it takes. Evaluation and one-click publishing come next (see the
+> [roadmap](#roadmap)).
 
 ## Quick start
 
@@ -40,8 +42,9 @@ pnpm dev                 # API on :8000, web app on http://localhost:5173
 Then pick a template and press **Try it**. No API key yet? Switch on the **stand-in AI** in the
 Run panel to see the flow work with placeholder answers, or add your key under **Settings → Keys
 and providers** (it is stored encrypted on your machine and never saved in flows or exports).
-The *Support bot over docs* and *SQL analyst* templates come with a sample help centre and shop
-database, so they work straight away.
+The *Support bot over docs*, *SQL analyst* and *Inbox triage* templates come with a sample help
+centre and shop database, so they work straight away; the *Research assistant* reads the pages
+you give it.
 
 **From the command line:**
 
@@ -53,6 +56,24 @@ uv run easychain worker --database-url postgresql://…           # a worker for
 ```
 
 ## What you get
+
+### Phase 4: autopilot and teams
+
+| | |
+|---|---|
+| **Deep Agent** | An agent for longer tasks (`create_deep_agent`): it plans with a to-do list, keeps notes and drafts in files, and hands sub-tasks to Helpers. The run panel shows the list and each file as they change. Files are kept with every Save Point, so they survive a crash and rewind with time travel. |
+| **Helpers** | Specialists under a Deep Agent, each with its own role, model and tools. Their work nests under the task that started it in the trace, with its own tokens and cost. Approvals inside a Helper go to the Inbox. |
+| **Skills** | A Skills library in the Agent Skills format (`SKILL.md` and its files): how to write a report, take notes, sort email. An agent reads a skill when its description fits the task, and the skills ship inside exports. |
+| **Agent teams** | Supervisor, handoffs and plan-and-execute, made of ordinary steps (so they stay editable and export to plain LangGraph). Insert one from the step library, or start from a template. |
+| **Code sandbox** | Code steps run in a locked-down Docker container per call (gVisor when installed): no host files, no network unless allowed, limits on memory, time and processes. Escape tests prove it. |
+| **Copilot** | Describe a flow or a change in words. The proposal is checked before it is shown, previewed on the canvas, and you keep the changes you want: one undo step. Any model you have a key for. |
+| **Templates** | *Research assistant* (a Deep Agent with a researcher and a reviewer) and *Inbox triage* (a supervisor; urgent email waits for a person), each with a 10-case Test Set. |
+
+See [docs/steps/deep_agent.md](docs/steps/deep_agent.md), [docs/skills.md](docs/skills.md),
+[docs/patterns.md](docs/patterns.md), [docs/sandbox.md](docs/sandbox.md) and
+[docs/copilot.md](docs/copilot.md).
+
+![A Deep Agent's run: its to-do list, a Helper's work nested under its task, and the report it wrote](docs/images/deep-agent.png)
 
 ### Phase 3: agents and knowledge
 
@@ -108,6 +129,8 @@ See [docs/runs.md](docs/runs.md) for how runs, workers, the Inbox, triggers and 
 | Instructions | `ChatPromptTemplate` | A prompt with `{variables}` filled from Flow Data |
 | AI Model | chat model via `init_chat_model` | Sends text or a prompt to a model; free text or fixed fields (`with_structured_output`) |
 | Agent | `create_agent` + middleware | Calls tools (other steps, MCP servers) until it has an answer |
+| Deep Agent | `create_deep_agent` (deepagents) | Plans, keeps files, follows skills and hands sub-tasks to Helpers |
+| Helper | deepagents sub-agent | A specialist a Deep Agent hands tasks to, with its own role, tools and model |
 | Web request | HTTP request tool | Fetches a page (as readable text) or calls an API |
 | Code | Python function | `run(data)` returns the Flow Data fields to update |
 | Decision | conditional edge | Picks an exit by rules, a safe expression, or by asking an AI; round limits for loops |
@@ -158,7 +181,8 @@ docs/                        user guides, step pages, phase reports, roadmap, ha
 ```bash
 pnpm test        # Python tests + web and client unit tests
 pnpm e2e         # Playwright: build, run, debug, export, Ask a Human, Inbox, Save Points, triggers,
-                 # agents and tool approval, Knowledge Bases and citations, MCP, API import, a11y
+                 # agents and tool approval, Knowledge Bases and citations, MCP, API import,
+                 # Deep Agents and Helpers, Skills, Inbox triage, the copilot, a11y
 pnpm worker      # a separate worker process (run the server with EASYCHAIN_WORKER=off)
 pnpm lint        # ruff + TypeScript
 pnpm golden      # regenerate compiler golden files after an intended change
@@ -189,8 +213,8 @@ The detailed plan, milestone by milestone, is in [docs/ROADMAP.md](docs/ROADMAP.
 | 1. Visual MVP | Canvas, Step library, inspector, Input / AI Model / Instructions / Action / Decision / Output, three providers, streaming chat, run trace, Python export | ✅ Done |
 | 2. Real runtime | Flow Data panel and update rules, loops with guards, parallel branches, For Each, Sub-flows, Postgres Save Points, crash recovery, Ask a Human and Inbox, time travel, background runs, triggers | ✅ Done |
 | 3. Agents and knowledge | Agent step and add-ons, MCP, OpenAPI import, structured output, Knowledge Base, memory, all providers | ✅ Done |
-| 4. Autopilot and teams | Deep Agents, Helpers, Skills, sandboxes, multi-agent patterns, describe-it copilot | Next |
-| 5. Platform | Test Sets and Checks, Test Runs, CI gate, dashboards, model gateway, Publish, environments, roles, SSO | |
+| 4. Autopilot and teams | Deep Agents, Helpers, Skills, sandboxes, multi-agent patterns, describe-it copilot | ✅ Done |
+| 5. Platform | Test Sets and Checks, Test Runs, CI gate, dashboards, model gateway, Publish, environments, roles, SSO | Next |
 | 6. Ecosystem | LangGraph.js export, custom module registry, import, collaboration, prompt optimisation, Helm | |
 
 ## Licence

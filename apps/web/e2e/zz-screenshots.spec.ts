@@ -72,3 +72,31 @@ test("Phase 3 screenshots", async ({ page, request }) => {
   await expect(search.locator("li").first()).toBeVisible();
   await page.screenshot({ path: out("knowledge.png"), fullPage: true });
 });
+
+test("Phase 4 screenshots", async ({ page, request }) => {
+  const bees = "http://127.0.0.1:8124/pages/bees";
+  const coffee = "http://127.0.0.1:8124/pages/coffee";
+  const research = await (await request.post("/api/flows", { data: { template: "research-assistant" } })).json();
+  await page.goto(`/#/flows/${research.id}`);
+  await expect(step(page, "lead")).toBeVisible();
+  await page.getByTestId("open-run").click();
+  await page.getByRole("switch", { name: "Use the stand-in AI" }).click();
+  await page.getByLabel("request", { exact: true }).fill(`What are honey bees and coffee like?\n${bees}\n${coffee}`);
+  await page.getByTestId("run-submit").click();
+  await expect(page.getByTestId("run-output")).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("region", { name: "Run trace" }).getByRole("button", { name: /Research lead/ }).click();
+  await page.getByTestId("helper-task-researcher").getByRole("button").first().click();
+  await page.getByTestId("trace-files").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: out("deep-agent.png") });
+
+  const triage = await (await request.post("/api/flows", { data: { template: "inbox-triage" } })).json();
+  await page.goto(`/#/flows/${triage.id}`);
+  await expect(step(page, "supervisor")).toBeVisible();
+  await page.getByRole("tab", { name: "Copilot", exact: true }).click();
+  await page.getByLabel("Describe the flow").fill("Also send urgent emails to the team's Slack channel");
+  await page.screenshot({ path: out("copilot.png") });
+
+  await page.goto("/#/skills/research-report");
+  await expect(page.getByTestId("skill-editor")).toBeVisible();
+  await page.screenshot({ path: out("skills.png") });
+});

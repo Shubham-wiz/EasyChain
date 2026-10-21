@@ -1,0 +1,178 @@
+# Test Set for Inbox triage (supervisor). The stand-in AI plays the sorting, the supervisor's picks
+# and the helpers' turns; the routes, the tools (the customer list, the help centre search, the
+# ticket), the round limit and the Inbox pause are real. Answers play the person in the Inbox.
+flow: inbox-triage.flow.yaml
+stand_in: true
+cases:
+- name: An urgent double charge is looked up, answered, ticketed, and checked by a person
+  inputs:
+    email: |-
+      From: maria@example.com
+      I was charged twice for order 5521 and the second charge is still there after a week. Please sort this out today.
+  script:
+  - answer: {category: billing, urgency: urgent, summary: Charged twice for order 5521; wants it fixed today.}
+  - Look up the sender
+  - {call: find_customer, args: {sender: maria@example.com}}
+  - Maria, a member; order 5521 is hers and she has no open tickets.
+  - Draft a reply
+  - {call: search_help, args: {search_for: charged twice}}
+  - Hi Maria, a second charge still there after three days is refunded the same day [1]. We're refunding it today.
+  - Open a ticket
+  - {call: create_ticket, args: {title: Refund the second charge on order 5521, priority: urgent}}
+  - Opened ticket T-4821 to refund the second charge.
+  - Done
+  answers:
+  - action: approve
+    value: Hi Maria, we're refunding the second charge on order 5521 today. Sorry for the trouble!
+  expect:
+    steps: [lookup, drafter, ticketer, check]
+    tools: [find_customer, search_help, create_ticket]
+    route: {supervisor: Done, urgent: Urgent, check: Approved}
+    output.category: billing
+    output.urgency: urgent
+    output.customer_note: {contains: member}
+    output.ticket_note: {contains: T-}
+    output.draft: Hi Maria, we're refunding the second charge on order 5521 today. Sorry for the trouble!
+- name: A question about an order gets a reply, with no ticket and no pause
+  inputs:
+    email: |-
+      From: sam@example.com
+      How long do refunds take once you have my return?
+  script:
+  - answer: {category: orders, urgency: normal, summary: Asks how long refunds take after a return.}
+  - Draft a reply
+  - {call: search_help, args: {search_for: refunds after a return}}
+  - Hi Sam, refunds take five working days after your return reaches us [1].
+  - Done
+  expect:
+    steps: [drafter]
+    tools: [search_help]
+    not_tools: [create_ticket, find_customer]
+    route: {supervisor: Done, urgent: Not urgent}
+    output.draft: {contains: five working days}
+    output.ticket_note: null
+- name: A thank-you needs nothing from the helpers
+  inputs:
+    email: |-
+      From: sam@example.com
+      Thanks, the parcel arrived!
+  script:
+  - answer: {category: other, urgency: low, summary: Says thank you; the parcel arrived.}
+  - Done
+  expect:
+    tool_calls: 0
+    route: {supervisor: Done, urgent: Not urgent}
+    output.urgency: low
+    output.draft: null
+- name: A sender who isn't a customer is noted as such
+  inputs:
+    email: |-
+      From: nobody@example.com
+      Do you ship to Norway?
+  script:
+  - answer: {category: orders, urgency: normal, summary: Asks whether we ship to Norway.}
+  - Look up the sender
+  - {call: find_customer, args: {sender: nobody@example.com}}
+  - Not a customer yet; no orders.
+  - Done
+  expect:
+    tools: [find_customer]
+    output.customer_note: {contains: Not a customer}
+- name: A password question is answered from the help centre
+  inputs:
+    email: |-
+      From: sam@example.com
+      I can't sign in and the reset email never came.
+  script:
+  - answer: {category: account, urgency: normal, summary: Can't sign in; no reset email.}
+  - Draft a reply
+  - {call: search_help, args: {search_for: reset password email}}
+  - Hi Sam, the reset link works for an hour; if the email isn't there in five minutes, check your spam folder [1].
+  - Done
+  expect:
+    tools: [search_help]
+    output.category: account
+    output.draft: {contains: spam folder}
+- name: The person rejects the reply to an urgent email
+  inputs:
+    email: |-
+      From: maria@example.com
+      Order 5310 arrived broken and I need it for a party tonight.
+  script:
+  - answer: {category: orders, urgency: urgent, summary: Order 5310 arrived broken; needed tonight.}
+  - Draft a reply
+  - {call: search_help, args: {search_for: damaged item}}
+  - Hi Maria, send us a photo and we'll replace it [1].
+  - Done
+  answers:
+  - action: reject
+    comment: Call her instead.
+  expect:
+    route: {urgent: Urgent, check: Rejected}
+    output.draft: {contains: photo}
+- name: A ticket is opened only once per call, with the priority given
+  inputs:
+    email: |-
+      From: sam@example.com
+      The coffee grinder I bought makes a grinding noise.
+  script:
+  - answer: {category: orders, urgency: normal, summary: The grinder makes a noise.}
+  - Open a ticket
+  - {call: create_ticket, args: {title: Noisy coffee grinder, priority: normal}}
+  - Opened a ticket for the noisy grinder.
+  - Done
+  expect:
+    tools: [create_ticket]
+    tool_calls: 1
+    output.ticket_note: {contains: ticket}
+- name: The supervisor stops after five rounds, whatever it picks
+  inputs:
+    email: |-
+      From: maria@example.com
+      Where is my order?
+  script:
+  - answer: {category: orders, urgency: normal, summary: Asks where the order is.}
+  - Look up the sender
+  - {call: find_customer, args: {sender: maria@example.com}}
+  - Maria has orders 5521 and 5310.
+  - Look up the sender
+  - {call: find_customer, args: {sender: maria@example.com}}
+  - Still Maria.
+  - Look up the sender
+  - {call: find_customer, args: {sender: maria@example.com}}
+  - Maria again.
+  - Look up the sender
+  - {call: find_customer, args: {sender: maria@example.com}}
+  - And again.
+  - Look up the sender
+  expect:
+    tool_calls: 4
+    route: {supervisor: Done, urgent: Not urgent}
+- name: Sorting keeps to its choices
+  inputs:
+    email: |-
+      From: sam@example.com
+      Can I pay by bank transfer?
+  script:
+  - answer: {category: billing, urgency: low, summary: Asks about paying by bank transfer.}
+  - Draft a reply
+  - {call: search_help, args: {search_for: bank transfer}}
+  - Hi Sam, bank transfer is for business accounts [1].
+  - Done
+  expect:
+    output.category: billing
+    output.urgency: low
+    output.summary: {contains: bank transfer}
+    output.draft: {contains: business accounts}
+- name: Without a script the stand-in sorts the email, finishes within the round limit, and asks a person
+  inputs:
+    email: |-
+      From: maria@example.com
+      I was charged twice for order 5521.
+  answers:
+  - action: approve
+  expect:
+    status: ok
+    route: {supervisor: Done, urgent: Urgent, check: Approved}
+    output.category: {not_empty: true}
+    output.urgency: {not_empty: true}

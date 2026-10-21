@@ -1,0 +1,260 @@
+# Test Set for the Research assistant (a Deep Agent with two Helpers, skills and files).
+# The stand-in AI plays the turns, in the order the model calls happen: the lead's, then (after it
+# hands out a task) the Helper's until it replies, then the lead's again. The pages, the files,
+# the to-do list, the skills and the Helpers are real. Runs against the fake OpenAI server, which
+# serves the sample pages:
+#   easychain test research-assistant.tests.yaml --var base_url=http://127.0.0.1:8765
+flow: research-assistant.flow.yaml
+stand_in: true
+cases:
+- name: Reads the page, writes the report with sources, and the reviewer checks it
+  inputs:
+    request: |-
+      How do honey bees live?
+      ${base_url}/pages/bees
+  script:
+  - call: write_todos
+    args:
+      todos:
+      - {content: Read the page about bees, status: in_progress}
+      - {content: Write the report, status: pending}
+      - {content: Have the report checked, status: pending}
+  - call: task
+    args: {subagent_type: researcher, description: "How do honey bees live? Read ${base_url}/pages/bees"}
+  - call: read_page
+    args: {url: "${base_url}/pages/bees"}
+  - |-
+    - Honey bees live in colonies of thousands. (Honey bees, ${base_url}/pages/bees)
+    - The queen lays all the eggs. (Honey bees, ${base_url}/pages/bees)
+  - call: write_file
+    args:
+      file_path: /report.md
+      content: |-
+        # How honey bees live
+
+        Honey bees live in large colonies. One queen lays all the eggs.
+
+        ## Colonies
+        A colony has thousands of bees [1], and the queen lays all the eggs [1].
+
+        ## Sources
+        1. Honey bees, ${base_url}/pages/bees
+  - call: task
+    args: {subagent_type: reviewer, description: "Check /report.md against the notes."}
+  - OK
+  - Honey bees live in colonies of thousands, and one queen lays all the eggs. The report is in /report.md.
+  expect:
+    helpers: [researcher, reviewer]
+    tools: [write_todos, read_page, write_file]
+    files:
+      /report.md: {contains: ["# How honey bees live", "[1]", "## Sources", "/pages/bees"]}
+    output.plan: {count: 3}
+    output.answer: {contains: /report.md}
+- name: Two pages, one fact from each, each with its own source number
+  inputs:
+    request: |-
+      Compare bread and coffee.
+      ${base_url}/pages/bread
+      ${base_url}/pages/coffee
+  script:
+  - call: write_todos
+    args: {todos: [{content: Read both pages, status: in_progress}, {content: Write the report, status: pending}]}
+  - call: task
+    args: {subagent_type: researcher, description: "Compare bread and coffee. Read ${base_url}/pages/bread and ${base_url}/pages/coffee"}
+  - call: read_page
+    args: {url: "${base_url}/pages/bread"}
+  - call: read_page
+    args: {url: "${base_url}/pages/coffee"}
+  - |-
+    - Sourdough rises with wild yeast. (Sourdough, ${base_url}/pages/bread)
+    - Coffee is brewed from roasted beans. (Coffee, ${base_url}/pages/coffee)
+  - call: write_file
+    args:
+      file_path: /report.md
+      content: |-
+        # Bread and coffee
+        Sourdough rises with wild yeast [1]; coffee is brewed from roasted beans [2].
+        ## Sources
+        1. Sourdough, ${base_url}/pages/bread
+        2. Coffee, ${base_url}/pages/coffee
+  - Sourdough rises with wild yeast and coffee is brewed from roasted beans. The report is in /report.md.
+  expect:
+    helpers: [researcher]
+    tools: [read_page]
+    files:
+      /report.md: {contains: ["[1]", "[2]", "/pages/bread", "/pages/coffee"]}
+- name: The researcher really reads the page (its reply comes from the page)
+  inputs:
+    request: |-
+      What is Mars like?
+      ${base_url}/pages/mars
+  script:
+  - call: write_todos
+    args: {todos: [{content: Read about Mars, status: in_progress}]}
+  - call: task
+    args: {subagent_type: researcher, description: "What is Mars like? Read ${base_url}/pages/mars"}
+  - call: read_page
+    args: {url: "${base_url}/pages/mars"}
+  - Its red colour comes from iron oxide. (Mars, ${base_url}/pages/mars)
+  - Mars is red because of iron oxide.
+  expect:
+    helpers: [researcher]
+    tools: [read_page]
+    not_tools: [write_file]
+    output.answer: {contains: iron oxide}
+- name: The reviewer finds a fact without a source, and the lead fixes it
+  inputs:
+    request: |-
+      What are oceans like?
+      ${base_url}/pages/ocean
+  script:
+  - call: write_todos
+    args: {todos: [{content: Read about oceans, status: in_progress}, {content: Write and check the report, status: pending}]}
+  - call: task
+    args: {subagent_type: researcher, description: "What are oceans like? Read ${base_url}/pages/ocean"}
+  - call: read_page
+    args: {url: "${base_url}/pages/ocean"}
+  - The Pacific is the largest ocean. (Oceans, ${base_url}/pages/ocean)
+  - call: write_file
+    args:
+      file_path: /report.md
+      content: |-
+        # Oceans
+        The Pacific is the largest ocean [1]. Oceans are home to whales.
+        ## Sources
+        1. Oceans, ${base_url}/pages/ocean
+  - call: task
+    args: {subagent_type: reviewer, description: Check /report.md against the notes.}
+  - '"Oceans are home to whales" is not in the notes. Take it out.'
+  - call: edit_file
+    args: {file_path: /report.md, old_string: " Oceans are home to whales.", new_string: ""}
+  - The Pacific is the largest ocean. The report is in /report.md.
+  expect:
+    helpers: [researcher, reviewer]
+    tools: [edit_file]
+    files:
+      /report.md: {contains: largest ocean, not_contains: whales}
+- name: A part the pages don't answer is said, not guessed
+  inputs:
+    request: |-
+      When was chess invented, and how many pieces are there?
+      ${base_url}/pages/chess
+  script:
+  - call: write_todos
+    args: {todos: [{content: Read about chess, status: in_progress}]}
+  - call: task
+    args: {subagent_type: researcher, description: "When was chess invented, and how many pieces? Read ${base_url}/pages/chess"}
+  - call: read_page
+    args: {url: "${base_url}/pages/chess"}
+  - |-
+    - Each side starts with sixteen pieces. (Chess, ${base_url}/pages/chess)
+    No answer found: when chess was invented.
+  - call: write_file
+    args:
+      file_path: /report.md
+      content: |-
+        # Chess
+        Each side starts with sixteen pieces [1]. The page doesn't say when chess was invented.
+        ## Sources
+        1. Chess, ${base_url}/pages/chess
+  - Each side starts with sixteen pieces; the page doesn't say when chess was invented. The report is in /report.md.
+  expect:
+    files:
+      /report.md: {contains: [sixteen pieces, "doesn't say"]}
+    output.answer: {contains: "doesn't say"}
+- name: The lead reads its research-report skill before writing
+  inputs:
+    request: |-
+      Write a report on Python.
+      ${base_url}/pages/python
+  script:
+  - call: write_todos
+    args: {todos: [{content: Read the skill, status: in_progress}, {content: Write the report, status: pending}]}
+  - call: read_file
+    args: {file_path: /skills/lead/research-report/SKILL.md}
+  - call: task
+    args: {subagent_type: researcher, description: "Write a report on Python. Read ${base_url}/pages/python"}
+  - call: read_page
+    args: {url: "${base_url}/pages/python"}
+  - Guido van Rossum created Python. (Python, ${base_url}/pages/python)
+  - call: write_file
+    args:
+      file_path: /report.md
+      content: |-
+        # Python
+        Guido van Rossum created Python [1].
+        ## Sources
+        1. Python, ${base_url}/pages/python
+  - Guido van Rossum created Python. The report is in /report.md.
+  expect:
+    tools: [read_file, read_page, write_file]
+    files:
+      /report.md: {contains: Guido}
+- name: The notes are kept in their own file
+  inputs:
+    request: |-
+      What is sourdough?
+      ${base_url}/pages/bread
+  script:
+  - call: write_todos
+    args: {todos: [{content: Read about sourdough, status: in_progress}]}
+  - call: task
+    args: {subagent_type: researcher, description: "What is sourdough? Read ${base_url}/pages/bread"}
+  - call: read_page
+    args: {url: "${base_url}/pages/bread"}
+  - A starter is fed with flour and water. (Sourdough, ${base_url}/pages/bread)
+  - call: write_file
+    args: {file_path: /notes.md, content: "- A starter is fed with flour and water. (Sourdough, ${base_url}/pages/bread)"}
+  - call: write_file
+    args: {file_path: /report.md, content: "# Sourdough\nA starter is fed with flour and water [1]."}
+  - Sourdough is bread made with a starter of flour and water. The report is in /report.md.
+  expect:
+    files:
+      /notes.md: {contains: "/pages/bread"}
+      /report.md: {contains: "[1]"}
+- name: A page that can't be read is reported, and the run still finishes
+  inputs:
+    request: |-
+      What does this page say?
+      ${base_url}/pages/missing
+  script:
+  - call: write_todos
+    args: {todos: [{content: Read the page, status: in_progress}]}
+  - call: task
+    args: {subagent_type: researcher, description: "Read ${base_url}/pages/missing"}
+  - call: read_page
+    args: {url: "${base_url}/pages/missing"}
+  - The page could not be read (not found), so there are no notes.
+  - The page couldn't be read, so there is nothing to report.
+  expect:
+    tools: [read_page]
+    output.answer: {contains: "couldn't be read"}
+- name: A side task goes to the general helper
+  inputs:
+    request: |-
+      List the main facts about volcanoes.
+      ${base_url}/pages/volcano
+  script:
+  - call: write_todos
+    args: {todos: [{content: Read about volcanoes, status: in_progress}]}
+  - call: task
+    args: {subagent_type: general-purpose, description: "Read ${base_url}/pages/volcano and list its facts."}
+  - call: read_page
+    args: {url: "${base_url}/pages/volcano"}
+  - Magma rises from below and erupts as lava.
+  - Magma rises from below and erupts as lava.
+  expect:
+    helpers: [general-purpose]
+    tools: [read_page]
+    output.answer: {contains: lava}
+- name: Without a script, the stand-in plans, reads its skill, hands the reading out and writes the report
+  inputs:
+    request: |-
+      Research honey bees and write a report.
+      ${base_url}/pages/bees
+  expect:
+    helpers: [researcher]
+    tools: [write_todos, read_file, read_page, write_file]
+    files:
+      /report.md: {not_empty: true}
+    output.plan: {not_empty: true}

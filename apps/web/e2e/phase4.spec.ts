@@ -1,4 +1,6 @@
-// Phase 4 journeys: the describe-it copilot.
+// Phase 4 journeys: the Research assistant (a Deep Agent with Helpers, skills, a to-do list and
+// files), the Skills library, Inbox triage (a supervisor with an Inbox pause), the sandbox
+// settings, and the describe-it copilot.
 
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
@@ -107,4 +109,121 @@ test("Copilot: discarding a proposal leaves the flow as it was", async ({ page, 
   await expect(step(page, "summarise")).toHaveCount(0);
   await expect(page.getByTestId("copilot-preview-banner")).toBeHidden();
   await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeDisabled();
+});
+
+const bees = `${FAKE_URL}/pages/bees`;
+
+// The model's turns, in the order the calls happen: the lead's, then (after it hands out a task)
+// the Helper's until it replies, then the lead's again.
+const research = [
+  { call: "write_todos", args: { todos: [{ content: "Read the page about bees", status: "in_progress" }, { content: "Write the report", status: "pending" }] } },
+  { call: "task", args: { subagent_type: "researcher", description: `How do honey bees live? Read ${bees}` } },
+  { call: "read_page", args: { url: bees } },
+  `- Honey bees live in colonies of thousands. (Honey bees, ${bees})`,
+  { call: "write_file", args: { file_path: "/report.md", content: `# How honey bees live\n\nA colony has thousands of bees [1].\n\n## Sources\n1. Honey bees, ${bees}` } },
+  { call: "task", args: { subagent_type: "reviewer", description: "Check /report.md against the notes." } },
+  "OK",
+  "Honey bees live in colonies of thousands. The report is in /report.md.",
+];
+
+test("Research assistant: a Deep Agent plans, hands work to its Helpers and writes the report", async ({ page, request }) => {
+  await page.goto("/");
+  await page.getByTestId("template-research-assistant").getByRole("button", { name: "Use template" }).click();
+  await expect(step(page, "lead")).toBeVisible();
+  await expect(page.getByTestId("helper-of-researcher")).toContainText("Helper of Research lead");
+  await expect(page.getByTestId("helper-of-reviewer")).toContainText("Helper of Research lead");
+  await expect(page.getByTestId("tool-of-read_page")).toContainText("Tool of Researcher");
+  await expect(page.locator('.react-flow__edge[data-id^="helper:"]')).toHaveCount(2);
+  await expect(page.getByTestId("problems-button")).toContainText("No problems");
+
+  await step(page, "lead").click({ position: { x: 60, y: 14 } });
+  await page.getByRole("tab", { name: "Inspect", exact: true }).click();
+  await expect(page.getByTestId("deep-agent-helpers")).toContainText("Researcher");
+  await expect(page.getByTestId("deep-agent-helpers")).toContainText("Reviewer");
+  await expect(page.getByTestId("step-skills")).toContainText("research-report");
+  expect(await axe(page, "aside")).toEqual([]);
+
+  await request.post(`${FAKE_URL}/__script`, { data: research });
+  await page.getByTestId("open-run").click();
+  await page.getByLabel("request", { exact: true }).fill(`How do honey bees live?\n${bees}`);
+  await page.getByTestId("run-submit").click();
+  await expect(page.getByTestId("run-output")).toContainText("/report.md", { timeout: 30_000 });
+  await expect(step(page, "lead")).toHaveAttribute("data-status", "done");
+
+  // The trace: the to-do list, each Helper's task with its own calls under it, and the files.
+  const trace = page.getByRole("region", { name: "Run trace" });
+  await trace.getByRole("button", { name: /Research lead/ }).click();
+  await expect(page.getByTestId("trace-todos")).toContainText("Read the page about bees");
+  const researcher = page.getByTestId("helper-task-researcher");
+  await expect(researcher).toContainText("Helper researcher");
+  await expect(researcher.getByRole("list", { name: "What researcher did" })).toContainText("read_page");
+  await expect(page.getByTestId("helper-task-reviewer")).toBeVisible();
+  await expect(page.getByTestId("trace-files")).toContainText("A colony has thousands of bees [1].");
+  expect(await axe(page, "aside")).toEqual([]);
+});
+
+test("Skills: the library lists the built-in skills, and a new skill can be saved and deleted", async ({ page }) => {
+  await page.goto("/");
+  await page.getByTestId("skills-link").click();
+  const list = page.getByTestId("skills");
+  await expect(list).toContainText("research-report");
+  await expect(list).toContainText("source-notes");
+  expect(await axe(page)).toEqual([]);
+
+  await list.getByRole("link", { name: /^research-report/ }).click();
+  await expect(page.getByTestId("skill-editor")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save my copy" })).toBeVisible();
+
+  await page.getByTestId("new-skill").click();
+  await page.getByLabel("Name", { exact: true }).fill("Tone of voice");
+  const body = page.getByLabel("Contents of SKILL.md");
+  await expect(body).toHaveValue(/name: tone-of-voice/);
+  await body.fill("---\nname: tone-of-voice\ndescription: How we write to customers. Use it when drafting a reply.\n---\n\nWarm, short, no jargon.");
+  await page.getByTestId("save-skill").click();
+  await expect(page).toHaveURL(/#\/skills\/tone-of-voice$/);
+  await expect(list.getByRole("link", { name: /^tone-of-voice/ })).toBeVisible();
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.getByRole("button", { name: "Delete" }).click();
+  await expect(list).not.toContainText("tone-of-voice");
+});
+
+test("Inbox triage: the supervisor hands the email out, and an urgent one waits for a person", async ({ page, request }) => {
+  await page.goto("/");
+  await page.getByTestId("template-inbox-triage").getByRole("button", { name: "Use template" }).click();
+  await expect(step(page, "supervisor")).toBeVisible();
+  await expect(page.getByTestId("problems-button")).toContainText("No problems");
+  await request.post(`${FAKE_URL}/__script`, {
+    data: [
+      { answer: { category: "billing", urgency: "urgent", summary: "Charged twice for order 5521." } },
+      "Look up the sender",
+      { call: "find_customer", args: { sender: "maria@example.com" } },
+      "Maria, a member.",
+      "Draft a reply",
+      { call: "search_help", args: { search_for: "charged twice" } },
+      "Hi Maria, we refund a second charge the same day [1].",
+      "Done",
+    ],
+  });
+  await page.getByTestId("open-run").click();
+  await page.getByLabel("email", { exact: true }).fill("From: maria@example.com\nI was charged twice for order 5521.");
+  await page.getByTestId("run-submit").click();
+
+  const waiting = page.getByTestId("run-waiting");
+  await expect(waiting).toContainText("Check the reply before it goes out", { timeout: 30_000 });
+  await expect(step(page, "lookup")).toHaveAttribute("data-status", "done");
+  await expect(step(page, "drafter")).toHaveAttribute("data-status", "done");
+  await expect(step(page, "ticketer")).toHaveAttribute("data-status", "idle");
+  await waiting.getByLabel("Edit draft").fill("Hi Maria, we're refunding the second charge today.");
+  await waiting.getByRole("button", { name: "Approve" }).click();
+  await expect(page.getByTestId("run-output")).toContainText("refunding the second charge today");
+  await expect(page.getByTestId("run-output")).toContainText("billing");
+});
+
+test("Settings: the sandbox section says whether Code steps run in containers", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("tab", { name: "Sandbox", exact: true }).click();
+  await expect(page.getByTestId("sandbox-settings")).toBeVisible();
+  await expect(page.getByTestId("sandbox-status").first()).toBeVisible();
+  expect(await axe(page, '[role="dialog"]')).toEqual([]);
 });

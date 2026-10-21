@@ -2,7 +2,7 @@
 project: Easy Chain
 repo: Shubham-wiz/EasyChain
 branch: main
-version: 0.3.0
+version: 0.4.0
 updated: 2026-10-21
 platforms: [linux, windows, macos]   # decision R.4; CI tests linux and windows
 
@@ -40,7 +40,8 @@ phases:
     tracker: docs/handover/review.md
   - id: 4
     name: Autopilot and teams
-    state: in_progress
+    state: done
+    report: docs/phases/phase-4.md
     milestones:
       "4.1 Code sandbox": done   # runtime/sandbox.py, docs/sandbox.md, tests/test_sandbox.py (escape tests)
       "4.2 Deep Agent step": done   # steps/deep_agent.py, docs/steps/deep_agent.md, tests/test_deep_agent.py; files survive a worker crash (test_durability.py)
@@ -48,14 +49,16 @@ phases:
       "4.4 Skills": done   # skills.py, /api/skills, the Skills page, built-in skills in templates/skills/, tests/test_skills.py
       "4.5 Multi-agent patterns": done   # supervisor-team, handoff-chat, plan-and-execute templates (10 cases each), docs/patterns.md, tests/test_patterns.py
       "4.6 Describe-it copilot": done   # copilot.py, /api/copilot, the Copilot panel (preview on the canvas, one undo step), docs/copilot.md, tests/test_copilot.py, e2e/phase4.spec.ts
-      "4.7 Templates and report": next
+      "4.7 Templates and report": done   # research-assistant and inbox-triage (10/10 each), tests/test_research_assistant.py, e2e/phase4.spec.ts, docs/phases/phase-4.md
     plan: docs/ROADMAP.md#phase-4-autopilot-and-teams
     done_when: "A Research assistant template (Deep Agent + Helpers) passes a 10-case Test Set, and Code steps can't escape their sandbox"
+    evidence: "research-assistant 10/10 (tests/test_templates.py) and its export runs on its own (tests/test_research_assistant.py); sandbox escape tests (tests/test_sandbox.py, real containers)"
     sandbox: "Docker, gVisor where installed (decision 4.2)"
     copilot_model: "any model the user has a key for (decision 4.3)"
   - id: 5
     name: Platform
-    state: not_started
+    state: next   # after the owner answers the Phase 4 report's questions
+    plan: docs/ROADMAP.md#phase-5-platform
   - id: 6
     name: Ecosystem
     state: not_started
@@ -63,17 +66,23 @@ phases:
 decisions: docs/handover/decisions.md
 roadmap: docs/ROADMAP.md
 docs_index: docs/README.md
-waiting_for_review: false
-open_questions: []
+waiting_for_review: true   # Phase 4 report, docs/phases/phase-4.md#questions-for-you
+open_questions:
+  - "Phase 5 Done when: the four proposed criteria (draft -> staging -> production gated by a Test Run; published API and chat widget with rate limits; roles; audit log)"
+  - "Single sign-on: which real provider for the final check (Okta, Google, Entra, or none for now)"
+  - "Publish: self-hosted only, or also a managed cloud"
+  - "LLM-as-judge checks: which model judges (recommended: any model with a key; skipped without one)"
+  - "Real-model checks before a release: by hand, or a manual CI workflow with a budgeted key"
 
 tests:
-  measured_at: 2026-10-21, after the describe-it copilot
-  python: {passed: 501, skipped: 0, on: "Linux with SQLite, Postgres and Docker (the sandbox tests); Windows and Linux in CI"}
+  measured_at: 2026-10-21, end of Phase 4
+  python: {passed: 513, skipped: 0, on: "Linux with SQLite, Postgres and Docker (the sandbox tests); Windows and Linux in CI"}
   web_unit: {passed: 94}
   client: {passed: 11}
-  e2e: {passed: 35, skipped_unless_SCREENSHOTS: 2, on: "Linux (CI)"}
-  template_test_sets: {support-bot: "12/12", sql-analyst: "10/10", supervisor-team: "10/10", handoff-chat: "10/10", plan-and-execute: "10/10", others: all pass}
-  compiler_coverage: 0.93
+  e2e: {passed: 39, skipped_unless_SCREENSHOTS: 3, on: "Linux (CI)"}
+  template_test_sets: {support-bot: "12/12", sql-analyst: "10/10", supervisor-team: "10/10", handoff-chat: "10/10", plan-and-execute: "10/10", research-assistant: "10/10", inbox-triage: "10/10", others: all pass}
+  compiler_coverage: 0.94
+  python_end_of_phase_4: {passed: 513, compiler_coverage: 0.94}
   python_end_of_phase_3: {passed: 320}
   python_end_of_phase_2: {passed: 259, compiler_coverage: 0.94}
 

@@ -60,6 +60,29 @@ def test_picks_the_matching_tool_and_cites_what_it_found():
     assert "Invoices" not in final
 
 
+@tool
+def fetch(url: str) -> str:
+    """Download something."""
+    return f"Page {url.rsplit('/', 1)[-1]}: honey bees live in colonies."
+
+
+def test_a_tool_that_takes_an_address_reads_each_address_in_the_request():
+    agent = create_agent(StandInChatModel(), tools=[search_docs, fetch])
+    out = _ask(agent, "Compare these:\nhttps://example.com/a\nhttps://example.com/b.")
+    calls = [c for m in out["messages"] for c in getattr(m, "tool_calls", None) or []]
+    assert [(c["name"], c["args"]) for c in calls] == [
+        ("fetch", {"url": "https://example.com/a"}),
+        ("fetch", {"url": "https://example.com/b"}),
+    ], "in order, each once, without the full stop"
+    assert "colonies" in out["messages"][-1].text
+
+
+def test_a_helpers_label_is_not_mistaken_for_data():
+    reply = f"{LABEL}\nHoney bees live in colonies. Coffee grows in Brazil."
+    answer = answer_from_results("Where does coffee grow?", [("task", reply)])
+    assert answer == f"{LABEL}\nCoffee grows in Brazil."
+
+
 def test_tool_matched_by_name_and_arguments_from_the_request():
     agent = create_agent(StandInChatModel(), tools=[search_docs, get_weather])
     out = _ask(agent, "What's the weather? city: Lisbon")

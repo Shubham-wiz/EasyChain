@@ -21,6 +21,13 @@ asked again.
 | 4.1 | Phase 4 "Done when" | The proposal in decision 3.13: a **Research assistant** template (Deep Agent + Helpers + to-do list + files) passes a 10-case Test Set, and Code steps can't escape their sandbox (escape tests) | owner: "OK go on" to the recommended answers |
 | 4.2 | Sandbox backend for Code steps | **Docker** by default, with **gVisor** (`runsc`) where it is installed; hosted sandboxes (E2B, Modal) later as plugins. Must work with Docker Desktop on Windows too (R.4). | owner: same |
 | 4.3 | The describe-it copilot's model | **Any model the user has a key for**; with no key, the stand-in AI shows a canned example | owner: same |
+| 4.4 | Where a Deep Agent's files live | In the agent's **checkpointed state**, saved to a Flow Data field (`files`), not the LangGraph store | build: they are kept with every Save Point, survive a crash (tested) and rewind with time travel; later steps can read them |
+| 4.5 | A shell for Deep Agents | **No `execute` tool**; running code belongs in Code steps, which run in the sandbox | build: one sandboxed way to run code |
+| 4.6 | Skills in exports | The skills a flow uses are written into its generated code, so an export has them; the workspace `skills/` folder is over the built-in skills (a copy replaces one) | build: exported code must run on its own |
+| 4.7 | Agent team patterns | Templates made of **ordinary steps** (AI Decision loop, Jump, For Each), which the step library can insert; no "team" step type | build: they stay editable and export to plain LangGraph |
+| 4.8 | How the copilot proposes | The model writes the **whole flow** as YAML; it is checked (errors go back to the model twice at most) and turned into separate changes; existing steps keep their place and later steps move right to make room | build: the checks see the result, and the person reviews plain changes |
+| 4.9 | "Fix this" on problems | **Ask the copilot** is on problems without a fix of their own | build: an exact one-click fix beats a model's guess |
+| 4.10 | Version | 0.4.0 at the end of Phase 4 (Python package, web app, client, Compose image tags) | build |
 
 ## Phase 3
 

@@ -5,6 +5,8 @@ steps, their settings, the Flow Data and a few Test Set cases, checks them, and 
 the canvas **before anything changes**. You keep the changes you want, and applying them is one
 step you can undo.
 
+![The Copilot tab next to the Inbox triage flow](images/copilot.png)
+
 ## Using it
 
 1. Open a flow and pick the **Copilot** tab on the right.

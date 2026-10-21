@@ -33,6 +33,11 @@ Input → Supervisor (AI Decision) ─Billing→ Billing specialist ─┐
 - The supervisor's **round limit** (4) ends the loop even if the AI never picks *Finish*.
 - LangGraph: the supervisor is a node plus a conditional edge; the specialists are agent nodes
   with edges back to it.
+- **Inbox triage** is a bigger supervisor: an AI Model sorts the email first (topic, urgency,
+  summary as Flow Data), the supervisor's guidance shows them with the helpers' notes, the
+  helpers look up the sender, draft a reply from the help centre (a Knowledge Base search tool)
+  and open a ticket (run at most once), and an urgent email waits in the Inbox for a person to
+  check the reply.
 
 ## Handoffs
 

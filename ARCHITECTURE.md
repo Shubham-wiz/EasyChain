@@ -320,7 +320,7 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
   mutation: add, connect (with a reason when refused), rename, insert before, renaming variables
   for fixes, copy and paste, auto-layout. They are unit tested.
 
-## 7. Security in Phases 0 to 3
+## 7. Security in Phases 0 to 4
 
 - **Secrets** are referenced by name (`{secret:NAME}`, provider `*_API_KEY`). Values are stored
   encrypted with Fernet in `~/.easychain/secrets.enc` (the key is in `secret.key` with mode 0600,
@@ -382,8 +382,8 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
 | `test_durability.py` | **The Phase 2 Done-when**, on SQLite and Postgres: a worker killed with SIGKILL mid-run resumes from the last step without repeating finished steps or side effects; a paused approval is answered a day later through a fresh server and worker |
 | `test_db_startup.py` | Several processes starting at once set up the Postgres tables without racing |
 | `apps/web/src/**/*.test.ts` | Editing helpers, undo grouping, SSE parsing, formatting, the copilot's changes and panel |
-| `apps/web/e2e/*.spec.ts` | Playwright: build → run → debug → export (and run the export), templates and chat, fixes, undo, copy/paste, Pro mode, settings, Ask a Human in the run panel and the Inbox, For Each, breakpoints and Save Points, stop and carry on, reload during a run, triggers, the Flow Data panel, Sub-flows, agent tools and live tool calls, tool approval, the reply format builder, Knowledge Bases, cited answers, MCP servers, API import, the copilot (propose, preview, apply as one undo step, discard), axe WCAG 2.2 AA scans, 300-step canvas |
-| `test_standin_tools.py` | The stand-in AI calls tools, fills arguments and JSON schemas, cites sources, and plays scripts |
+| `apps/web/e2e/*.spec.ts` | Playwright: build → run → debug → export (and run the export), templates and chat, fixes, undo, copy/paste, Pro mode, settings, Ask a Human in the run panel and the Inbox, For Each, breakpoints and Save Points, stop and carry on, reload during a run, triggers, the Flow Data panel, Sub-flows, agent tools and live tool calls, tool approval, the reply format builder, Knowledge Bases, cited answers, MCP servers, API import, the copilot (propose, preview, apply as one undo step, discard), the Research assistant (Helpers on the canvas, the trace with nested Helper calls, the to-do list and files), the Skills library, Inbox triage (a supervisor and an Inbox pause), the sandbox settings, axe WCAG 2.2 AA scans, 300-step canvas |
+| `test_standin_tools.py` | The stand-in AI calls tools, fills arguments and JSON schemas, cites sources, reads each web address a request names, and plays scripts |
 | `test_agent.py` | Agent tool calls and their events, approvals (approve, edit, reject) through the Inbox shape, structured answers, add-ons, limits, MCP tools |
 | `test_knowledge.py` | Every file format, chunk provenance, hybrid search and citations on SQLite and on Postgres with pgvector, the API, an agent searching with its own queries, documents cut off by a restart, exported code searching on its own |
 | `test_integrations.py` | Memory (remember, recall, trim, summarise), read-only SQL, MCP over stdio and HTTP and its allow-list, OpenAPI import |
@@ -391,6 +391,7 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
 | `test_skills.py` | Skills are checked before they are saved; the library over the built-in skills (a copy replaces one, deleting it brings it back); the API; a missing skill is a problem with a fix; the skills ship inside the generated code and a changed skill recompiles; the stand-in reads the skill that matches the task and writes the file it asks for; a Helper reads its own skills |
 | `test_patterns.py` | The three agent team patterns use only ordinary steps and compile cleanly; an AI Decision fills Flow Data into its guidance; each exported pattern runs on its own against the fake model server (their Test Sets run in `test_templates.py`) |
 | `test_copilot.py` | **Proposals for ten written requests validate with no errors** (scripted replies); problems go back to the model until they are fixed, or it gives up and says why; a change becomes separate changes with plain labels; new steps never land on old ones; the stand-in picks the closest template; the copilot uses a model there is a key for; the API |
+| `test_research_assistant.py` | **Phase 4's Research assistant "Done when"**: the template is a Deep Agent with two Helpers, skills, a to-do list and files (its 10-case Test Set runs in `test_templates.py`), and the exported project runs on its own, skills included, against the fake model server |
 | `test_sandbox.py` | **Phase 4's sandbox "Done when"**, with real containers: the host's files, the network, Easy Chain's environment and secrets, root and capabilities, the Docker socket, writes outside `/tmp`, a fork bomb, memory and time are all out of reach; errors come back as they were; a flow's Code step runs in the sandbox; the settings API and the check before a run |
 | `packages/client/src/*.test.ts(x)` | The client's SSE handling, errors, reconnecting `wait()`, and the React hook through a pause and an answer |
 
@@ -430,7 +431,7 @@ extras) and locked in `uv.lock`. Exported
 | CLI: new, dev, run, test, eval, deploy, export | new, dev, run (answers Ask a Human in the terminal), test (Test Sets, with scripted human answers), export, plus validate, compile, schema, templates and worker | `eval` and `deploy` belong to Phase 5. `test` exists now so templates can ship with their Test Sets. |
 | Python 3.12+ | Python 3.12 (CI and Docker) | As specified. |
 | Latest framework majors | TypeScript 5.9, Vite 7, Vitest 3 (not TS 7 or Vite 8) | "Prefer well-known, boring libraries." Those newer majors were brand new at build time. |
-| Templates with 10-case Test Sets (section 14) | Eleven templates ship with Test Sets of 10 to 12 cases (Phase 3 adds *Support bot over docs* and *SQL analyst*; Phase 4 the three agent team patterns); section 14's other templates arrive with the phases that provide their features | They need publishing and so on. |
+| Templates with 10-case Test Sets (section 14) | Thirteen templates ship with Test Sets of 10 to 12 cases (Phase 3 adds *Support bot over docs* and *SQL analyst*; Phase 4 the three agent team patterns, *Research assistant* and *Inbox triage*); section 14's other templates arrive with the phases that provide their features | They need publishing and so on. |
 | For Each runs "a step or sub-flow" per item | One step per item; several steps per item go in a Sub-flow | Keeps the canvas honest about what runs per item and maps to one `Send` target. |
 | Breakpoints | Set per flow in the browser, not saved in the flow file | Breakpoints are a debugging aid for test runs, not part of the flow's behaviour, so they don't belong in reviewed YAML. |
 | Event streaming | The API tails the run's events from the database (poll plus an in-process wake-up), not Postgres LISTEN/NOTIFY | Works the same on SQLite and Postgres and survives API restarts; latency is about 50–250 ms. |

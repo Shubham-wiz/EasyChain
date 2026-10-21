@@ -40,10 +40,11 @@ disagree, the original wins.
 | 1. Visual MVP | Canvas, step library, inspector; Input, AI Model, Instructions, Action, Decision and Output steps; three providers; streaming chat; run trace; Python export | (see [phase-0-1.md](../phases/phase-0-1.md)) |
 | 2. Real runtime | Flow Data panel and update rules, loops with guards, parallel branches, For Each, Sub-flows, Postgres Save Points, crash recovery, Ask a Human and Inbox, time travel, background runs, triggers | Killing a worker mid-run and restarting resumes from the last step with no duplicate side effects, and a paused approval can be resumed a day later. **Met.** |
 | 3. Agents and knowledge | Agent step and add-ons, MCP, OpenAPI import, structured output, Knowledge Base, memory, all providers | The **Support bot over docs** and **SQL analyst** templates pass their Test Sets. **Met.** |
-| 4. Autopilot and teams | Deep Agents, Helpers, Skills, **sandboxes** (Code steps), multi-agent patterns, describe-it copilot | (from the original; a proposal is in [phase-3.md](../phases/phase-3.md#phase-4-plan-autopilot-and-teams), waiting for the owner) |
-| 5. Platform | Test Sets and Checks, Test Runs, CI gate, dashboards, model gateway, Publish, environments, roles, SSO, audit log, OTel/LangSmith, CLI `eval` and `deploy` | (from the original) |
+| 4. Autopilot and teams | Deep Agents, Helpers, Skills, **sandboxes** (Code steps), multi-agent patterns, describe-it copilot | A **Research assistant** template (Deep Agent + Helpers + to-do list + files) passes a 10-case Test Set, and Code steps can't escape their sandbox (decision 4.1). **Met** ([phase-4.md](../phases/phase-4.md)). |
+| 5. Platform | Test Sets and Checks, Test Runs, CI gate, dashboards, model gateway, Publish, environments, roles, SSO, audit log, OTel/LangSmith, CLI `eval` and `deploy` | (from the original; a proposal is in [phase-4.md](../phases/phase-4.md#phase-5-plan-platform), waiting for the owner) |
 | 6. Ecosystem | LangGraph.js export, custom module registry, import, real-time collaboration, prompt optimisation, Helm | (from the original) |
 
 The detailed Phase 3 plan, derived from the prompt, is in
 [phase-2.md](../phases/phase-2.md#phase-3-plan-agents-and-knowledge); the Phase 4 plan is in
-[phase-3.md](../phases/phase-3.md#phase-4-plan-autopilot-and-teams).
+[phase-3.md](../phases/phase-3.md#phase-4-plan-autopilot-and-teams); the Phase 5 plan is in
+[phase-4.md](../phases/phase-4.md#phase-5-plan-platform).

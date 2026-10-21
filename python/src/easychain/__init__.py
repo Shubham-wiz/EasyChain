@@ -3,4 +3,4 @@
 Draw your AI app, press Run, watch it think, ship it with one click.
 """
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

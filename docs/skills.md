@@ -6,6 +6,8 @@ incoming email, your tone of voice, the steps of a review. Skills use the
 [Agent Skills](https://agentskills.io) format, so a skill written for another agent tool works
 here too.
 
+![The Skills library with a built-in skill open](images/skills.png)
+
 ## What a skill is
 
 A folder with a `SKILL.md` and, if it needs them, other files its instructions point to:

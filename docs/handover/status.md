@@ -1,44 +1,41 @@
 # Status
 
-_Last updated: 2026-10-21 (Phase 4 in progress: the Code sandbox, the Deep Agent step, Helpers, Skills, the agent team patterns and the describe-it copilot are done; the Research assistant and Inbox triage templates and the Phase 4 report are next)._
+_Last updated: 2026-10-21 (Phase 4 is done and reported; waiting for the owner's review before Phase 5)._
 
 ## In one paragraph
 
-Phases 0 to 3 are built, tested and reported, and each met its "Done when". After Phase 3, a
-full code review ([review.md](review.md)) was worked through, and Easy Chain now runs on
-**Windows as well as Linux** (decisions R.4, R.5). **Phase 4 (Autopilot and teams) is in
-progress**, with its questions answered (decisions 4.1–4.3). Done so far: the **Code step
-sandbox** (Code steps run in a locked-down Docker container per call; escape tests prove they
-can't get out), the **Deep Agent** step (`create_deep_agent`: a to-do list, files kept in Flow
-Data and with every Save Point, approvals in the Inbox) and **Helpers** (sub-agents with their
-own role, model and tools, nested in the trace with their own tokens and cost) and **Skills**
-(a Skills library in the Agent Skills format, built into the generated code), and the three
-**agent team patterns** (supervisor, handoffs, plan-and-execute) as templates made of ordinary
-steps that the step library can insert, and the **describe-it copilot** (describe a flow or a
-change; the proposal is checked, shown on the canvas, and applied as one undo step; any model
-with a key, or the stand-in's template example). The Research assistant and Inbox triage
-templates and the Phase 4 report are next.
+Phases 0 to 4 are built, tested and reported, and each met its "Done when". After Phase 3, a
+full code review ([review.md](review.md)) was worked through, and Easy Chain runs on **Windows
+as well as Linux** (decisions R.4, R.5). **Phase 4 (Autopilot and teams)** added:
+
+- the **Code step sandbox**: a locked-down Docker container per call, with escape tests;
+- the **Deep Agent** step and its **Helpers**: a to-do list, files kept with every Save Point,
+  and sub-agents nested in the trace with their own tokens and cost;
+- **Skills**: a library in the Agent Skills format, built into the generated code;
+- three **agent team patterns** made of ordinary steps;
+- the **describe-it copilot**;
+- the **Research assistant** and **Inbox triage** templates, each passing a 10-case Test Set.
+
+The [Phase 4 report](../phases/phase-4.md) ends with five questions about Phase 5. **Work stops
+here until the owner answers them.**
 
 ## Pick up here
 
-_Updated 2026-10-09 so work can carry on from another machine or session._
-
 1. **Set up:** clone, `pnpm run setup`, then `pnpm lint` and `pnpm test` (Windows, macOS or
-   Linux). Read [AGENTS.md](../../AGENTS.md), this page, [review.md](review.md) and
-   [decisions.md](decisions.md).
-2. **CI** is green on Linux and Windows (all five jobs, from commit `ba6f12c`). If a run fails,
-   its annotations name the failing tests; they are readable without admin rights:
+   Linux). Read [AGENTS.md](../../AGENTS.md), this page, [decisions.md](decisions.md) and the
+   [Phase 4 report](../phases/phase-4.md).
+2. **CI** runs on every push to `main`. If a run fails, its annotations name the failing tests;
+   they are readable without admin rights:
    `curl -s https://api.github.com/repos/Shubham-wiz/EasyChain/check-runs/<job id>/annotations`
    (job ids: `…/actions/runs/<run id>/jobs`).
-3. **The review is done** ([review.md](review.md)). Two items are left on purpose. The address
-   filter for server-side fetches comes with the egress allow-list in Phase 5. Before a
-   release, run the agent templates' Test Sets with a real model (`--real-model`).
-4. **Phase 4** ([ROADMAP.md](../ROADMAP.md#phase-4-autopilot-and-teams)): 4.1 (the Code
-   sandbox), 4.2 (the Deep Agent step, [docs](../steps/deep_agent.md)), 4.3 (Helpers,
-   [docs](../steps/helper.md)), 4.4 (Skills, [docs](../skills.md)), 4.5 (agent team
-   patterns, [docs](../patterns.md)) and 4.6 (the copilot, [docs](../copilot.md)) are done.
-   Carry on with 4.7: the Research assistant and Inbox triage templates, the Phase 4
-   journeys, and the Phase 4 report.
+3. **Waiting for the owner:** the Phase 4 report's
+   [questions](../phases/phase-4.md#questions-for-you) on Phase 5's "Done when", single
+   sign-on, publishing, LLM-as-judge checks and real-model checks. Record the answers in
+   [decisions.md](decisions.md) as 5.x, then start Phase 5 with migrations (5.8), as
+   [ROADMAP.md](../ROADMAP.md#phase-5-platform) orders it.
+4. **Two review items are left on purpose** ([review.md](review.md)). The address filter for
+   server-side fetches comes with the egress allow-list in Phase 5. Before a release, run the
+   agent templates' Test Sets with a real model (`--real-model`).
 
 ## Phases
 
@@ -49,22 +46,22 @@ _Updated 2026-10-09 so work can carry on from another machine or session._
 | 2. Real runtime | Flow Data, loops, parallel joins, For Each, Sub-flows, Jump, Ask a Human, Inbox, Save Points, time travel, workers, triggers, notifications | Done | [phase-2.md](../phases/phase-2.md) |
 | 3. Agents and knowledge | Agent step + add-ons, MCP, OpenAPI import, structured output, Knowledge Base, memory, all providers | Done | [phase-3.md](../phases/phase-3.md) |
 | Review fixes | Windows support; the findings of the 2026-10-04 review | Done (two items scheduled elsewhere, see review.md) | [review.md](review.md) |
-| 4. Autopilot and teams | Deep Agents, Helpers, Skills, sandboxes, multi-agent patterns, describe-it copilot | **In progress**: 4.1 Code sandbox ([docs/sandbox.md](../sandbox.md)), 4.2 Deep Agent, 4.3 Helpers, 4.4 Skills, 4.5 patterns and 4.6 copilot ([docs/copilot.md](../copilot.md)) done; 4.7 templates and report next | plan in [ROADMAP.md](../ROADMAP.md#phase-4-autopilot-and-teams) |
-| 5. Platform | Test Sets and Checks, Test Runs, CI gate, dashboards, model gateway, Publish, environments, roles, SSO | Not started | |
+| 4. Autopilot and teams | Deep Agents, Helpers, Skills, sandboxes, multi-agent patterns, describe-it copilot | Done | [phase-4.md](../phases/phase-4.md) |
+| 5. Platform | Test Sets and Checks, Test Runs, CI gate, dashboards, model gateway, Publish, environments, roles, SSO | Next, after the owner's review | plan in [ROADMAP.md](../ROADMAP.md#phase-5-platform) |
 | 6. Ecosystem | LangGraph.js export, custom module registry, import, collaboration, prompt optimisation, Helm | Not started | |
 
 `git log --oneline` lists every commit.
 
 ## Tests
 
-| Suite | Result (2026-10-21) |
+| Suite | Result (2026-10-21, end of Phase 4) |
 |---|---|
-| Python on Linux (`pnpm test`, and CI) | 501 pass, with SQLite, Postgres (+ pgvector in CI) and Docker (the sandbox escape tests; skipped without Docker); compiler and steps coverage 93% |
+| Python on Linux (`pnpm test`, and CI) | 513 pass, with SQLite, Postgres (+ pgvector in CI) and Docker (the sandbox escape tests; skipped without Docker); compiler and steps coverage 94% |
 | Python on Windows 11 (CI) | all pass |
 | Web unit (vitest) | 94 passed |
 | Client package (vitest) | 11 passed |
-| Playwright e2e | 35 passed (Linux); the screenshot spec runs only with `SCREENSHOTS=1` |
-| Template Test Sets | all 11 pass (`tests/test_templates.py`), with the stand-in AI and scripted turns |
+| Playwright e2e | 39 passed (Linux); the screenshot spec runs only with `SCREENSHOTS=1` |
+| Template Test Sets | all 13 pass (`tests/test_templates.py`), with the stand-in AI and scripted turns; research-assistant 10/10, inbox-triage 10/10 |
 | Lint | ruff check + format clean; tsc clean for web and client |
 
 CI jobs: Python (Linux, Postgres + pgvector), Web, End-to-end (Playwright), Docker image and
@@ -72,12 +69,11 @@ Compose, and **Windows** (Python suite, CLI and worker, web checks, the app serv
 
 ## Next
 
-1. **Phase 4**, in this order: ~~sandboxes for Code steps~~ (done: `runtime/sandbox.py`,
-   [docs/sandbox.md](../sandbox.md)), ~~the Deep Agent step~~ and ~~Helpers~~ (done:
-   `steps/deep_agent.py`), ~~Skills~~ (done: `skills.py`, [docs/skills.md](../skills.md)),
-   ~~multi-agent patterns~~ (done: three templates, [docs/patterns.md](../patterns.md)),
-   ~~the describe-it copilot~~ (done: `copilot.py`, [docs/copilot.md](../copilot.md)), then the
-   Research assistant and Inbox triage templates and the Phase 4 report.
+1. The owner answers the [Phase 4 report's questions](../phases/phase-4.md#questions-for-you).
+2. **Phase 5 (Platform)**, in the order in [ROADMAP.md](../ROADMAP.md#phase-5-platform):
+   migrations, then users, roles, SSO and the audit log (with the egress allow-list), then Test
+   Sets, Test Runs and the CI gate, then environments, Publish and the model gateway, then
+   dashboards and tracing.
 
 ## GitHub
 
@@ -93,7 +89,9 @@ Compose, and **Windows** (Python suite, CLI and worker, web checks, the app serv
 These are listed in full in the phase reports and review.md. The ones that matter next:
 
 - Code steps run in the sandbox only where Docker is available (the check before a run warns
-  otherwise). In Docker Compose, that takes the `docker-compose.sandbox.yml` overlay.
+  otherwise). In Docker Compose, that takes the `docker-compose.sandbox.yml` overlay. Exported
+  code runs Code steps in its own process.
+- The copilot and the agent templates are tested with scripted model turns, not real models.
 - There is no login (Phase 5). The API refuses other sites' pages (Host and Origin checks), but
   anything on this machine can still call it.
 - Knowledge Base documents are ingested in the API server, not on the job queue; no OCR.

@@ -1,7 +1,8 @@
 # Roadmap: what's done, and the plan for what's left
 
-_Written at the end of Phase 3 (version 0.3.0). The live status is in
-[handover/status.md](handover/status.md); this page is the plan. Update both as work lands._
+_Written at the end of Phase 3 (version 0.3.0) and updated at the end of Phase 4 (version
+0.4.0). The live status is in [handover/status.md](handover/status.md); this page is the plan.
+Update both as work lands._
 
 ## Where things stand
 
@@ -11,11 +12,21 @@ _Written at the end of Phase 3 (version 0.3.0). The live status is in
 | 1. Visual MVP | Canvas, inspector, run panel, chat, export, templates | ✅ Done ([report](phases/phase-0-1.md)) |
 | 2. Real runtime | Durable runs, workers, Ask a Human, Inbox, Save Points, time travel, triggers | ✅ Done ([report](phases/phase-2.md)) |
 | 3. Agents and knowledge | Agent + add-ons, MCP, OpenAPI import, structured replies, Knowledge Bases, memory, 14 providers | ✅ Done ([report](phases/phase-3.md)) |
-| 4. Autopilot and teams | Sandboxes, Deep Agents, Helpers, Skills, multi-agent patterns, describe-it copilot | In progress: 4.1 sandbox, 4.2 Deep Agent, 4.3 Helpers, 4.4 Skills, 4.5 patterns and 4.6 copilot done |
-| 5. Platform | Test Sets and Checks, Test Runs, CI gate, dashboards, model gateway, Publish, environments, roles, SSO, audit, tracing | Planned |
+| 4. Autopilot and teams | Sandboxes, Deep Agents, Helpers, Skills, multi-agent patterns, describe-it copilot | ✅ Done ([report](phases/phase-4.md)) |
+| 5. Platform | Test Sets and Checks, Test Runs, CI gate, dashboards, model gateway, Publish, environments, roles, SSO, audit, tracing | Next |
 | 6. Ecosystem | LangGraph.js export, custom step registry, import, collaboration, prompt optimisation, Helm | Planned |
 
-At the end of Phase 3 the tests were:
+At the end of Phase 4 the tests were:
+
+| Suite | Passing |
+|---|---|
+| Python | 513 |
+| Web unit | 94 |
+| Client package | 11 |
+| Playwright journeys | 39 |
+| Template Test Sets | all 13 |
+
+At the end of Phase 3 they were:
 
 | Suite | Passing |
 |---|---|
@@ -31,14 +42,19 @@ At the end of Phase 3 the tests were:
 2. ~~**Watch the first CI run.**~~ Done: it passed (Python on Postgres with pgvector, web and
    client tests, Playwright, Docker Compose). CI now also runs on Windows (decision R.4).
 3. ~~**Answer the three Phase 4 questions.**~~ Done: the recommended options (decisions 4.1–4.3).
-4. ~~**Fix the code review's serious findings first**~~ (decision R.5): in progress, tracked in
+4. ~~**Fix the code review's serious findings first**~~ (decision R.5): done, see
    [handover/review.md](handover/review.md).
-5. **Optional:** commit the original build brief as `docs/handover/build-prompt.original.md`.
+5. **Answer the Phase 4 report's questions** ([phase-4.md](phases/phase-4.md#questions-for-you))
+   before Phase 5 starts.
+6. **Optional:** commit the original build brief as `docs/handover/build-prompt.original.md`.
    The "Done when" for Phases 5–6 below are proposals reconstructed without it.
-6. **Before a release:** try the agent templates and the copilot with a real key. CI never calls
+7. **Before a release:** try the agent templates and the copilot with a real key. CI never calls
    paid models.
 
 ## Phase 4: Autopilot and teams
+
+**Done.** Every milestone below landed and both criteria are met; see the
+[Phase 4 report](phases/phase-4.md).
 
 **"Done when"** (decision 4.1):
 

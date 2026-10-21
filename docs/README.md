@@ -40,7 +40,7 @@ Start with the [project README](../README.md). This page lists every document.
 | [python/README.md](../python/README.md) | The Python package: CLI, modules, API endpoints, environment variables, tests |
 | [apps/web/README.md](../apps/web/README.md) | The web app: pages, code layout, state stores, tests |
 | [packages/client/README.md](../packages/client/README.md) | `@easychain/client`: the TypeScript client and React hook |
-| [ROADMAP.md](ROADMAP.md) | What's done and the plan for Phases 4–6, step by step |
+| [ROADMAP.md](ROADMAP.md) | What's done and the plan for Phases 5 and 6, step by step |
 
 ## Project history and handover
 
@@ -49,4 +49,5 @@ Start with the [project README](../README.md). This page lists every document.
 | [phases/phase-0-1.md](phases/phase-0-1.md) | Phases 0 and 1 report: foundations and the visual editor |
 | [phases/phase-2.md](phases/phase-2.md) | Phase 2 report: the durable runtime |
 | [phases/phase-3.md](phases/phase-3.md) | Phase 3 report: agents and knowledge |
+| [phases/phase-4.md](phases/phase-4.md) | Phase 4 report: autopilot and teams (Deep Agents, Helpers, Skills, agent teams, the sandbox, the copilot) |
 | [handover/](handover/README.md) | The project's memory: [status](handover/status.md), [decisions](handover/decisions.md), [conversation](handover/conversation.md), [lessons](handover/lessons.md), [environment](handover/environment.md), [build prompt summary](handover/build-prompt.md), [state.yaml](handover/state.yaml) |

@@ -21,6 +21,10 @@ also:
   stays short, and replies with what it found. It can also hand a task to a **general helper**
   that has the Deep Agent's own tools.
 
+The **Research assistant** template is a Deep Agent at work: give it a question and the pages
+to read, and its researcher takes notes with sources, it writes `/report.md` following the
+*research-report* skill, and its reviewer checks the report.
+
 ## Settings
 
 The settings of an [Agent](agent.md#settings), and:

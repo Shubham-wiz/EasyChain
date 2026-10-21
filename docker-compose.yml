@@ -46,7 +46,7 @@ services:
 
   easychain:
     build: .
-    image: easychain:0.3.0
+    image: easychain:0.4.0
     ports:
       # Localhost only: there is no login yet (Phase 5), so do not publish it on a public interface.
       - "127.0.0.1:${EASYCHAIN_PORT:-8000}:8000"
@@ -64,7 +64,7 @@ services:
     restart: unless-stopped
 
   worker:
-    image: easychain:0.3.0
+    image: easychain:0.4.0
     command: ["easychain", "worker", "--verbose"]
     environment:
       <<: *easychain-env

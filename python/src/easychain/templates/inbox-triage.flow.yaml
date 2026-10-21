@@ -1,0 +1,213 @@
+version: 1
+name: Inbox triage (supervisor)
+description: Sorts an incoming email by topic and urgency, then a supervisor hands it to the right
+  helpers (look up the sender, draft a reply from the help centre, open a ticket) until it is
+  handled. Urgent emails wait in the Inbox for a person to check the reply.
+data:
+- name: sender
+  description: The sender's email address
+- name: search_for
+  description: What to look up in the help centre, in a few words
+- name: title
+  description: A one-line title for the ticket
+- name: priority
+  description: 'The ticket''s priority: urgent, normal or low'
+steps:
+- id: input
+  type: input
+  name: Input
+  settings:
+    fields:
+    - name: email
+      description: The email, with who sent it
+      example: |-
+        From: maria@example.com
+        I was charged twice for order 5521 and the second charge is still there after a week. Please sort this out today.
+- id: sort_prompt
+  type: instructions
+  name: Ask to sort the email
+  settings:
+    system: You sort the emails that reach a web shop's support team.
+    user: |-
+      Sort this email: what it is about, how urgent it is, and what it asks, in one line.
+
+      {email}
+- id: sort
+  type: ai_model
+  name: Sort the email
+  settings:
+    save_as: sorted
+    output:
+      description: How the email is sorted.
+      fields:
+      - name: category
+        type: choice
+        options: [billing, orders, account, other]
+        description: What the email is about.
+      - name: urgency
+        type: choice
+        options: [urgent, normal, low]
+        description: Urgent when money, safety or a deadline today is at stake.
+      - name: summary
+        description: What the sender asks, in one line.
+      spread: true
+- id: supervisor
+  type: decision
+  name: Supervisor
+  description: Picks the helper who works on the email next, or finishes.
+  settings:
+    mode: ai
+    input: email
+    instructions: |-
+      You lead a support desk. The email is about {category} and is {urgency}: {summary}
+      Pick who should work on it next. Pick Done when the sender is known, a reply is drafted, and anything that needs follow-up has a ticket.
+
+      Sender: {customer_note}
+      Reply draft: {draft}
+      Ticket: {ticket_note}
+    exits:
+    - label: Look up the sender
+      description: find out who sent it, their orders and open tickets
+    - label: Draft a reply
+      description: write the reply, from the help centre
+    - label: Open a ticket
+      description: problems the team has to follow up, like refunds or faults
+    otherwise: Done
+    max_rounds: 5
+    save_as: next_helper
+- id: lookup
+  type: agent
+  name: Look up the sender
+  settings:
+    instructions: You look up who sent an email to a support team. Use find_customer with the sender's
+      address, then write one or two short notes for the team. Don't write to the sender.
+    input: email
+    tools: [find_customer]
+    save_as: customer_note
+    max_steps: 12
+    addons:
+      max_tool_calls: 2
+- id: find_customer
+  type: code
+  name: Find the customer
+  description: Finds a customer by email address, with their recent orders and open tickets.
+  settings:
+    code: |
+      CUSTOMERS = {
+          "maria@example.com": {"name": "Maria", "plan": "member", "orders": ["5521", "5310"], "open_tickets": 0},
+          "sam@example.com": {"name": "Sam", "plan": "guest", "orders": ["4410"], "open_tickets": 1},
+      }
+
+
+      def run(data):
+          """Find the customer who has this email address."""
+          found = CUSTOMERS.get(data["sender"].strip().lower())
+          return {"customer": found or "No customer has this address."}
+- id: drafter
+  type: agent
+  name: Draft a reply
+  settings:
+    instructions: You draft replies for a web shop's support team. Search the help centre, then draft a
+      short, warm reply that only promises what the help centre says. Cite the help centre like [1].
+    input: email
+    tools: [search_help]
+    save_as: draft
+    max_steps: 12
+    addons:
+      max_tool_calls: 3
+- id: search_help
+  type: knowledge_search
+  name: Search the help centre
+  description: Searches the help centre's pages and returns numbered passages to cite.
+  settings:
+    knowledge_base: help_centre
+    query: search_for
+    top_k: 3
+    min_similarity: 0.2
+- id: ticketer
+  type: agent
+  name: Open a ticket
+  settings:
+    instructions: You open tickets for problems the support team has to follow up. Open one ticket
+      with create_ticket, then write a one-line note with its number.
+    input: email
+    tools: [create_ticket]
+    save_as: ticket_note
+    max_steps: 12
+    addons:
+      max_tool_calls: 1
+- id: create_ticket
+  type: code
+  name: Create a ticket
+  description: Opens a ticket for the team and returns its number.
+  settings:
+    code: |
+      import zlib
+
+
+      def run(data):
+          """Open a ticket (a stand-in: it is only numbered; connect your helpdesk's API here)."""
+          number = 1000 + zlib.crc32(data["title"].encode()) % 9000
+          return {"ticket": f"T-{number}", "title": data["title"], "priority": data["priority"]}
+    side_effect: true
+- id: urgent
+  type: decision
+  name: Is it urgent?
+  settings:
+    exits:
+    - label: Urgent
+      when:
+        field: urgency
+        op: equals
+        value: urgent
+    otherwise: Not urgent
+- id: check
+  type: ask_human
+  name: Check the reply
+  settings:
+    kind: edit
+    question: This email is urgent. Check the reply before it goes out.
+    show: [email, summary, customer_note, ticket_note]
+    field: draft
+    save_as: checked
+- id: output
+  type: output
+  name: Output
+  settings:
+    fields:
+    - category
+    - urgency
+    - summary
+    - draft
+    - customer_note
+    - ticket_note
+connections:
+- {from: input, to: sort_prompt}
+- {from: sort_prompt, to: sort}
+- {from: sort, to: supervisor}
+- {from: supervisor, to: lookup, exit: Look up the sender}
+- {from: supervisor, to: drafter, exit: Draft a reply}
+- {from: supervisor, to: ticketer, exit: Open a ticket}
+- {from: supervisor, to: urgent, exit: Done}
+- {from: lookup, to: supervisor}
+- {from: drafter, to: supervisor}
+- {from: ticketer, to: supervisor}
+- {from: urgent, to: check, exit: Urgent}
+- {from: urgent, to: output, exit: Not urgent}
+- {from: check, to: output, exit: Approved}
+- {from: check, to: output, exit: Rejected}
+canvas:
+  steps:
+    input: {x: 0, y: 220}
+    sort_prompt: {x: 260, y: 220}
+    sort: {x: 520, y: 220}
+    supervisor: {x: 800, y: 200}
+    lookup: {x: 1140, y: 0}
+    find_customer: {x: 1140, y: -230}
+    drafter: {x: 1140, y: 220}
+    search_help: {x: 1420, y: 220}
+    ticketer: {x: 1140, y: 440}
+    create_ticket: {x: 1140, y: 660}
+    urgent: {x: 1700, y: 420}
+    check: {x: 2000, y: 400}
+    output: {x: 2320, y: 440}
