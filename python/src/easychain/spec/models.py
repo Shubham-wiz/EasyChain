@@ -267,6 +267,11 @@ class CodeSettings(_Model):
         description="The code changes something elsewhere: run it at most once, even after a "
         "retry or a crash.",
     )
+    network: bool = Field(
+        default=False,
+        description="Let the code reach the internet when it runs in the sandbox (it has no "
+        "network otherwise).",
+    )
 
 
 class CodeStep(_StepBase):

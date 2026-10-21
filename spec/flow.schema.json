@@ -684,6 +684,12 @@
           "description": "The code changes something elsewhere: run it at most once, even after a retry or a crash.",
           "title": "Side Effect",
           "type": "boolean"
+        },
+        "network": {
+          "default": false,
+          "description": "Let the code reach the internet when it runs in the sandbox (it has no network otherwise).",
+          "title": "Network",
+          "type": "boolean"
         }
       },
       "title": "CodeSettings",

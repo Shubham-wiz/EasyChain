@@ -437,6 +437,16 @@ class CodeHandler(StepHandler):
             "a retry or a restart after a crash reuses the first result instead of running it again.",
             technical="idempotency key + LangGraph store",
         ),
+        FormField(
+            key="network",
+            label="Let it use the internet",
+            kind="switch",
+            advanced=True,
+            pro=True,
+            help="Code runs in a sandbox with no network. Turn this on only for code that has to "
+            "call a website or an API itself (a Web request step is usually the better choice).",
+            technical="sandbox network",
+        ),
     ]
 
     def analyse(self, step: Any) -> CodeAnalysis:
@@ -569,6 +579,16 @@ class CodeHandler(StepHandler):
         for req in step.settings.requirements:
             if req not in ctx.extra_requirements:
                 ctx.extra_requirements.append(req)
+        if info.func is not None:
+            # Easy Chain runs this function's code in the sandbox; exported code runs it here.
+            ctx.module.code_functions[user_fn] = {
+                "step": step.id,
+                "code": step.settings.code,
+                "requirements": list(step.settings.requirements),
+                "network": step.settings.network,
+                "timeout": step.run.timeout,
+                "side_effect": bool(once),
+            }
         if not once:
             return StepCode([header + "\n" + code], node=fn)
         wrapper = (

@@ -295,7 +295,15 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
   missing token gets a 404. Uploaded file names are reduced to a safe base name and stored in a
   fresh folder per upload.
 - **Ask a Human questions** can't contain `{secret:…}` placeholders, so reviewers never see secrets.
-- **Code steps run in the worker process with no sandbox** in this phase. See the deviations below.
+- **Code steps run in a sandbox** ([docs/sandbox.md](docs/sandbox.md), `runtime/sandbox.py`):
+  each call is a fresh container started with `docker run`. The container has no network
+  (unless the step asks for it), a read-only file system, no host files, no Easy Chain
+  environment or secrets, and runs as `nobody` with no capabilities. It has memory, CPU,
+  process and time limits, and uses gVisor (`runsc`) when Docker has it. The loader swaps each
+  Code step's module-level function for a proxy (`sandboxed()`), which asks the run's settings
+  at call time, so cached modules serve sandboxed and in-process runs alike. Without Docker,
+  `auto` mode runs Code steps in-process and the check before a run warns; `docker` mode fails
+  closed. Exported code runs Code steps in-process and says so in its header.
 - **Agents** can only call the tools you gave them. Steps that change things keep "send at most
   once", and **Ask a person before …** makes a person approve each call. The check before a run
   warns when an agent's Database query can write.
@@ -332,6 +340,7 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
 | `test_agent.py` | Agent tool calls and their events, approvals (approve, edit, reject) through the Inbox shape, structured answers, add-ons, limits, MCP tools |
 | `test_knowledge.py` | Every file format, chunk provenance, hybrid search and citations on SQLite and on Postgres with pgvector, the API, an agent searching with its own queries, documents cut off by a restart, exported code searching on its own |
 | `test_integrations.py` | Memory (remember, recall, trim, summarise), read-only SQL, MCP over stdio and HTTP and its allow-list, OpenAPI import |
+| `test_sandbox.py` | **Phase 4's sandbox "Done when"**, with real containers: the host's files, the network, Easy Chain's environment and secrets, root and capabilities, the Docker socket, writes outside `/tmp`, a fork bomb, memory and time are all out of reach; errors come back as they were; a flow's Code step runs in the sandbox; the settings API and the check before a run |
 | `packages/client/src/*.test.ts(x)` | The client's SSE handling, errors, reconnecting `wait()`, and the React hook through a pause and an answer |
 
 Tests never call a paid API. `easychain.testing.fake_openai` is a small OpenAI-compatible server
@@ -355,7 +364,7 @@ extras) and locked in `uv.lock`. Exported
 |---|---|---|
 | Postgres for flows, versions, checkpoints; Redis queue; workers | Postgres (or SQLite locally) for runs, events, jobs, versions and Save Points; flows stay YAML files in a workspace folder; the queue is a database table; workers are `easychain worker` processes | Files keep flows git-friendly, and every run still records the exact version it ran. A table queue (`SKIP LOCKED` + advisory locks) needs no extra service; Redis Streams can come later if load needs it. |
 | SQLAlchemy + Alembic | SQLAlchemy Core with `create_all` and a schema version check | There is one schema version so far; Alembic migrations arrive with the first schema change. Startup takes an advisory lock so several processes can start together. |
-| Code modules run in a sandbox | Code steps run in the worker process | Sandboxing (gVisor or microVMs) is Phase 4. Mitigations: localhost-only by default, a single-user local vault, and workers can run in their own containers (Docker Compose does this), which separates them from the API but not from each other's runs. Do not expose the server to untrusted users. |
+| Code modules run in a sandbox | Code steps run in a Docker container per call (gVisor when installed); without Docker they run in-process with a warning, unless the sandbox is set to "Always" | Docker works on Linux, Windows and macOS (decision 4.2) and needs no extra service. A warm pool of containers, microVMs and hosted sandboxes (E2B, Modal) can be added behind the same proxy. In Docker Compose the worker needs the host's Docker socket for this (`docker-compose.sandbox.yml`), which is powerful; it is an opt-in overlay. |
 | Cancel stops a run | Cancel stops the run at once and keeps its Save Points, but a Code step already running in a thread finishes in the background (its result is dropped) | Python can't kill a thread. Time limits on steps bound this. |
 | Show ARCHITECTURE.md, schema and plan before writing feature code; one phase at a time | Phases 0 and 1 were built in one go and reported together ([report](docs/phases/phase-0-1.md)); Phases 2 and 3 followed, each after its report ([Phase 2](docs/phases/phase-2.md), [Phase 3](docs/phases/phase-3.md)) | The request was "take this and build, do testing and all", and each phase's questions were answered with "whatever you think is right" or "continue". |
 | Decision = conditional edge | Decision = a node (no-op for rules; the classifier for AI mode) plus a conditional edge | Keeps one node per step, so the trace, glow and errors map 1:1 to canvas boxes, and AI classification tokens are attributed to the Decision. The routing itself is still a standard conditional edge. |

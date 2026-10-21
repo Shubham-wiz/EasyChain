@@ -127,9 +127,13 @@ def check_value(value: Any, rules: Any) -> list[str]:
     return failures
 
 
-async def run_case(spec: FlowSpec, case: dict[str, Any], stand_in: bool) -> CaseResult:
+async def run_case(
+    spec: FlowSpec, case: dict[str, Any], stand_in: bool, sandbox: Any = None
+) -> CaseResult:
     name = case.get("name") or "case"
-    options = RunOptions(stand_in=stand_in, thread_id=case.get("thread") or uuid.uuid4().hex)
+    options = RunOptions(
+        stand_in=stand_in, thread_id=case.get("thread") or uuid.uuid4().hex, sandbox=sandbox
+    )
     if stand_in and case.get("script"):
         # What the stand-in AI says, turn by turn (a real model ignores this).
         options.script = Script(case["script"])
@@ -198,10 +202,13 @@ async def run_case(spec: FlowSpec, case: dict[str, Any], stand_in: bool) -> Case
 
 
 async def run_test_set(
-    path: str | Path, variables: dict[str, str] | None = None, stand_in: bool | None = None
+    path: str | Path,
+    variables: dict[str, str] | None = None,
+    stand_in: bool | None = None,
+    sandbox: Any = None,
 ) -> list[CaseResult]:
     """Run every case. ``stand_in`` True or False overrides the file's ``stand_in:``; None (the
-    default) follows the file."""
+    default) follows the file. ``sandbox`` is the Code step sandbox (None: EASYCHAIN_SANDBOX)."""
     from .templates.samples import ensure_samples
 
     ensure_samples()
@@ -218,4 +225,4 @@ async def run_test_set(
         ensure_sample_knowledge()
     if stand_in is None:
         stand_in = bool(data.get("stand_in"))
-    return [await run_case(spec, case, stand_in) for case in data.get("cases", [])]
+    return [await run_case(spec, case, stand_in, sandbox) for case in data.get("cases", [])]

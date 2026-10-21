@@ -36,13 +36,15 @@ from pydantic import BaseModel, Field
 
 from .. import __version__
 from ..compiler import CompileError, FlowAnalysis, compile_flow, validate
-from ..compiler.issues import Fix, warning
+from ..compiler.issues import Fix, error, warning
 from ..compiler.templates import secrets as template_secrets
 from ..export import export_zip
 from ..knowledge.store import KnowledgeStore
 from ..providers import EMBEDDING_MODELS, PROVIDERS, flow_models, get_provider
 from ..runtime import key_status
 from ..runtime.resources import open_resources
+from ..runtime.sandbox import SandboxSettings, docker_status, effective_mode
+from ..runtime.sandbox import prepare as prepare_sandbox
 from ..spec import FlowSpec, SpecError, loads_spec, parse_spec, spec_json
 from ..spec.models import SPEC_VERSION
 from ..spec.schema import flow_json_schema
@@ -59,7 +61,7 @@ from .integrations_api import add_integration_routes
 from .knowledge_api import add_knowledge_routes, use_database
 from .secrets import SecretStore, VaultLocked, masked, unmasked
 from .store import FlowNotFound, FlowStore
-from .worker import Worker
+from .worker import Worker, sandbox_settings
 from .worker import fire as fire_trigger
 
 log = logging.getLogger("easychain.server")
@@ -488,13 +490,51 @@ def create_app(
             return [n for v in value for n in _secret_names(v)]
         return []
 
-    def _mcp_servers() -> dict[str, dict[str, Any]]:
-        """The MCP servers in Settings (this runs in a worker thread, so it waits for the
-        database call on the server's event loop)."""
+    def _saved_setting(name: str) -> Any:
+        """A saved setting, read from this worker thread on the server's event loop."""
         try:
-            saved = anyio.from_thread.run(hub().db.get_setting, "mcp", {}) or {}
+            return anyio.from_thread.run(hub().db.get_setting, name, {}) or {}
         except Exception:  # no server loop (a script) or no settings yet
             return {}
+
+    def sandbox_issues(spec: FlowSpec) -> list[Any]:
+        """A Code step will run without the sandbox, or can't run because it is required."""
+        code_steps = [s for s in spec.steps if s.type == "code"]
+        if not code_steps:
+            return []
+        settings = sandbox_settings(_saved_setting("sandbox"))
+        mode = effective_mode(settings)
+        if settings.mode == "off" or mode == "docker":
+            return []
+        reason = docker_status()["reason"] or "Docker can't be used here."
+        fix = Fix("open_settings", "Sandbox settings", {"tab": "sandbox"})
+        if mode == "unavailable":
+            return [
+                error(
+                    "sandbox_unavailable",
+                    f"Code steps must run in the sandbox, but Docker can't be used: {reason}",
+                    step=code_steps[0].id,
+                    setting="code",
+                    hint="Start Docker (Docker Desktop on Windows and macOS), or change the "
+                    "sandbox in Settings.",
+                    fix=fix,
+                )
+            ]
+        return [
+            warning(
+                "sandbox_off",
+                f"Code steps will run in Easy Chain's own process, not in a sandbox: {reason}",
+                step=code_steps[0].id,
+                setting="code",
+                hint="Install and start Docker (Docker Desktop on Windows and macOS) to run "
+                "them in a sandbox. Only run code you trust without one.",
+                fix=fix,
+            )
+        ]
+
+    def _mcp_servers() -> dict[str, dict[str, Any]]:
+        """The MCP servers in Settings."""
+        saved = _saved_setting("mcp")
         return {s.get("id"): s for s in saved.get("servers") or [] if isinstance(s, dict)}
 
     def runtime_issues(spec: FlowSpec, found: list[Any] = ()) -> list[Any]:
@@ -569,7 +609,7 @@ def create_app(
         parsed = _spec_or_422(spec)
         an = FlowAnalysis(parsed, resolve=resolve_flow, flow_id=flow_id)
         issues = validate(parsed, analysis=an)
-        issues += runtime_issues(parsed, issues)
+        issues += runtime_issues(parsed, issues) + sandbox_issues(parsed)
         return {"issues": [i.to_dict() for i in issues], "analysis": an.summary()}
 
     @app.post("/api/compile")
@@ -1001,6 +1041,30 @@ def create_app(
         return {"run_id": run_id, "file": str(target)}
 
     # ── settings: notifications ─────────────────────────────────────────────
+
+    @app.get("/api/settings/sandbox")
+    async def get_sandbox() -> dict[str, Any]:
+        return sandbox_settings(await hub().db.get_setting("sandbox", {})).to_dict()
+
+    @app.put("/api/settings/sandbox")
+    async def set_sandbox(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        try:
+            settings = SandboxSettings.from_dict(body)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(422, detail={"message": str(exc)}) from None
+        await hub().db.set_setting("sandbox", settings.to_dict())
+        return settings.to_dict()
+
+    @app.get("/api/sandbox/status")
+    async def sandbox_status(refresh: bool = False) -> dict[str, Any]:
+        settings = sandbox_settings(await hub().db.get_setting("sandbox", {}))
+        status = await asyncio.to_thread(docker_status, refresh)
+        return {**status, "mode": settings.mode, "effective": effective_mode(settings)}
+
+    @app.post("/api/sandbox/prepare")
+    async def sandbox_prepare() -> dict[str, Any]:
+        settings = sandbox_settings(await hub().db.get_setting("sandbox", {}))
+        return await asyncio.to_thread(prepare_sandbox, settings)
 
     @app.get("/api/settings/notifications")
     async def get_notifications() -> dict[str, Any]:

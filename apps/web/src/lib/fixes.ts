@@ -4,7 +4,7 @@ import { stepInfo } from "../state/catalog";
 import { useCheck } from "../state/check";
 import { useFlow } from "../state/flow";
 import { attachRun } from "../state/run";
-import { useUi } from "../state/ui";
+import { useUi, type SettingsTab } from "../state/ui";
 import { addStep, createStep, getStep, insertBefore, nextFreePosition, renameStepId, renameVariable, updateSettings } from "./spec";
 import type { Fix } from "./types";
 
@@ -18,6 +18,9 @@ export function applyFix(fix: Fix, stepId?: string, rerun?: () => void) {
       return;
     case "add_secret":
       ui.openSettings({ secret: String(p.name ?? "") });
+      return;
+    case "open_settings":
+      ui.openSettings({ tab: (p.tab as SettingsTab | undefined) ?? "keys" });
       return;
     case "use_stand_in":
       ui.setStandIn(true);

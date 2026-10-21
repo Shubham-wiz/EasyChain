@@ -8,6 +8,12 @@
 #
 # Keys can be added in the app (Settings → API keys; stored encrypted in the data volume)
 # or passed in from your shell / a .env file next to this file.
+#
+# Code steps run in a sandbox (a throwaway container) when the worker can use Docker. Add the
+# sandbox overlay for that (it gives the worker the host's Docker socket):
+#   DOCKER_GID=$(getent group docker | cut -d: -f3) \
+#     docker compose -f docker-compose.yml -f docker-compose.sandbox.yml up
+# Without it, Code steps run inside the worker and the check before a run says so.
 x-easychain-env: &easychain-env
   EASYCHAIN_DATABASE_URL: postgresql://easychain:${POSTGRES_PASSWORD:-easychain}@db:5432/easychain
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}

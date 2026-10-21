@@ -224,6 +224,8 @@ class RunOptions:
     script: Any = None
     # MCP server connections (Settings → MCP servers); None reads EASYCHAIN_MCP_SERVERS.
     mcp: dict[str, Any] | None = None
+    # How Code steps are sandboxed (Settings → Sandbox); None reads EASYCHAIN_SANDBOX.
+    sandbox: Any = None
 
 
 def _now() -> float:
@@ -456,7 +458,9 @@ async def stream_run(
             prepared.setdefault(name, value)
 
     res = opts.resources or memory_resources()
-    module, graph = await asyncio.to_thread(load_graph, compiled.source, compiled.module_name, res)
+    module, graph = await asyncio.to_thread(
+        load_graph, compiled.source, compiled.module_name, res, compiled.code_functions
+    )
     tracker = UsageTracker()
     config: dict[str, Any] = {
         "configurable": {"thread_id": thread_id},
@@ -623,7 +627,9 @@ async def stream_run(
         except BaseException as exc:  # handed to the consumer below
             await queue.put(("error", exc))
 
-    token = use_settings(RunSettings(stand_in=opts.stand_in, script=opts.script, mcp=opts.mcp))
+    token = use_settings(
+        RunSettings(stand_in=opts.stand_in, script=opts.script, mcp=opts.mcp, sandbox=opts.sandbox)
+    )
     producer = asyncio.create_task(produce())
     stop_wait = asyncio.create_task(opts.cancel.wait()) if opts.cancel else None
     cancelled = False

@@ -8,6 +8,8 @@ It needs only LangChain and LangGraph:
 `python agent_with_tools.py '<inputs as JSON>'`.
 
 The compiled graph is `graph`; call `build_graph(checkpointer=...)` to keep Save Points.
+Code steps run in this process here. Easy Chain runs them in a sandbox (a
+locked-down container); run this only with code you trust.
 Ask a Human steps and tool approvals pause the run (LangGraph interrupt); resume with
 Command(resume=...).
 Some steps are async (time limits, MCP), so call it with `await graph.ainvoke(...)`.

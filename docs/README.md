@@ -10,6 +10,7 @@ Start with the [project README](../README.md). This page lists every document.
 | [runs.md](runs.md) | How runs work: workers, Save Points, Ask a Human and the Inbox, triggers, notifications, the runs API and events |
 | [agents.md](agents.md) | Agents and tools: steps as tools, Add-ons, MCP servers, Import an API, structured answers, testing agents |
 | [knowledge.md](knowledge.md) | Knowledge Bases: adding documents, search modes, citations, storage, the API |
+| [sandbox.md](sandbox.md) | The Code step sandbox: what code can't do, what it needs, settings, Docker Compose |
 | [steps/](steps) | One page per step type (below) |
 
 ### Steps

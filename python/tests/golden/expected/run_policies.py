@@ -9,6 +9,8 @@ It needs only LangChain and LangGraph:
 `python run_policies.py '<inputs as JSON>'`.
 
 The compiled graph is `graph`; call `build_graph(checkpointer=...)` to keep Save Points.
+Code steps run in this process here. Easy Chain runs them in a sandbox (a
+locked-down container); run this only with code you trust.
 Some steps are async (time limits, MCP), so call it with `await graph.ainvoke(...)`.
 """
 

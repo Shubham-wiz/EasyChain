@@ -315,7 +315,11 @@ class Hub:
         spec, children = await self.flow_from_version(run["version_id"])
         compiled = compile_cached(spec, children.get, run["flow_id"])
         _, graph = await asyncio.to_thread(
-            load_graph, compiled.source, compiled.module_name, self.resources
+            load_graph,
+            compiled.source,
+            compiled.module_name,
+            self.resources,
+            compiled.code_functions,
         )
         return graph
 

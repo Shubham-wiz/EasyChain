@@ -91,6 +91,8 @@ class ModuleContext:
         self.child_order: list[str] = []
         # Steps already wrapped as agent tools: (flow prefix, step id) -> factory name.
         self.agent_tools: dict[tuple[str, str], str] = {}
+        # Code steps' functions (module-level names) and what the sandbox needs to run them.
+        self.code_functions: dict[str, dict[str, Any]] = {}
 
     def helper(self, name: str) -> str:
         helper = HELPERS[name]
@@ -223,6 +225,9 @@ class CompiledFlow:
     subflows: list[str] = field(default_factory=list)
     # Sub-flows compiled into this module, by flow id.
     children: dict[str, FlowParts] = field(default_factory=dict, repr=False)
+    # Code steps' module-level functions -> {"step", "code", "requirements", "network",
+    # "timeout"}: Easy Chain runs these in the sandbox (runtime/sandbox.py).
+    code_functions: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 def compile_flow(
@@ -425,6 +430,7 @@ def _emit_module(spec: FlowSpec, an: FlowAnalysis, issues: list[Issue]) -> Compi
         is_async=module.has_async,
         subflows=list(module.child_order),
         children=dict(module.children),
+        code_functions=dict(module.code_functions),
     )
 
 
@@ -447,6 +453,11 @@ def _emit_header(spec: FlowSpec, mod: str, an: FlowAnalysis, module: ModuleConte
         "",
         "The compiled graph is `graph`; call `build_graph(checkpointer=...)` to keep Save Points.",
     ]
+    if module.code_functions:
+        lines += [
+            "Code steps run in this process here. Easy Chain runs them in a sandbox (a",
+            "locked-down container); run this only with code you trust.",
+        ]
     if module.has_interrupts:
         lines.append(
             "Ask a Human steps and tool approvals pause the run (LangGraph interrupt); resume with"

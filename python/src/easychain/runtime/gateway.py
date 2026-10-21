@@ -18,6 +18,7 @@ from langchain.embeddings import init_embeddings as _init_embeddings
 
 from ..knowledge.embeddings import KeywordEmbeddings
 from ..providers import EMBEDDING_MODELS, PROVIDERS, split_model
+from .sandbox import SandboxSettings, settings_from_env
 from .standin import Script, StandInChatModel
 
 
@@ -45,6 +46,8 @@ class RunSettings:
     script: Script | None = None
     # MCP server connections from Settings (None: use EASYCHAIN_MCP_SERVERS).
     mcp: dict[str, Any] | None = None
+    # How Code steps are sandboxed (None: EASYCHAIN_SANDBOX, by default "auto").
+    sandbox: SandboxSettings | None = None
 
 
 _DEFAULT = RunSettings()
@@ -61,6 +64,11 @@ def reset_settings(token: Any) -> None:
 
 def current_settings() -> RunSettings:
     return _settings.get() or _DEFAULT
+
+
+def current_sandbox() -> SandboxSettings:
+    """The sandbox settings of the run in progress (or from the environment)."""
+    return current_settings().sandbox or settings_from_env()
 
 
 def key_status() -> dict[str, bool]:

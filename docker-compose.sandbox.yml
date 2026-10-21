@@ -1,0 +1,23 @@
+# Run Code steps in a sandbox: each call gets a throwaway, locked-down container (no network,
+# no host files, limits on memory, time and processes). Use it on top of docker-compose.yml:
+#
+#   DOCKER_GID=$(getent group docker | cut -d: -f3) \
+#     docker compose -f docker-compose.yml -f docker-compose.sandbox.yml up
+#
+# The worker (and the API, for Settings → Sandbox) get the host's Docker socket. That lets them
+# start containers, which is as powerful as root on this machine: run Easy Chain only where you
+# trust who can reach it. The sandbox containers themselves never see the socket.
+# On Docker Desktop (Windows, macOS) DOCKER_GID can be left out.
+x-sandbox: &sandbox
+  environment:
+    # "docker": Code steps never run outside the sandbox; they fail if Docker can't be used.
+    EASYCHAIN_SANDBOX: docker
+  volumes:
+    # Added to the services' own volumes (Compose merges them by target).
+    - /var/run/docker.sock:/var/run/docker.sock
+  group_add:
+    - "${DOCKER_GID:-0}"
+
+services:
+  easychain: *sandbox
+  worker: *sandbox

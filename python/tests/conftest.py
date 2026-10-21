@@ -9,9 +9,13 @@ from typing import Any
 
 import pytest
 
-from easychain import _platform
-from easychain.spec import FlowSpec, parse_spec
-from easychain.testing.fake_openai import FakeOpenAI
+# Code steps run in Easy Chain's process in tests; test_sandbox.py turns the sandbox on itself
+# (with real containers, when Docker is there). Set before easychain is imported.
+os.environ["EASYCHAIN_SANDBOX"] = "off"
+
+from easychain import _platform  # noqa: E402
+from easychain.spec import FlowSpec, parse_spec  # noqa: E402
+from easychain.testing.fake_openai import FakeOpenAI  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 TEMPLATES = Path(__file__).resolve().parents[1] / "src" / "easychain" / "templates"

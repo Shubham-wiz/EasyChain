@@ -170,6 +170,14 @@ def _parse_inputs(args: argparse.Namespace) -> dict[str, Any]:
     return inputs
 
 
+def _sandbox(args: argparse.Namespace) -> Any:
+    """--sandbox auto|docker|off, else EASYCHAIN_SANDBOX (by default auto)."""
+    from .runtime.sandbox import SandboxSettings
+
+    mode = getattr(args, "sandbox", None)
+    return SandboxSettings.from_dict({"mode": mode} if mode else {})
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     from .runtime import RunOptions, stream_run
     from .templates.samples import ensure_samples
@@ -182,6 +190,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         stand_in=args.stand_in,
         resolve=file_resolver(args.file),
         flow_id=_flow_id(args.file),
+        sandbox=_sandbox(args),
     )
     printer = _RunPrinter(spec, args)
 
@@ -364,7 +373,9 @@ def cmd_test(args: argparse.Namespace) -> int:
 
     variables = dict(v.split("=", 1) for v in args.var or [])
     stand_in = True if args.stand_in else False if args.real_model else None
-    results = _platform.run(run_test_set(args.file, variables, stand_in=stand_in))
+    results = _platform.run(
+        run_test_set(args.file, variables, stand_in=stand_in, sandbox=_sandbox(args))
+    )
     passed = sum(r.passed for r in results)
     for r in results:
         print(f"{'✓' if r.passed else '✗'} {r.name}")
@@ -458,6 +469,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--events", action="store_true", help="print every run event as JSON lines")
     p.add_argument("-q", "--quiet", action="store_true")
+    p.add_argument(
+        "--sandbox",
+        choices=["auto", "docker", "off"],
+        help="where Code steps run: auto (Docker when it's there; the default, or "
+        "EASYCHAIN_SANDBOX), docker (always), off (in this process)",
+    )
     p.set_defaults(func=cmd_run)
 
     p = sub.add_parser("test", help="run a Test Set file against its flow")
@@ -471,6 +488,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--real-model",
         action="store_true",
         help="use the flow's real model even if the file says stand_in: true (needs a key)",
+    )
+    p.add_argument(
+        "--sandbox",
+        choices=["auto", "docker", "off"],
+        help="where Code steps run: auto (Docker when it's there; the default, or "
+        "EASYCHAIN_SANDBOX), docker (always), off (in this process)",
     )
     p.set_defaults(func=cmd_test)
 

@@ -16,6 +16,9 @@ RUN pnpm --filter @easychain/web build
 
 FROM python:3.12-slim AS app
 RUN pip install --no-cache-dir uv==0.8.17
+# The Docker command line, for the Code step sandbox (docker-compose.sandbox.yml gives the
+# worker the host's Docker; without it, Code steps run in-process and the checks say so).
+COPY --from=docker:27-cli /usr/local/bin/docker /usr/local/bin/docker
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/opt/venv PATH=/opt/venv/bin:$PATH
 WORKDIR /app/python
 COPY python/pyproject.toml python/uv.lock python/README.md ./

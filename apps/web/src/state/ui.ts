@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 export type Mode = "beginner" | "pro";
-export type SettingsTab = "keys" | "mcp" | "notifications";
+export type SettingsTab = "keys" | "mcp" | "notifications" | "sandbox";
 type Theme = "light" | "dark";
 export type RightTab = "inspect" | "run";
 

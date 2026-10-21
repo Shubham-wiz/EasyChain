@@ -544,3 +544,24 @@ export interface OpenApiInspection {
   server: string;
   operations: OpenApiOperation[];
 }
+
+/** How Code steps are sandboxed (Settings → Sandbox). */
+export interface SandboxSettings {
+  mode: "auto" | "docker" | "off";
+  image: string;
+  runtime: "auto" | "runc" | "runsc";
+  memory_mb: number;
+  cpus: number;
+  pids: number;
+  timeout: number;
+}
+
+export interface SandboxStatus {
+  available: boolean;
+  reason: string | null;
+  version: string | null;
+  gvisor: boolean;
+  mode: SandboxSettings["mode"];
+  /** "docker": Code steps run in the sandbox; "off": in Easy Chain's process; "unavailable": required but no Docker. */
+  effective: "docker" | "off" | "unavailable";
+}

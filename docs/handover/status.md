@@ -1,15 +1,15 @@
 # Status
 
-_Last updated: 2026-10-21 (the code review is done; Phase 4 starts with the Code sandbox)._
+_Last updated: 2026-10-21 (Phase 4 in progress: the Code sandbox is done; the Deep Agent step is next)._
 
 ## In one paragraph
 
-Phases 0 to 3 are built, tested and reported, and each met its "Done when". The first CI run on
-GitHub passed. A full code review ([review.md](review.md)) followed, and the owner asked for two
-things before Phase 4 (decisions R.4, R.5): Easy Chain must run on **Windows as well as Linux**,
-and the review's serious findings get fixed first. Windows support is done (CI now tests both),
-and the data-loss and security fixes are being worked through; review.md tracks which are done.
-The Phase 4 questions are answered (decisions 4.1–4.3), so Phase 4 starts after the review fixes.
+Phases 0 to 3 are built, tested and reported, and each met its "Done when". After Phase 3, a
+full code review ([review.md](review.md)) was worked through, and Easy Chain now runs on
+**Windows as well as Linux** (decisions R.4, R.5). **Phase 4 (Autopilot and teams) is in
+progress**, with its questions answered (decisions 4.1–4.3). Its first milestone, the **Code
+step sandbox**, is done: Code steps run in a locked-down Docker container per call, and escape
+tests prove they can't get out. The Deep Agent step is next.
 
 ## Pick up here
 
@@ -25,8 +25,8 @@ _Updated 2026-10-09 so work can carry on from another machine or session._
 3. **The review is done** ([review.md](review.md)). Two items are left on purpose. The address
    filter for server-side fetches comes with the egress allow-list in Phase 5. Before a
    release, run the agent templates' Test Sets with a real model (`--real-model`).
-4. **Then Phase 4** ([ROADMAP.md](../ROADMAP.md#phase-4-autopilot-and-teams)); its questions are
-   answered (decisions 4.1–4.3).
+4. **Phase 4** ([ROADMAP.md](../ROADMAP.md#phase-4-autopilot-and-teams)): 4.1 (the Code
+   sandbox) is done. Carry on with 4.2, the Deep Agent step.
 
 ## Phases
 
@@ -37,7 +37,7 @@ _Updated 2026-10-09 so work can carry on from another machine or session._
 | 2. Real runtime | Flow Data, loops, parallel joins, For Each, Sub-flows, Jump, Ask a Human, Inbox, Save Points, time travel, workers, triggers, notifications | Done | [phase-2.md](../phases/phase-2.md) |
 | 3. Agents and knowledge | Agent step + add-ons, MCP, OpenAPI import, structured output, Knowledge Base, memory, all providers | Done | [phase-3.md](../phases/phase-3.md) |
 | Review fixes | Windows support; the findings of the 2026-10-04 review | Done (two items scheduled elsewhere, see review.md) | [review.md](review.md) |
-| 4. Autopilot and teams | Deep Agents, Helpers, Skills, sandboxes, multi-agent patterns, describe-it copilot | Next (questions answered: decisions 4.1–4.3) | plan in [ROADMAP.md](../ROADMAP.md#phase-4-autopilot-and-teams) |
+| 4. Autopilot and teams | Deep Agents, Helpers, Skills, sandboxes, multi-agent patterns, describe-it copilot | **In progress**: 4.1 Code sandbox done ([docs/sandbox.md](../sandbox.md)); 4.2 Deep Agent next | plan in [ROADMAP.md](../ROADMAP.md#phase-4-autopilot-and-teams) |
 | 5. Platform | Test Sets and Checks, Test Runs, CI gate, dashboards, model gateway, Publish, environments, roles, SSO | Not started | |
 | 6. Ecosystem | LangGraph.js export, custom module registry, import, collaboration, prompt optimisation, Helm | Not started | |
 
@@ -47,9 +47,9 @@ _Updated 2026-10-09 so work can carry on from another machine or session._
 
 | Suite | Result (2026-10-21) |
 |---|---|
-| Python on Linux (`pnpm test`, and CI) | 416 pass, with SQLite and Postgres (+ pgvector in CI) |
+| Python on Linux (`pnpm test`, and CI) | 434 pass, with SQLite, Postgres (+ pgvector in CI) and Docker (the sandbox escape tests; skipped without Docker) |
 | Python on Windows 11 (CI) | all pass |
-| Web unit (vitest) | 65 passed |
+| Web unit (vitest) | 69 passed |
 | Client package (vitest) | 11 passed |
 | Playwright e2e | 33 passed (Linux); the screenshot spec runs only with `SCREENSHOTS=1` |
 | Template Test Sets | all 8 pass (`tests/test_templates.py`), with the stand-in AI and scripted turns |
@@ -60,8 +60,8 @@ Compose, and **Windows** (Python suite, CLI and worker, web checks, the app serv
 
 ## Next
 
-1. **Phase 4**, in this order: sandboxes for Code steps (Docker, gVisor where installed;
-   Docker Desktop on Windows), the Deep Agent step, Helpers, Skills, multi-agent patterns, the
+1. **Phase 4**, in this order: ~~sandboxes for Code steps~~ (done: `runtime/sandbox.py`,
+   [docs/sandbox.md](../sandbox.md)), the Deep Agent step, Helpers, Skills, multi-agent patterns, the
    describe-it copilot, then the Research assistant and Inbox triage templates.
 
 ## GitHub
@@ -77,10 +77,10 @@ Compose, and **Windows** (Python suite, CLI and worker, web checks, the app serv
 
 These are listed in full in the phase reports and review.md. The ones that matter next:
 
-- Code steps run unsandboxed, in the worker (sandboxing is the first Phase 4 item). Agents can
-  call Code tools, so keep the server on localhost and use approvals. There is no login (Phase 5);
-  the API now refuses other sites' pages (Host and Origin checks), but anything on this machine
-  can still call it.
+- Code steps run in the sandbox only where Docker is available (the check before a run warns
+  otherwise). In Docker Compose, that takes the `docker-compose.sandbox.yml` overlay.
+- There is no login (Phase 5). The API refuses other sites' pages (Host and Origin checks), but
+  anything on this machine can still call it.
 - Knowledge Base documents are ingested in the API server, not on the job queue; no OCR.
 - Schema migrations: there is one schema version, created with `create_all`. Add Alembic with
   the first schema change.

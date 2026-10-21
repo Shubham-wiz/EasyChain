@@ -40,7 +40,15 @@ phases:
     tracker: docs/handover/review.md
   - id: 4
     name: Autopilot and teams
-    state: next
+    state: in_progress
+    milestones:
+      "4.1 Code sandbox": done   # runtime/sandbox.py, docs/sandbox.md, tests/test_sandbox.py (escape tests)
+      "4.2 Deep Agent step": next
+      "4.3 Helpers": pending
+      "4.4 Skills": pending
+      "4.5 Multi-agent patterns": pending
+      "4.6 Describe-it copilot": pending
+      "4.7 Templates and report": pending
     plan: docs/ROADMAP.md#phase-4-autopilot-and-teams
     done_when: "A Research assistant template (Deep Agent + Helpers) passes a 10-case Test Set, and Code steps can't escape their sandbox"
     sandbox: "Docker, gVisor where installed (decision 4.2)"
@@ -60,8 +68,8 @@ open_questions: []
 
 tests:
   measured_at: 2026-10-21, after the last review items
-  python: {passed: 416, skipped: 0, on: "Linux with SQLite and Postgres; Windows and Linux in CI"}
-  web_unit: {passed: 65}
+  python: {passed: 434, skipped: 0, on: "Linux with SQLite, Postgres and Docker (the sandbox tests); Windows and Linux in CI"}
+  web_unit: {passed: 69}
   client: {passed: 11}
   e2e: {passed: 33, skipped_unless_SCREENSHOTS: 1, on: "Linux (CI)"}
   template_test_sets: {support-bot: "12/12", sql-analyst: "10/10", others: all pass}

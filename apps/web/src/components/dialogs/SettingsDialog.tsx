@@ -7,6 +7,7 @@ import { useUi, type SettingsTab } from "../../state/ui";
 import { Badge, Button, Dialog, Input, Tabs, TabsContent, TabsList, TabsTrigger } from "../ui";
 import { McpSection } from "./McpServers";
 import { NotificationsSection } from "./Notifications";
+import { SandboxSection } from "./Sandbox";
 
 function KeyRow({
   env,
@@ -239,6 +240,7 @@ export function SettingsDialog() {
           <TabsTrigger value="keys">Keys and providers</TabsTrigger>
           <TabsTrigger value="mcp">MCP servers</TabsTrigger>
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
+          <TabsTrigger value="sandbox">Sandbox</TabsTrigger>
         </TabsList>
         <TabsContent value="keys" className="pt-4">
           {settings.open && tab === "keys" && <KeysSection />}
@@ -248,6 +250,9 @@ export function SettingsDialog() {
         </TabsContent>
         <TabsContent value="notifications" className="pt-4">
           {settings.open && tab === "notifications" && <NotificationsSection />}
+        </TabsContent>
+        <TabsContent value="sandbox" className="pt-4">
+          {settings.open && tab === "sandbox" && <SandboxSection />}
         </TabsContent>
       </Tabs>
     </Dialog>

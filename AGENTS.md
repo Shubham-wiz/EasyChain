@@ -143,5 +143,9 @@ most likely to bite:
   the Agent has two target handles. React Flow puts an edge with no handle id on the **first**
   source handle in the DOM, so the right-hand handle must come first in `StepNode.tsx`; e2e
   selectors use `.source:not(.tool-handle)` / `.target:not(.tools-handle)`.
+- Pass a compile result's `code_functions` to every `load_graph` call. Modules are cached by
+  source, and only one loaded with them runs Code steps in the sandbox. Tests run with
+  `EASYCHAIN_SANDBOX=off` (set in `tests/conftest.py`); `test_sandbox.py` turns it on and needs
+  Docker (it is skipped without it).
 - `easychain test` on a Test Set that uses `${base_url}` needs the fake server running and
   `--var base_url=http://127.0.0.1:PORT`; without it those cases fail for the wrong reason.

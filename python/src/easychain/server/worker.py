@@ -24,6 +24,7 @@ from typing import Any
 from ..runtime import RunOptions, stream_run
 from ..runtime.loader import load_graph
 from ..runtime.runner import compile_cached
+from ..runtime.sandbox import SandboxSettings
 from ..spec import FlowSpec
 from . import notify
 from .cron import CronError, next_fire
@@ -287,6 +288,7 @@ class Worker:
         mcp = mcp_connections(await self.db.get_setting("mcp", {}) or {})
         opts = RunOptions(
             mcp=mcp,
+            sandbox=sandbox_settings(await self.db.get_setting("sandbox", {})),
             thread_id=run["thread_id"],
             run_id=run["id"],
             stand_in=bool(options.get("stand_in")),
@@ -409,7 +411,11 @@ class Worker:
     ) -> Any:
         compiled = compile_cached(spec, children.get, flow_id)
         _, graph = await asyncio.to_thread(
-            load_graph, compiled.source, compiled.module_name, self.hub.resources
+            load_graph,
+            compiled.source,
+            compiled.module_name,
+            self.hub.resources,
+            compiled.code_functions,
         )
         return graph
 
@@ -637,3 +643,12 @@ async def fire(hub: Hub, trig: dict[str, Any], data: dict[str, Any], **extra: An
     )
     await hub.db.update_trigger(trig["id"], last_fired_at=time.time(), last_run_id=run_id)
     return run_id
+
+
+def sandbox_settings(saved: dict[str, Any] | None) -> SandboxSettings:
+    """The sandbox as Settings say (EASYCHAIN_SANDBOX* fill in what isn't set there). Saved
+    settings that no longer check out fall back to the environment's."""
+    try:
+        return SandboxSettings.from_dict(saved or {})
+    except (TypeError, ValueError):
+        return SandboxSettings.from_dict({})

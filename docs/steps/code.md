@@ -59,6 +59,10 @@ def run(data):
 
 - `run` must be a normal function (not `async`) that takes one argument.
 - Names that the generated file already uses (such as `graph` or `fill`) can't be redefined.
-- **Code runs inside the Easy Chain server process, without a sandbox.** Sandboxed execution
-  (containers or microVMs with CPU, memory, time and network limits) comes in Phase 4. Only run
-  code you trust.
+- **In Easy Chain, code runs in a [sandbox](../sandbox.md)** when Docker is available: a fresh
+  container with no network, none of this computer's files or secrets, and limits on memory,
+  time and processes. Flow Data comes in as plain values (chat messages as dicts that also allow
+  `message.content`). Without Docker it runs in-process, and the check before a run says so.
+- Only Python's standard library is in the sandbox: list other packages under **Packages**
+  (Pro). Turn on **Let it use the internet** (Pro, *More options*) for code that calls a website
+  itself. Exported code runs Code steps in its own process.

@@ -183,3 +183,11 @@ jobs:
           curl -sf localhost:8000/api/health | grep -q '"database":"postgresql"'
           ./scripts/compose-smoke.sh
           docker compose down -v
+      - name: Compose with the sandbox runs Code steps in containers
+        run: |
+          export DOCKER_GID=$(getent group docker | cut -d: -f3)
+          docker compose -f docker-compose.yml -f docker-compose.sandbox.yml up -d --build
+          for i in $(seq 1 60); do curl -sf localhost:8000/api/health && break; sleep 2; done
+          curl -sf localhost:8000/api/sandbox/status | grep -q '"effective":"docker"'
+          EXPECT_SANDBOX=1 ./scripts/compose-smoke.sh
+          docker compose -f docker-compose.yml -f docker-compose.sandbox.yml down -v

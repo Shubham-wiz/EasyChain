@@ -48,7 +48,7 @@ src/easychain/
   spec/          the flow spec: Pydantic models (models.py), YAML in/out (io.py), JSON Schema (schema.py)
   steps/         one handler per step type: form, reads/writes, checks, code emitter
   compiler/      flow spec → LangGraph Python source
-  runtime/       load and run compiled code; model gateway; stand-in AI; events
+  runtime/       load and run compiled code; model gateway; stand-in AI; events; Code sandbox
   server/        FastAPI app, run database, job queue and workers, Inbox, triggers, notifications
   knowledge/     Knowledge Bases: reading files, splitting, embeddings, storage, hybrid search; memory
   integrations/  read-only SQL, MCP client, OpenAPI import
@@ -114,7 +114,8 @@ pauses. It starts, resumes, continues and forks runs, with breakpoints and cance
 `gateway.py` replaces `init_chat_model`, `init_embeddings` and the MCP tool loader in the loaded
 module. It checks keys and installed packages, and hands back the stand-in AI
 (`standin.py`) when asked. `errors.py` turns exceptions into messages people can act on, and
-`inputs.py` checks run inputs.
+`inputs.py` checks run inputs. `sandbox.py` runs Code steps in a locked-down Docker container
+per call (gVisor when Docker has it); the loader swaps each Code step's function for its proxy.
 
 ### `server/`: the API, the queue and the workers
 
@@ -169,6 +170,8 @@ See [docs/knowledge.md](../docs/knowledge.md) and [docs/agents.md](../docs/agent
 | `EASYCHAIN_SECRET_KEY` | Key for the secrets vault (otherwise `secret.key` in the data folder). |
 | `EASYCHAIN_PUBLIC_URL` | Base URL for links in notifications. |
 | `EASYCHAIN_WEB_DIST` | Folder with the built web app to serve. |
+| `EASYCHAIN_SANDBOX` | Where Code steps run: `auto` (in a Docker container when Docker is there; the default), `docker` (always), `off` (in-process). Settings → Sandbox overrides it. See [docs/sandbox.md](../docs/sandbox.md). |
+| `EASYCHAIN_SANDBOX_IMAGE`, `EASYCHAIN_SANDBOX_RUNTIME` | The sandbox image (default `python:3.12-slim`) and container runtime (`auto`: gVisor when Docker has it). |
 | `EASYCHAIN_MCP_SERVERS` | MCP servers for exported code: JSON `{"<server id>": {"transport": …, "url" or "command": …}}` (see docs/steps/mcp_tool.md). |
 | `EASYCHAIN_ALLOWED_HOSTS` | More host names the API answers to (comma-separated; `*.example.com`; `*` for any), e.g. behind a reverse proxy. |
 | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, … | Provider keys (or set them in the app; they go in the vault). |

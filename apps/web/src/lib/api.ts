@@ -1,31 +1,4 @@
-import type {
-  Catalog,
-  CheckResult,
-  ChunkPreview,
-  KnowledgeBase,
-  KnowledgeDocument,
-  KnowledgeHit,
-  McpServer,
-  McpSettings,
-  McpTool,
-  OpenApiInspection,
-  Step,
-  DataField,
-  CompileResult,
-  FlowListItem,
-  FlowSpec,
-  FlowVersion,
-  InboxItem,
-  NotificationSettings,
-  RunEvent,
-  RunSummary,
-  SavePoint,
-  SecretInfo,
-  TemplateInfo,
-  ThreadInfo,
-  Trigger,
-  TriggerKind,
-} from "./types";
+import type { Catalog, CheckResult, ChunkPreview, CompileResult, DataField, FlowListItem, FlowSpec, FlowVersion, InboxItem, KnowledgeBase, KnowledgeDocument, KnowledgeHit, McpServer, McpSettings, McpTool, NotificationSettings, OpenApiInspection, RunEvent, RunSummary, SandboxSettings, SandboxStatus, SavePoint, SecretInfo, Step, TemplateInfo, ThreadInfo, Trigger, TriggerKind } from "./types";
 
 export class ApiError extends Error {
   status: number;
@@ -169,6 +142,10 @@ export const api = {
   },
 
   // MCP servers and OpenAPI import
+  sandboxSettings: () => request<SandboxSettings>("/api/settings/sandbox"),
+  saveSandboxSettings: (body: SandboxSettings) => request<SandboxSettings>("/api/settings/sandbox", { method: "PUT", ...json(body) }),
+  sandboxStatus: (refresh = false) => request<SandboxStatus>(`/api/sandbox/status${refresh ? "?refresh=true" : ""}`),
+  prepareSandbox: () => request<{ ok: boolean; message: string }>("/api/sandbox/prepare", { method: "POST" }),
   mcpSettings: () => request<McpSettings>("/api/settings/mcp"),
   saveMcpSettings: (body: McpSettings) => request<McpSettings>("/api/settings/mcp", { method: "PUT", ...json(body) }),
   mcpTools: (server: { server_id?: string; server?: McpServer }) =>
