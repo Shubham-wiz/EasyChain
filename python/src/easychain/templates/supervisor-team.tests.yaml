@@ -1,0 +1,146 @@
+# Test Set for Support team (supervisor). The stand-in AI plays the supervisor's choices and the
+# specialists' turns; the routes, the tools, the notes and the round limit are real.
+flow: supervisor-team.flow.yaml
+stand_in: true
+cases:
+- name: A billing question goes to Billing, then the reply is written
+  inputs: {request: "I was charged twice for invoice 1042."}
+  script:
+  - Billing
+  - {call: find_invoices, args: {}}
+  - Invoice 1042 was paid twice on 3 May. I refunded the second payment.
+  - Finish
+  - Sorry about the double charge on invoice 1042. We refunded the second payment.
+  expect:
+    steps: [billing, reply]
+    tools: [find_invoices]
+    not_tools: [check_status, send_reset_link]
+    route: {supervisor: Finish}
+    output.billing_note: {contains: "1042"}
+    output.technical_note: null
+    output.answer: {contains: refunded}
+- name: Two problems go to two specialists, one after the other
+  inputs: {request: "I was charged twice this month, and now I can't sign in."}
+  script:
+  - Billing
+  - {call: find_invoices, args: {}}
+  - Invoice 1042 was paid twice; the second payment is refunded.
+  - Accounts
+  - {call: send_reset_link, args: {}}
+  - Sent a password reset link to the customer's email.
+  - Finish
+  - We refunded the double payment and sent you a link to choose a new password.
+  expect:
+    steps: [billing, accounts, reply]
+    tools: [find_invoices, send_reset_link]
+    not_tools: [check_status]
+    tool_calls: 2
+    output.billing_note: {contains: refunded}
+    output.accounts_note: {contains: reset link}
+    output.answer: {contains: [refunded, password]}
+- name: A slow export goes to Technical
+  inputs: {request: "Exporting my report has been spinning for an hour."}
+  script:
+  - Technical
+  - {call: check_status, args: {}}
+  - Exports have been slow since 09:00; the team is on it. Smaller exports still work.
+  - Finish
+  - Exports are slow today and we're fixing it. A smaller export works in the meantime.
+  expect:
+    steps: [technical]
+    tools: [check_status]
+    not_tools: [find_invoices, send_reset_link]
+    output.technical_note: {contains: slow}
+    output.answer: {contains: slow}
+- name: A sign-in problem goes to Accounts
+  inputs: {request: "I forgot my password."}
+  script:
+  - Accounts
+  - {call: send_reset_link, args: {}}
+  - Sent a reset link.
+  - Finish
+  - We've emailed you a link to choose a new password.
+  expect:
+    steps: [accounts]
+    tools: [send_reset_link]
+    output.accounts_note: {contains: reset}
+    output.billing_note: null
+- name: A request for all three specialists
+  inputs: {request: "Double charge, the export is broken, and my colleague can't sign in."}
+  script:
+  - Billing
+  - {call: find_invoices, args: {}}
+  - Refunded the double payment on invoice 1042.
+  - Technical
+  - {call: check_status, args: {}}
+  - Exports are slow since 09:00.
+  - Accounts
+  - {call: send_reset_link, args: {}}
+  - Sent the colleague a reset link.
+  - Finish
+  - Refunded, exports are being fixed, and your colleague has a reset link.
+  expect:
+    steps: [billing, technical, accounts, reply]
+    tool_calls: 3
+    output.billing_note: {not_empty: true}
+    output.technical_note: {not_empty: true}
+    output.accounts_note: {not_empty: true}
+- name: Nothing for the specialists finishes at once
+  inputs: {request: "Thanks for the quick help yesterday!"}
+  script:
+  - Finish
+  - You're welcome! Write any time.
+  expect:
+    not_tools: [find_invoices, check_status, send_reset_link]
+    tool_calls: 0
+    route: {supervisor: Finish}
+    output.answer: {contains: welcome}
+- name: The supervisor stops after four rounds, whatever it picks
+  inputs: {request: "I was charged twice."}
+  script:
+  - Billing
+  - {call: find_invoices, args: {}}
+  - Paid twice.
+  - Billing
+  - {call: find_invoices, args: {}}
+  - Still paid twice.
+  - Billing
+  - {call: find_invoices, args: {}}
+  - Paid twice, again.
+  - Billing
+  - We looked into it three times; the second payment is refunded.
+  expect:
+    tool_calls: 3
+    route: {supervisor: Finish}
+    output.answer: {contains: refunded}
+- name: A choice that isn't a specialist's name finishes
+  inputs: {request: "Hello there"}
+  script:
+  - Maybe someone from the team could help?
+  - Hello! How can we help?
+  expect:
+    tool_calls: 0
+    route: {supervisor: Finish}
+    output.answer: {not_empty: true}
+- name: Technical first, then Billing
+  inputs: {request: "The app crashed while I was paying, and I think I paid twice."}
+  script:
+  - Technical
+  - {call: check_status, args: {}}
+  - The app is working now; the crash was a one-off.
+  - Billing
+  - {call: find_invoices, args: {}}
+  - Invoice 1042 was paid twice; refunded one.
+  - Finish
+  - Sorry about the crash. You were charged twice, and we refunded one payment.
+  expect:
+    steps: [technical, billing]
+    tools: [check_status, find_invoices]
+    output.answer: {contains: refunded}
+- name: Without a script the stand-in still finishes, within the round limit
+  inputs: {request: "I was charged twice this month."}
+  expect:
+    status: ok
+    route: {supervisor: Finish}
+    steps: [billing, reply]
+    output.answer: {not_empty: true}

@@ -1,7 +1,8 @@
-import { Search, StickyNote } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
-import { NODE_WIDTH, addStep, clone, createStep, exitLabels, getStep, hasExits, nextFreePosition } from "../lib/spec";
-import type { StepTypeInfo } from "../lib/types";
+import { Network, Search, StickyNote } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { api } from "../lib/api";
+import { NODE_WIDTH, addStep, clone, createStep, exitLabels, getStep, hasExits, insertPattern, nextFreePosition } from "../lib/spec";
+import type { StepTypeInfo, TemplateInfo } from "../lib/types";
 import { cn } from "../lib/utils";
 import { useCatalog } from "../state/catalog";
 import { useCheck } from "../state/check";
@@ -61,6 +62,62 @@ function addNote() {
     next.canvas.notes.push({ id: `n${Date.now().toString(36)}`, text: "", x: pos.x, y: pos.y - 160, width: 220, height: 120 });
     return next;
   });
+}
+
+/** Multi-agent patterns (supervisor, handoffs, plan-and-execute), inserted as ordinary steps. */
+function Patterns({ query }: { query: string }) {
+  const [patterns, setPatterns] = useState<TemplateInfo[]>([]);
+  const [note, setNote] = useState<string | null>(null);
+  useEffect(() => {
+    api
+      .templates()
+      .then((all) => setPatterns(all.filter((t) => t.pattern)))
+      .catch(() => setPatterns([]));
+  }, []);
+  const q = query.trim().toLowerCase();
+  const shown = patterns.filter((p) => !q || `${p.name} ${p.description} ${p.pattern}`.toLowerCase().includes(q));
+  if (!shown.length) return null;
+  const insert = async (pattern: TemplateInfo) => {
+    const flow = await api.templateSpec(pattern.id);
+    let ids: string[] = [];
+    useFlow.getState().apply((s) => {
+      const result = insertPattern(s, flow);
+      ids = result.ids;
+      return result.spec;
+    });
+    useUi.getState().select(ids);
+    setNote(`Added the ${pattern.pattern} pattern below your flow. Connect it, and change any step you like.`);
+  };
+  return (
+    <section>
+      <h3 className="mb-1.5 px-1 text-[11px] font-semibold tracking-wide text-faint uppercase">Agent team patterns</h3>
+      <ul className="space-y-1">
+        {shown.map((pattern) => (
+          <li key={pattern.id}>
+            <Tooltip content={pattern.description} side="right">
+              <button
+                type="button"
+                data-testid={`pattern-${pattern.pattern}`}
+                onClick={() => void insert(pattern)}
+                className="flex w-full items-center gap-2.5 rounded-lg border border-transparent px-2 py-1.5 text-left hover:border-border hover:bg-surface-2"
+              >
+                <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-lg", colorsFor("ai").chip)}>
+                  <Network size={14} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-[13px] font-medium capitalize">{pattern.pattern}</span>
+                  <span className="block truncate text-[10px] text-faint">{pattern.steps - 2} steps</span>
+                </span>
+              </button>
+            </Tooltip>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1 px-1 text-[11px] leading-relaxed text-faint" role="status">
+        {note}
+      </p>
+    </section>
+  );
 }
 
 export function StepLibrary() {
@@ -138,6 +195,7 @@ export function StepLibrary() {
           </section>
         ))}
         {!groups.length && <p className="px-1 text-sm text-muted">No steps match “{query}”.</p>}
+        <Patterns query={query} />
       </div>
       <div className="border-t border-border p-3">
         <button

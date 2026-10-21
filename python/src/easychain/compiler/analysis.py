@@ -200,7 +200,7 @@ class FlowAnalysis:
 
         A step used as a tool gets what its Agent can see, plus whatever else it reads
         (the agent fills those in when it calls the tool). A Helper sees what its Deep Agent
-        sees.
+        sees. In a chat, everything the flow sets is there from the second turn on.
         """
         if sid in self.tool_of:
             return self.available_fields(self.tool_of[sid]) | self.reads.get(sid, set())
@@ -209,6 +209,11 @@ class FlowAnalysis:
         names = {f.name for f in self.fields.values() if f.is_input}
         for anc in self.ancestors[sid]:
             names.update(self.writes.get(anc, {}))
+        if self.chat:
+            # In a chat, Flow Data carries over from turn to turn: what a step sets later in
+            # this turn was set by an earlier turn (empty in the first one).
+            for other in self.reachable:
+                names.update(self.writes.get(other, {}))
         return names
 
     # ── sub-flows ────────────────────────────────────────────────────────────

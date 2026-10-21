@@ -63,6 +63,7 @@ async function streamEvents(path: string, init: RequestInit, onEvent: (event: Ru
 export const api = {
   catalog: () => request<Catalog>("/api/catalog"),
   templates: () => request<TemplateInfo[]>("/api/templates"),
+  templateSpec: (id: string) => request<FlowSpec>(`/api/templates/${encodeURIComponent(id)}`),
   flows: () => request<FlowListItem[]>("/api/flows"),
   flow: (id: string) => request<{ id: string; spec: FlowSpec }>(`/api/flows/${id}`),
   createFlow: (body: { template?: string; name?: string; spec?: FlowSpec; yaml?: string }) =>

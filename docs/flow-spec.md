@@ -73,6 +73,11 @@ data:
 Easy Chain adds a few private fields of its own (loop round counters, For Each bookkeeping).
 They are hidden in the Flow Data panel and reset at the start of every run.
 
+In a **chat**, Flow Data carries over from one message to the next (it is the conversation's
+state). So a step may read a field that a later step sets: the value is the one the previous turn
+left, and it is empty in the first turn. The [handoffs pattern](patterns.md#handoffs) uses this
+to send each message to the desk that is helping.
+
 Names use lowercase letters, digits and underscores, and start with a letter. A step id can't be
 the same as a field name.
 

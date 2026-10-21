@@ -40,7 +40,7 @@ src/
     Home.tsx            templates and flows
     Editor.tsx          the editor layout: Step library | canvas | inspector and run panel
     TopBar.tsx          flow name, save state, undo/redo, problems, Pro mode, theme, export, run
-    StepLibrary.tsx     searchable list of step types (from the catalog)
+    StepLibrary.tsx     searchable list of step types (from the catalog), and the agent team patterns
     Inbox.tsx           the Inbox page
     Knowledge.tsx       the Knowledge page
     Skills.tsx          the Skills page

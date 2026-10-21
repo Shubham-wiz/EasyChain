@@ -1,0 +1,125 @@
+# Test Set for Plan and do (plan-and-execute). The stand-in AI plays the planner, each step's
+# turns and the write-up; the plan's steps, the For Each, the tool and the results are real.
+flow: plan-and-execute.flow.yaml
+stand_in: true
+cases:
+- name: Two cities, four steps, done in order
+  inputs: {goal: "Compare three nights in Rome and in Paris, flights included."}
+  script:
+  - {answer: {steps: ["Find the flight to Rome", "Find a hotel in Rome", "Find the flight to Paris", "Find a hotel in Paris"]}}
+  - {call: find_prices, args: {query: flight to Rome}}
+  - A flight to Rome costs 89 euros.
+  - {call: find_prices, args: {query: hotel in Rome}}
+  - A hotel in Rome costs 95 euros a night.
+  - {call: find_prices, args: {query: flight to Paris}}
+  - A flight to Paris costs 112 euros.
+  - {call: find_prices, args: {query: hotel in Paris}}
+  - A hotel in Paris costs 120 euros a night.
+  - Rome comes to 374 euros (89 + 3 x 95); Paris to 472 (112 + 3 x 120). Rome is cheaper.
+  expect:
+    tool_calls: 4
+    output.steps: {count: 4}
+    output.results: {count: 4}
+    output.results.0: {contains: "89"}
+    output.results.3: {contains: "120"}
+    output.answer: {contains: [374, 472]}
+- name: A one-step plan
+  inputs: {goal: "How much is a flight to Paris?"}
+  script:
+  - {answer: {steps: ["Find the flight to Paris"]}}
+  - {call: find_prices, args: {query: flight to Paris}}
+  - It costs 112 euros.
+  - A flight to Paris costs 112 euros.
+  expect:
+    tool_calls: 1
+    output.results: {count: 1}
+    output.answer: {contains: "112"}
+- name: The tool finds the right price for each step
+  inputs: {goal: "A hotel night in Rome and one in Paris"}
+  script:
+  - {answer: {steps: ["Hotel in Rome", "Hotel in Paris"]}}
+  - {call: find_prices, args: {query: hotel rome}}
+  - 95 euros a night in Rome.
+  - {call: find_prices, args: {query: hotel paris}}
+  - 120 euros a night in Paris.
+  - Rome is 95 euros a night and Paris 120.
+  expect:
+    tools: [find_prices]
+    output.results.0: {contains: Rome}
+    output.results.1: {contains: Paris}
+- name: A step the tool can't answer says so
+  inputs: {goal: "A flight to Oslo"}
+  script:
+  - {answer: {steps: ["Find the flight to Oslo"]}}
+  - {call: find_prices, args: {query: flight to Oslo}}
+  - I found no price for a flight to Oslo.
+  - I couldn't find a price for a flight to Oslo.
+  expect:
+    output.results.0: {contains: no price}
+    output.answer: {contains: Oslo}
+- name: A step that needs no tool
+  inputs: {goal: "Add up 89 and three nights at 95"}
+  script:
+  - {answer: {steps: ["Add 89 and 3 x 95"]}}
+  - 89 + 285 = 374.
+  - The total is 374 euros.
+  expect:
+    tool_calls: 0
+    output.results.0: {contains: "374"}
+    output.answer: {contains: "374"}
+- name: A five-step plan runs every step
+  inputs: {goal: "Plan a weekend in Rome"}
+  script:
+  - {answer: {steps: ["Flight to Rome", "Hotel in Rome", "Add up two nights", "Check the total is under 300", "Say what to book"]}}
+  - {call: find_prices, args: {query: flight to Rome}}
+  - 89 euros.
+  - {call: find_prices, args: {query: hotel in Rome}}
+  - 95 euros a night.
+  - 89 + 2 x 95 = 279 euros.
+  - 279 is under 300.
+  - Book EZ145 and two nights at Albergo Sole.
+  - A weekend in Rome costs 279 euros; book the flight and two hotel nights.
+  expect:
+    tool_calls: 2
+    output.steps: {count: 5}
+    output.results: {count: 5}
+    output.results.2: {contains: "279"}
+- name: An empty plan still gets an answer
+  inputs: {goal: "Nothing really"}
+  script:
+  - {answer: {steps: []}}
+  - There was nothing to look up.
+  expect:
+    tool_calls: 0
+    output.results: {count: 0}
+    output.answer: {contains: nothing}
+- name: The write-up uses what the steps found
+  inputs: {goal: "Is a flight to Rome cheaper than one to Paris?"}
+  script:
+  - {answer: {steps: ["Flight to Rome", "Flight to Paris"]}}
+  - {call: find_prices, args: {query: flight to Rome}}
+  - 89 euros.
+  - {call: find_prices, args: {query: flight to Paris}}
+  - 112 euros.
+  - Yes. Rome is 89 euros and Paris 112, so Rome is 23 euros cheaper.
+  expect:
+    output.answer: {contains: [89, 112, cheaper]}
+- name: Steps run one at a time, so the results keep the plan's order
+  inputs: {goal: "Prices in Paris, then Rome"}
+  script:
+  - {answer: {steps: ["Hotel in Paris", "Hotel in Rome"]}}
+  - {call: find_prices, args: {query: hotel in Paris}}
+  - Paris, 120.
+  - {call: find_prices, args: {query: hotel in Rome}}
+  - Rome, 95.
+  - Paris is 120 and Rome 95 a night.
+  expect:
+    output.results.0: {contains: Paris}
+    output.results.1: {contains: Rome}
+- name: Without a script the stand-in plans, does and answers
+  inputs: {goal: "The price of a flight to Rome"}
+  expect:
+    status: ok
+    tools: [find_prices]
+    output.results: {count: 1}
+    output.answer: {not_empty: true}

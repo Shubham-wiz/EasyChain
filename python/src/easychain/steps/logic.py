@@ -11,6 +11,7 @@ from ..compiler.analysis import FieldInfo
 from ..compiler.expressions import ExpressionError, compile_expression, field_names
 from ..compiler.issues import Issue, error, warning
 from ..compiler.pycode import docstring, py_literal, py_regex, py_str
+from ..compiler.templates import variables
 from ..providers import model_info
 from .ai import check_model, missing_field_issue, secrets_in_prompt
 from .base import FormField, StepCode, StepHandler, template_value
@@ -289,7 +290,8 @@ class DecisionHandler(StepHandler):
         s = step.settings
         if s.mode == "ai":
             field = self.input_field(step, an)
-            return {field} if field else set()
+            names = set(variables(s.instructions))
+            return names | {field} if field else names
         names: set[str] = set()
         for ex in s.exits:
             cond = ex.when
@@ -345,6 +347,11 @@ class DecisionHandler(StepHandler):
                 issues.append(
                     missing_field_issue(step, field, an, "input", "This Decision looks at")
                 )
+            for name in variables(s.instructions):
+                if name not in available:
+                    issues.append(
+                        missing_field_issue(step, name, an, "instructions", "The guidance uses")
+                    )
         else:
             if not s.exits:
                 issues.append(
@@ -513,6 +520,13 @@ class DecisionHandler(StepHandler):
         guidance = "\n".join(lines)
         labels = [e.label for e in s.exits]
         consts = f"{exits_const} = {py_literal(labels)}\n{guide_const} = {py_str(guidance)}"
+        # Flow Data in the guidance ({field}) is filled in at each visit (a supervisor in a
+        # loop sees what the specialists added).
+        guidance_src = (
+            f"{ctx.helper('fill')}({guide_const}, data)"
+            if variables(s.instructions)
+            else guide_const
+        )
         ftype = ctx.field_type(field)
         if ftype == "messages":
             content = f'data[{py_str(field)}][-1].text if data.get({py_str(field)}) else ""'
@@ -532,7 +546,7 @@ class DecisionHandler(StepHandler):
             )
             + "\n"
             f"    model = {model}\n"
-            f'    reply = model.invoke([("system", {guide_const}), ("human", {content})])\n'
+            f'    reply = model.invoke([("system", {guidance_src}), ("human", {content})])\n'
             f"    return {{{py_str(s.save_as)}: {pick}(reply.text, {exits_const}, {py_str(s.otherwise)}){extra}}}"
         )
         router_code = (

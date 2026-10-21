@@ -468,6 +468,26 @@ export const STEP_TYPES_WITH_OUTPUT: StepType[] = [
   "mcp_tool",
 ];
 
+/** Insert a multi-agent pattern (a template's steps, without its Input and Output) below the
+ * flow, with the Flow Data fields it uses. The new steps aren't connected to the flow yet. */
+export function insertPattern(spec: FlowSpec, pattern: FlowSpec): { spec: FlowSpec; ids: string[] } {
+  const steps = pattern.steps.filter((s) => s.type !== "input" && s.type !== "output");
+  const keep = new Set(steps.map((s) => s.id));
+  const own = Object.values(spec.canvas.steps);
+  const top = own.length ? Math.max(...own.map((p) => p.y)) + NODE_HEIGHT + 160 : 0;
+  const left = own.length ? Math.min(...own.map((p) => p.x)) : 0;
+  const theirs = steps.map((s) => pattern.canvas.steps[s.id] ?? { x: 0, y: 0 });
+  const minX = Math.min(...theirs.map((p) => p.x));
+  const minY = Math.min(...theirs.map((p) => p.y));
+  const positions: Record<string, Position> = {};
+  steps.forEach((s, i) => (positions[s.id] = { x: theirs[i].x - minX + left, y: theirs[i].y - minY + top }));
+  const clip: Clipboard = { steps, connections: pattern.connections.filter((c) => keep.has(c.from) && keep.has(c.to)), positions };
+  const pasted = pasteSteps(spec, clip, 0);
+  const known = new Set(pasted.spec.data.map((d) => d.name));
+  pasted.spec.data = [...pasted.spec.data, ...pattern.data.filter((d) => !known.has(d.name))];
+  return pasted;
+}
+
 /** Add a new Helper to a Deep Agent, placed under it (to the right of its tools). */
 export function addHelperStep(spec: FlowSpec, leadId: string, step: Step): FlowSpec {
   const at = spec.canvas.steps[leadId] ?? { x: 0, y: 0 };

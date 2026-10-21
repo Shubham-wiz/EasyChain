@@ -9,6 +9,7 @@ import {
   canConnect,
   copySteps,
   helperOf,
+  insertPattern,
   pasteSteps,
   removeHelper,
   removeSteps,
@@ -142,5 +143,42 @@ describe("a Deep Agent's run", () => {
     const [task, inner] = run.tools!;
     expect(task).toMatchObject({ toHelper: "researcher", status: "done", result: "Found it", usage: { input_tokens: 10, output_tokens: 2 } });
     expect(inner).toMatchObject({ tool: "lookup", helper: "researcher", within: "t1", status: "running" });
+  });
+});
+
+describe("multi-agent patterns", () => {
+  it("inserts a pattern's steps below the flow, with its Flow Data, renamed where taken", () => {
+    const flow: FlowSpec = {
+      ...base(),
+      canvas: { steps: { in: { x: 0, y: 0 }, out: { x: 400, y: 50 } }, notes: [] },
+      data: [{ name: "notes", type: "list", update: "append", description: "" }],
+    };
+    const pattern: FlowSpec = {
+      version: 1,
+      name: "P",
+      description: "",
+      data: [
+        { name: "notes", type: "text", update: "replace", description: "theirs" },
+        { name: "desk", type: "text", update: "replace", description: "" },
+      ],
+      steps: [step("input", "input"), step("lead", "decision"), step("billing", "agent", { tools: ["find"] }), step("find", "code"), step("output", "output")],
+      connections: [
+        { from: "input", to: "lead", exit: null },
+        { from: "lead", to: "billing", exit: "Billing" },
+        { from: "billing", to: "lead", exit: null },
+        { from: "lead", to: "output", exit: "Finish" },
+      ],
+      canvas: { steps: { lead: { x: 300, y: 100 }, billing: { x: 600, y: 0 }, find: { x: 600, y: -200 } }, notes: [] },
+    };
+    const { spec, ids } = insertPattern(flow, pattern);
+    expect(ids).toHaveLength(3);
+    const lead = ids[0];
+    expect(lead).not.toBe("lead"); // "lead" is taken by the flow's own Deep Agent
+    const billing = spec.steps.find((s) => s.id === ids[1])!;
+    expect(billing.settings.tools).toEqual([ids[2]]);
+    expect(spec.connections.filter((c) => ids.includes(c.from))).toHaveLength(2);
+    expect(spec.steps.some((s) => s.type === "input" && s.id !== "in")).toBe(false);
+    expect(spec.data.map((d) => d.name)).toEqual(["notes", "desk"]);
+    expect(Math.min(...ids.map((id) => spec.canvas.steps[id].y))).toBeGreaterThan(50);
   });
 });

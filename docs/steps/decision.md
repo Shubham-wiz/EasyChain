@@ -32,7 +32,9 @@ are allowed.
 Set **Decide by** to *Asking an AI to pick an exit*. Give each exit a short description ("the
 customer is unhappy or wants a refund"). The AI reads the field you choose (by default what the
 previous step saved) and replies with an exit name. The choice is saved in **Save the chosen exit
-as** (default `choice`).
+as** (default `choice`). **Guidance** can show Flow Data with `{field}`, filled in at each visit:
+a supervisor in a loop sees what its specialists have added so far (see
+[Agent team patterns](../patterns.md#supervisor)).
 
 The reply counts as an exit when it is that exit's name, or starts with it (“Complaint: the app
 crashes”), whatever the case and punctuation. Longer names are tried first, so “No refund” is

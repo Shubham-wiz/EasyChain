@@ -1,0 +1,151 @@
+# Test Set for Travel desk (handoffs). The stand-in AI plays each desk's turns and the handover
+# choices; which desk runs, the Jumps that record it, the tools and the chat are real.
+flow: handoff-chat.flow.yaml
+stand_in: true
+cases:
+- name: The front desk hands a flight request to the flights desk
+  turns:
+  - {message: "Hi, I need a flight to Rome"}
+  script:
+  - Happy to help! I'm passing you to our flights desk.
+  - Flights
+  - {call: find_flights, args: {destination: Rome}}
+  - EZ145 leaves at 17:40 for 64 euros, or EZ101 at 08:10 for 89.
+  - Stay
+  expect:
+    steps: [front_desk, to_flights, flights]
+    tools: [find_flights]
+    output.desk: flights
+    reply: {contains: EZ145}
+- name: The next message goes straight to the desk that is helping
+  turns:
+  - {message: "I need a flight to Rome"}
+  - {message: "Is there an earlier one?"}
+  script:
+  - Passing you to the flights desk.
+  - Flights
+  - {call: find_flights, args: {destination: Rome}}
+  - EZ145 leaves at 17:40.
+  - Stay
+  - {call: find_flights, args: {destination: Rome}}
+  - Yes, EZ101 leaves at 08:10.
+  - Stay
+  expect:
+    route: {route: Flights, hand_off: Stay}
+    output.desk: flights
+    tool_calls: 2
+    reply: {contains: EZ101}
+- name: The flights desk hands over to the hotels desk
+  turns:
+  - {message: "Book me a flight to Paris"}
+  - {message: "And a hotel there, please"}
+  script:
+  - Passing you to the flights desk.
+  - Flights
+  - {call: find_flights, args: {destination: Paris}}
+  - AF220 leaves at 07:05 for 112 euros.
+  - Stay
+  - For hotels I'm passing you to the hotels desk.
+  - Hotels
+  - {call: find_hotels, args: {city: Paris}}
+  - Hotel du Nord is 120 euros a night.
+  - Stay
+  expect:
+    steps: [flights, to_hotels, hotels]
+    tools: [find_flights, find_hotels]
+    output.desk: hotels
+    reply: {contains: Hotel du Nord}
+- name: A general question stays at the front desk
+  turns:
+  - {message: "How much baggage can I take?"}
+  script:
+  - {call: travel_rules, args: {}}
+  - One cabin bag up to 8 kg; checked bags cost extra.
+  - Stay
+  expect:
+    tools: [travel_rules]
+    not_tools: [find_flights, find_hotels]
+    route: {route: Front desk, hand_off: Stay}
+    output.desk: null
+    reply: {contains: 8 kg}
+- name: A hotel request goes to the hotels desk
+  turns:
+  - {message: "I need somewhere to stay in Rome"}
+  script:
+  - The hotels desk will help you with that.
+  - Hotels
+  - {call: find_hotels, args: {city: Rome}}
+  - Albergo Sole is 95 euros a night, Roma Central 140.
+  - Stay
+  expect:
+    steps: [to_hotels, hotels]
+    tools: [find_hotels]
+    output.desk: hotels
+    reply: {contains: Albergo Sole}
+- name: Picking the desk that is already helping doesn't hand over again
+  turns:
+  - {message: "A flight to Rome"}
+  script:
+  - Passing you to the flights desk.
+  - Flights
+  - {call: find_flights, args: {destination: Rome}}
+  - EZ145 at 17:40.
+  - Flights
+  expect:
+    route: {to_flights: Stay}
+    tool_calls: 1
+    reply: {contains: EZ145}
+- name: A city with no flights says so
+  turns:
+  - {message: "A flight to Oslo"}
+  script:
+  - Passing you to the flights desk.
+  - Flights
+  - {call: find_flights, args: {destination: Oslo}}
+  - Sorry, I found no flights to Oslo.
+  - Stay
+  expect:
+    output.desk: flights
+    reply: {contains: no flights}
+- name: Handovers stop after three rounds
+  turns:
+  - {message: "Flights and hotels, please"}
+  script:
+  - Passing you on.
+  - Flights
+  - Here are some flights.
+  - Hotels
+  - Here are some hotels.
+  - Flights
+  expect:
+    route: {hand_off: Stay}
+    output.desk: hotels
+    reply: {contains: hotels}
+- name: Back from hotels to flights in a later turn
+  turns:
+  - {message: "A hotel in Paris"}
+  - {message: "Now I need the flight too"}
+  script:
+  - Passing you to the hotels desk.
+  - Hotels
+  - {call: find_hotels, args: {city: Paris}}
+  - Hotel du Nord, 120 euros a night.
+  - Stay
+  - For the flight I'm passing you to the flights desk.
+  - Flights
+  - {call: find_flights, args: {destination: Paris}}
+  - AF220 leaves at 07:05.
+  - Stay
+  expect:
+    route: {route: Hotels}
+    steps: [hotels, to_flights, flights]
+    output.desk: flights
+    reply: {contains: AF220}
+- name: Without a script the stand-in still hands a flight request over
+  turns:
+  - {message: "I need a flight to Rome"}
+  expect:
+    status: ok
+    steps: [front_desk, flights]
+    tools: [find_flights]
+    output.desk: flights

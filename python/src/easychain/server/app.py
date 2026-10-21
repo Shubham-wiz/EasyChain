@@ -350,6 +350,14 @@ def create_app(
             for t in list_templates()
         ]
 
+    @app.get("/api/templates/{template_id}")
+    def template_spec(template_id: str) -> dict[str, Any]:
+        """A template's flow (the canvas inserts a multi-agent pattern's steps from it)."""
+        try:
+            return spec_json(load_template(template_id))
+        except KeyError:
+            raise HTTPException(404, detail={"message": "That template doesn't exist."}) from None
+
     # ── flows ───────────────────────────────────────────────────────────────
 
     @app.get("/api/flows")

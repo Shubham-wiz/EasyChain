@@ -453,6 +453,8 @@ export interface TemplateInfo {
   name: string;
   description: string;
   category: string;
+  /** A multi-agent pattern the canvas can insert into a flow (supervisor, handoffs, plan-and-execute). */
+  pattern?: string;
   proves: string[];
   keys: { provider: string; label: string; env: string; set: boolean }[];
   chat: boolean;

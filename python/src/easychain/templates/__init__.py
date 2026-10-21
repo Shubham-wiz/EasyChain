@@ -56,6 +56,29 @@ TEMPLATES: list[dict[str, Any]] = [
         "category": "Data",
         "proves": ["Agent", "Database query tools", "tool approval", "limits", "structured answer"],
     },
+    {
+        "id": "supervisor-team",
+        "category": "Agent teams",
+        "pattern": "supervisor",
+        "proves": [
+            "supervisor pattern",
+            "AI Decision in a loop",
+            "round limit",
+            "specialist Agents",
+        ],
+    },
+    {
+        "id": "handoff-chat",
+        "category": "Agent teams",
+        "pattern": "handoffs",
+        "proves": ["handoffs pattern", "shared chat", "Jump (Command goto)", "active desk"],
+    },
+    {
+        "id": "plan-and-execute",
+        "category": "Agent teams",
+        "pattern": "plan-and-execute",
+        "proves": ["plan-and-execute pattern", "structured plan", "For Each", "Agent per step"],
+    },
 ]
 
 

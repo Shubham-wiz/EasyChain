@@ -1,0 +1,118 @@
+version: 1
+name: Plan and do (plan-and-execute)
+description: A planner breaks the goal into a few steps, an agent carries out each step with its
+  tools, and the results are written up. The plan-and-execute pattern, made of ordinary steps you
+  can change.
+data:
+- name: query
+  description: What to look up, like "flight to Rome" or "hotel in Paris".
+steps:
+- id: input
+  type: input
+  name: Input
+  settings:
+    fields:
+    - name: goal
+      description: What you want done
+      example: Compare the cost of three nights in Rome and in Paris, flights included.
+- id: plan_prompt
+  type: instructions
+  name: Ask for a plan
+  settings:
+    system: You plan work for an assistant that can look up flight and hotel prices. Break the goal
+      into two to five short steps, in order; each step is one thing to look up or work out.
+    user: '{goal}'
+- id: planner
+  type: ai_model
+  name: Planner
+  settings:
+    save_as: plan
+    output:
+      description: The plan.
+      fields:
+      - name: steps
+        type: list
+        description: The steps, in order, each a short sentence.
+      spread: true
+- id: each_step
+  type: for_each
+  name: For each step
+  settings:
+    items: steps
+    item_name: task
+    save_as: results
+    concurrency: 1
+- id: do_step
+  type: agent
+  name: Do the step
+  settings:
+    instructions: 'You carry out one step of a plan for this goal: {goal}. Use your tool to look things
+      up, and reply with what you found in one or two sentences.'
+    input: task
+    tools: [find_prices]
+    save_as: result
+    max_steps: 20
+    addons:
+      max_tool_calls: 3
+- id: find_prices
+  type: code
+  name: Find prices
+  description: Finds the price of a flight to a city, or of a hotel night in a city.
+  settings:
+    code: |
+      PRICES = {
+          ("flight", "rome"): "A flight to Rome costs 89 euros.",
+          ("flight", "paris"): "A flight to Paris costs 112 euros.",
+          ("hotel", "rome"): "A hotel in Rome costs 95 euros a night.",
+          ("hotel", "paris"): "A hotel in Paris costs 120 euros a night.",
+      }
+
+
+      def run(data):
+          """Return the prices that match what was asked."""
+          asked = str(data["query"]).lower()
+          found = [text for (kind, city), text in PRICES.items() if kind in asked and city in asked]
+          if not found:
+              found = [text for (kind, city), text in PRICES.items() if city in asked]
+          return {"prices": " ".join(found) or "No prices found for that."}
+- id: write_prompt
+  type: instructions
+  name: Write it up
+  settings:
+    system: You write short, clear answers from the results of a plan.
+    user: |-
+      Goal: {goal}
+
+      What each step found:
+      {results}
+
+      Answer the goal in a few sentences, with the numbers.
+- id: write_up
+  type: ai_model
+  name: Answer
+  settings:
+    save_as: answer
+- id: output
+  type: output
+  name: Output
+  settings:
+    fields: [answer, steps, results]
+connections:
+- {from: input, to: plan_prompt}
+- {from: plan_prompt, to: planner}
+- {from: planner, to: each_step}
+- {from: each_step, to: do_step, exit: Each item}
+- {from: each_step, to: write_prompt, exit: When done}
+- {from: write_prompt, to: write_up}
+- {from: write_up, to: output}
+canvas:
+  steps:
+    input: {x: 0, y: 120}
+    plan_prompt: {x: 280, y: 120}
+    planner: {x: 560, y: 120}
+    each_step: {x: 840, y: 100}
+    do_step: {x: 1180, y: -60}
+    find_prices: {x: 1180, y: -280}
+    write_prompt: {x: 1180, y: 260}
+    write_up: {x: 1460, y: 260}
+    output: {x: 1740, y: 260}

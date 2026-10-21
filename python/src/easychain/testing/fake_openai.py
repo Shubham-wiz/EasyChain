@@ -157,9 +157,16 @@ def fake_message(body: dict[str, Any]) -> dict[str, Any]:
     tools = body.get("tools") or None
     fmt = body.get("response_format") or {}
     if fmt.get("type") == "json_schema":
+        # A scripted turn is the reply: {"answer": {...}} as it is, or text to fill the schema.
+        scripted = script.next() if script else None
+        if isinstance(scripted, dict) and isinstance(scripted.get("answer"), dict):
+            return {"role": "assistant", "content": json.dumps(scripted["answer"])}
         schema = (fmt.get("json_schema") or {}).get("schema") or {}
         humans = [m.text for m in messages if m.type == "human"]
-        answer = _relabel(stand_in_reply(messages), model)
+        said = scripted if isinstance(scripted, str) else None
+        if isinstance(scripted, dict):
+            said = str(scripted.get("say", scripted.get("answer", "")))
+        answer = said if said is not None else _relabel(stand_in_reply(messages), model)
         args = fill_arguments(schema, humans[-1] if humans else "", answer=answer, final=True)
         return {"role": "assistant", "content": json.dumps(args)}
     if not tools and not script:

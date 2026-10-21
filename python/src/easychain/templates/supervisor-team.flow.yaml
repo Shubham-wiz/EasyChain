@@ -1,0 +1,163 @@
+version: 1
+name: Support team (supervisor)
+description: A supervisor hands the customer's request to the right specialist, one after another,
+  until their notes cover it, then the reply is written from the notes. The supervisor pattern,
+  made of ordinary steps you can change.
+steps:
+- id: input
+  type: input
+  name: Input
+  settings:
+    fields:
+    - name: request
+      description: The customer's message
+      example: I was charged twice this month, and now I can't sign in.
+- id: supervisor
+  type: decision
+  name: Supervisor
+  description: Picks the specialist who works on the request next, or finishes.
+  settings:
+    mode: ai
+    input: request
+    instructions: |-
+      You lead a customer support team. Pick the specialist who should work on the customer's request next. Pick Finish when the notes below cover everything the customer asked.
+
+      Billing notes: {billing_note}
+      Technical notes: {technical_note}
+      Accounts notes: {accounts_note}
+    exits:
+    - label: Billing
+      description: invoices, payments, charges, refunds and prices
+    - label: Technical
+      description: errors, crashes, bugs, slow pages and how to use the app
+    - label: Accounts
+      description: signing in, passwords, users and permissions
+    otherwise: Finish
+    max_rounds: 4
+    save_as: next_specialist
+- id: billing
+  type: agent
+  name: Billing specialist
+  settings:
+    instructions: You are the billing specialist of a support team. Look up the customer's invoices,
+      then write two or three short notes for the team about what you found and what you did. Don't
+      write to the customer.
+    input: request
+    tools: [find_invoices]
+    save_as: billing_note
+    max_steps: 20
+    addons:
+      max_tool_calls: 3
+- id: find_invoices
+  type: code
+  name: Find invoices
+  description: Finds the customer's recent invoices and payments.
+  settings:
+    code: |
+      INVOICES = [
+          {"invoice": "1042", "date": "2026-05-03", "amount": 20.0, "paid": 2},
+          {"invoice": "0977", "date": "2026-04-03", "amount": 20.0, "paid": 1},
+      ]
+
+
+      def run(data):
+          """Return the customer's recent invoices and how often each was paid."""
+          return {"invoices": INVOICES}
+- id: technical
+  type: agent
+  name: Technical specialist
+  settings:
+    instructions: You are the technical specialist of a support team. Check the service status, then
+      write two or three short notes for the team about the problem and how to get past it. Don't
+      write to the customer.
+    input: request
+    tools: [check_status]
+    save_as: technical_note
+    max_steps: 20
+    addons:
+      max_tool_calls: 3
+- id: check_status
+  type: code
+  name: Check the service status
+  description: Says which parts of the service are working, slow or down.
+  settings:
+    code: |
+      def run(data):
+          """Return the status of each part of the service."""
+          return {"status": {"app": "working", "exports": "slow since 09:00", "sign-in": "working"}}
+- id: accounts
+  type: agent
+  name: Accounts specialist
+  settings:
+    instructions: You are the accounts specialist of a support team. Help with signing in, passwords and
+      users; send a password reset link when it helps. Write two or three short notes for the team.
+      Don't write to the customer.
+    input: request
+    tools: [send_reset_link]
+    save_as: accounts_note
+    max_steps: 20
+    addons:
+      max_tool_calls: 3
+- id: send_reset_link
+  type: code
+  name: Send a reset link
+  description: Emails the customer a link to choose a new password.
+  settings:
+    code: |
+      def run(data):
+          """Send a password reset link (a stand-in: nothing is sent)."""
+          return {"sent": "A reset link was emailed to the customer's address."}
+- id: write_reply
+  type: instructions
+  name: Write the reply
+  settings:
+    system: You write replies for a customer support team. Be warm and brief, and only promise what the
+      notes say was done.
+    user: |-
+      The customer wrote:
+      {request}
+
+      The team's notes:
+      Billing: {billing_note}
+      Technical: {technical_note}
+      Accounts: {accounts_note}
+
+      Write the reply.
+- id: reply
+  type: ai_model
+  name: Reply
+  settings:
+    save_as: answer
+- id: output
+  type: output
+  name: Output
+  settings:
+    fields:
+    - answer
+    - billing_note
+    - technical_note
+    - accounts_note
+connections:
+- {from: input, to: supervisor}
+- {from: supervisor, to: billing, exit: Billing}
+- {from: supervisor, to: technical, exit: Technical}
+- {from: supervisor, to: accounts, exit: Accounts}
+- {from: supervisor, to: write_reply, exit: Finish}
+- {from: billing, to: supervisor}
+- {from: technical, to: supervisor}
+- {from: accounts, to: supervisor}
+- {from: write_reply, to: reply}
+- {from: reply, to: output}
+canvas:
+  steps:
+    input: {x: 0, y: 200}
+    supervisor: {x: 280, y: 180}
+    billing: {x: 620, y: 0}
+    technical: {x: 620, y: 200}
+    accounts: {x: 620, y: 400}
+    find_invoices: {x: 620, y: -210}
+    check_status: {x: 900, y: 200}
+    send_reset_link: {x: 620, y: 610}
+    write_reply: {x: 1180, y: 200}
+    reply: {x: 1460, y: 200}
+    output: {x: 1740, y: 200}

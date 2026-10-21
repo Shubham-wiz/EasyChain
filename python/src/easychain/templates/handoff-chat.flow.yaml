@@ -1,0 +1,183 @@
+version: 1
+name: Travel desk (handoffs)
+description: Three desks share one chat. The front desk greets the traveller and hands them over to
+  the flights or the hotels desk, which takes over the conversation until another desk is needed.
+  The handoffs pattern, made of ordinary steps you can change.
+data:
+- name: desk
+  description: The desk helping the traveller now (flights or hotels; empty is the front desk).
+- name: switched
+  type: yes_no
+  description: Whether the last handover moved the traveller to another desk.
+- name: destination
+  description: The city the traveller wants to fly to.
+- name: city
+  description: The city the traveller wants a hotel in.
+steps:
+- id: input
+  type: input
+  name: Chat
+  settings:
+    mode: chat
+- id: route
+  type: decision
+  name: Which desk is helping?
+  settings:
+    exits:
+    - label: Flights
+      when: {field: desk, op: equals, value: flights}
+    - label: Hotels
+      when: {field: desk, op: equals, value: hotels}
+    otherwise: Front desk
+- id: front_desk
+  type: agent
+  name: Front desk
+  settings:
+    instructions: You are the front desk of a travel agency. Greet the traveller and find out what they
+      need, and answer general questions with your tool. Flights and hotels have their own desks; when
+      the traveller needs one, say you are passing them over.
+    input: messages
+    tools: [travel_rules]
+    save_as: messages
+    max_steps: 20
+- id: travel_rules
+  type: code
+  name: Travel rules
+  description: Answers general travel questions about opening hours, baggage and visas.
+  settings:
+    code: |
+      def run(data):
+          """Return the agency's general travel rules."""
+          return {"rules": {
+              "opening hours": "9:00 to 18:00, Monday to Saturday",
+              "baggage": "one cabin bag up to 8 kg; checked bags cost extra",
+              "visas": "check the embassy of the country you visit",
+          }}
+- id: flights
+  type: agent
+  name: Flights desk
+  settings:
+    instructions: You are the flights desk of a travel agency. Find flights with your tool and help the
+      traveller choose one. For hotels, say you are passing them to the hotels desk.
+    input: messages
+    tools: [find_flights]
+    save_as: messages
+    max_steps: 20
+- id: find_flights
+  type: code
+  name: Find flights
+  description: Finds flights to a city, with times and prices.
+  settings:
+    code: |
+      FLIGHTS = {
+          "rome": [{"flight": "EZ101", "leaves": "08:10", "price": 89}, {"flight": "EZ145", "leaves": "17:40", "price": 64}],
+          "paris": [{"flight": "AF220", "leaves": "07:05", "price": 112}],
+      }
+
+
+      def run(data):
+          """Return the flights to the destination (a city named anywhere in it)."""
+          asked = str(data["destination"]).lower()
+          found = [f for city, flights in FLIGHTS.items() if city in asked for f in flights]
+          return {"flights": found or "No flights found to that city."}
+- id: hotels
+  type: agent
+  name: Hotels desk
+  settings:
+    instructions: You are the hotels desk of a travel agency. Find hotels with your tool and help the
+      traveller choose one. For flights, say you are passing them to the flights desk.
+    input: messages
+    tools: [find_hotels]
+    save_as: messages
+    max_steps: 20
+- id: find_hotels
+  type: code
+  name: Find hotels
+  description: Finds hotels in a city, with prices per night.
+  settings:
+    code: |
+      HOTELS = {
+          "rome": [{"hotel": "Albergo Sole", "per night": 95}, {"hotel": "Roma Central", "per night": 140}],
+          "paris": [{"hotel": "Hotel du Nord", "per night": 120}],
+      }
+
+
+      def run(data):
+          """Return the hotels in the city (named anywhere in it)."""
+          asked = str(data["city"]).lower()
+          found = [h for name, hotels in HOTELS.items() if name in asked for h in hotels]
+          return {"hotels": found or "No hotels found in that city."}
+- id: hand_off
+  type: decision
+  name: Hand over?
+  description: After each reply, picks the desk that should help next.
+  settings:
+    mode: ai
+    input: messages
+    instructions: You route a travel agency's chat; the desk helping now is "{desk}" (empty is the front
+      desk). Read its last reply and pick the desk that should help the traveller next. Pick Stay when
+      the desk helping now should carry on, or the traveller has what they asked for.
+    exits:
+    - label: Flights
+      description: the traveller wants to fly, or needs a flight or a plane ticket
+    - label: Hotels
+      description: the traveller needs a hotel, a room or somewhere to stay
+    otherwise: Stay
+    max_rounds: 3
+    save_as: next_desk
+- id: to_flights
+  type: jump
+  name: To the flights desk
+  settings:
+    updates:
+    - {field: switched, expression: "desk != 'flights'"}
+    - {field: desk, value: flights}
+    exits:
+    - label: Hand over
+      when: {field: switched, op: is_true}
+    otherwise: Stay
+- id: to_hotels
+  type: jump
+  name: To the hotels desk
+  settings:
+    updates:
+    - {field: switched, expression: "desk != 'hotels'"}
+    - {field: desk, value: hotels}
+    exits:
+    - label: Hand over
+      when: {field: switched, op: is_true}
+    otherwise: Stay
+- id: output
+  type: output
+  name: Output
+  settings:
+    fields: [desk]
+connections:
+- {from: input, to: route}
+- {from: route, to: flights, exit: Flights}
+- {from: route, to: hotels, exit: Hotels}
+- {from: route, to: front_desk, exit: Front desk}
+- {from: front_desk, to: hand_off}
+- {from: flights, to: hand_off}
+- {from: hotels, to: hand_off}
+- {from: hand_off, to: to_flights, exit: Flights}
+- {from: hand_off, to: to_hotels, exit: Hotels}
+- {from: hand_off, to: output, exit: Stay}
+- {from: to_flights, to: flights, exit: Hand over}
+- {from: to_flights, to: output, exit: Stay}
+- {from: to_hotels, to: hotels, exit: Hand over}
+- {from: to_hotels, to: output, exit: Stay}
+canvas:
+  steps:
+    input: {x: 0, y: 220}
+    route: {x: 260, y: 200}
+    flights: {x: 600, y: 0}
+    front_desk: {x: 600, y: 220}
+    hotels: {x: 600, y: 440}
+    find_flights: {x: 600, y: -210}
+    travel_rules: {x: 880, y: 220}
+    find_hotels: {x: 600, y: 650}
+    hand_off: {x: 1180, y: 200}
+    to_flights: {x: 1520, y: 40}
+    to_hotels: {x: 1520, y: 380}
+    output: {x: 1860, y: 220}

@@ -46,8 +46,8 @@ phases:
       "4.2 Deep Agent step": done   # steps/deep_agent.py, docs/steps/deep_agent.md, tests/test_deep_agent.py; files survive a worker crash (test_durability.py)
       "4.3 Helpers": done   # Helper steps (deepagents SubAgent), nested trace with usage per Helper, approvals through the Inbox
       "4.4 Skills": done   # skills.py, /api/skills, the Skills page, built-in skills in templates/skills/, tests/test_skills.py
-      "4.5 Multi-agent patterns": next
-      "4.6 Describe-it copilot": pending
+      "4.5 Multi-agent patterns": done   # supervisor-team, handoff-chat, plan-and-execute templates (10 cases each), docs/patterns.md, tests/test_patterns.py
+      "4.6 Describe-it copilot": next
       "4.7 Templates and report": pending
     plan: docs/ROADMAP.md#phase-4-autopilot-and-teams
     done_when: "A Research assistant template (Deep Agent + Helpers) passes a 10-case Test Set, and Code steps can't escape their sandbox"
@@ -67,12 +67,12 @@ waiting_for_review: false
 open_questions: []
 
 tests:
-  measured_at: 2026-10-21, after Skills
-  python: {passed: 457, skipped: 0, on: "Linux with SQLite, Postgres and Docker (the sandbox tests); Windows and Linux in CI"}
-  web_unit: {passed: 83}
+  measured_at: 2026-10-21, after the agent team patterns
+  python: {passed: 474, skipped: 0, on: "Linux with SQLite, Postgres and Docker (the sandbox tests); Windows and Linux in CI"}
+  web_unit: {passed: 84}
   client: {passed: 11}
   e2e: {passed: 33, skipped_unless_SCREENSHOTS: 1, on: "Linux (CI)"}
-  template_test_sets: {support-bot: "12/12", sql-analyst: "10/10", others: all pass}
+  template_test_sets: {support-bot: "12/12", sql-analyst: "10/10", supervisor-team: "10/10", handoff-chat: "10/10", plan-and-execute: "10/10", others: all pass}
   compiler_coverage: 0.93
   python_end_of_phase_3: {passed: 320}
   python_end_of_phase_2: {passed: 259, compiler_coverage: 0.94}
