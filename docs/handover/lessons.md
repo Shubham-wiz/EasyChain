@@ -69,6 +69,8 @@ whenever something takes more than a few minutes to understand.
 | `initdb` refuses to run as root | Postgres safety check | `tests/pg.py` runs it through `runuser -u postgres`, or uses `EASYCHAIN_TEST_POSTGRES_URL` |
 | Playwright strict-mode violations | Labels like "Add", "Triggers" and "email" appear more than once | Use `{ exact: true }`, or scope to a dialog or region |
 | `__dirname` is not defined in an e2e spec | ESM | Use `process.cwd()` |
+| An old journey failed on `getByRole("status")` (two elements) | A new live region (the step library announces an inserted pattern) also has `role="status"` | Scope status locators to their region (`getByTestId("canvas").getByRole("status")`), and run the whole e2e suite before pushing a UI change, not just the new spec |
+| The deep agent crash test timed out on Windows (Postgres half) | The worker's start-up imports take far longer on the Windows runner | The test waits up to 150 s for the slow tool, and its failure names the run's status and events |
 
 ## Windows
 

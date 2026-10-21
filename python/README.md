@@ -58,6 +58,7 @@ src/easychain/
   export.py      the export zip / folder
   testsets.py    Test Sets: run cases, apply checks
   skills.py      the Skills library (Agent Skills folders in <workspace>/skills/, and built-in ones)
+  copilot.py     the describe-it copilot: a flow from words, checked, as separate changes
   providers.py   the 14 model providers, their models, prices and keys; embedding models
 ```
 
@@ -123,7 +124,7 @@ per call (gVisor when Docker has it); the loader swaps each Code step's function
 
 | File | Job |
 |---|---|
-| `app.py` | The FastAPI app: flows, catalog, checks, compile, export, runs (SSE and WebSocket), Inbox, secrets, settings, templates, triggers, the Skills library (`/api/skills`). Serves the web app. |
+| `app.py` | The FastAPI app: flows, catalog, checks, compile, export, runs (SSE and WebSocket), Inbox, secrets, settings, templates, triggers, the Skills library (`/api/skills`), the copilot (`/api/copilot`). Serves the web app. |
 | `db.py` | The run database (SQLite or Postgres): runs, events, jobs, Inbox, triggers, flow versions, settings. |
 | `hub.py` | Starting, resuming and watching runs; shared by the API, the worker and triggers. |
 | `worker.py` | Leases jobs, runs them, heartbeats, takes over jobs from dead workers. |
@@ -137,7 +138,9 @@ The API at a glance (all under `/api`):
 | Area | Endpoints |
 |---|---|
 | Flows | `GET/POST /flows`, `GET/PUT/DELETE /flows/{id}`, `/flows/{id}/yaml`, `/flows/{id}/versions`, `/flows/{id}/export`, `/versions/{id}` |
-| Building | `GET /catalog`, `GET /providers`, `GET /schema`, `GET /templates`, `POST /check`, `POST /compile`, `POST /export` |
+| Building | `GET /catalog`, `GET /providers`, `GET /schema`, `GET /templates`, `GET /templates/{id}`, `POST /check`, `POST /compile`, `POST /export` |
+| Copilot | `POST /copilot` (a proposal: summary, changes, test cases), `GET/PUT /settings/copilot` (its model), `POST /flows/{id}/tests` (add cases to the flow's Test Set) — see [docs/copilot.md](../docs/copilot.md) |
+| Skills | `GET /skills`, `GET/PUT/DELETE /skills/{name}` — see [docs/skills.md](../docs/skills.md) |
 | Runs | `GET/POST /runs`, `GET /runs/{id}`, `/runs/{id}/events` (SSE, `Last-Event-ID`), `/runs/{id}/ws`, `POST /runs/{id}/resume`, `/continue`, `/fork`, `/cancel`, `GET /runs/{id}/savepoints`, `GET /threads` |
 | People | `GET /inbox`, `GET /inbox/{id}`, `POST /inbox/{id}/answer` |
 | Triggers | `GET/POST /triggers`, `PATCH/DELETE /triggers/{id}`, `POST /hooks/{id}`, `POST /hooks/{id}/upload` |

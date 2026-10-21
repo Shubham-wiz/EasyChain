@@ -11,6 +11,7 @@ Start with the [project README](../README.md). This page lists every document.
 | [agents.md](agents.md) | Agents and tools: steps as tools, Add-ons, MCP servers, Import an API, structured answers, testing agents; Deep Agents and Helpers |
 | [knowledge.md](knowledge.md) | Knowledge Bases: adding documents, search modes, citations, storage, the API |
 | [patterns.md](patterns.md) | Agent team patterns: supervisor, handoffs and plan-and-execute, made of ordinary steps |
+| [copilot.md](copilot.md) | The describe-it copilot: describe a flow or a change, review it on the canvas, keep the changes you want |
 | [skills.md](skills.md) | Skills: the Skills library, the SKILL.md format, using skills in Deep Agents and Helpers |
 | [sandbox.md](sandbox.md) | The Code step sandbox: what code can't do, what it needs, settings, Docker Compose |
 | [steps/](steps) | One page per step type (below) |

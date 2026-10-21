@@ -11,7 +11,7 @@ _Written at the end of Phase 3 (version 0.3.0). The live status is in
 | 1. Visual MVP | Canvas, inspector, run panel, chat, export, templates | ✅ Done ([report](phases/phase-0-1.md)) |
 | 2. Real runtime | Durable runs, workers, Ask a Human, Inbox, Save Points, time travel, triggers | ✅ Done ([report](phases/phase-2.md)) |
 | 3. Agents and knowledge | Agent + add-ons, MCP, OpenAPI import, structured replies, Knowledge Bases, memory, 14 providers | ✅ Done ([report](phases/phase-3.md)) |
-| 4. Autopilot and teams | Sandboxes, Deep Agents, Helpers, Skills, multi-agent patterns, describe-it copilot | In progress: 4.1 sandbox, 4.2 Deep Agent, 4.3 Helpers, 4.4 Skills and 4.5 patterns done |
+| 4. Autopilot and teams | Sandboxes, Deep Agents, Helpers, Skills, multi-agent patterns, describe-it copilot | In progress: 4.1 sandbox, 4.2 Deep Agent, 4.3 Helpers, 4.4 Skills, 4.5 patterns and 4.6 copilot done |
 | 5. Platform | Test Sets and Checks, Test Runs, CI gate, dashboards, model gateway, Publish, environments, roles, SSO, audit, tracing | Planned |
 | 6. Ecosystem | LangGraph.js export, custom step registry, import, collaboration, prompt optimisation, Helm | Planned |
 

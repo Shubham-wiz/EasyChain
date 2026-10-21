@@ -16,7 +16,7 @@ import {
   type NodeChange,
   type OnSelectionChangeParams,
 } from "@xyflow/react";
-import { MousePointerClick } from "lucide-react";
+import { MousePointerClick, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addHelper,
@@ -42,6 +42,7 @@ import {
 import type { Connection, FlowSpec, Position } from "../../lib/types";
 import { useCatalog } from "../../state/catalog";
 import { useCheck } from "../../state/check";
+import { useCopilot } from "../../state/copilot";
 import { useFlow } from "../../state/flow";
 import { useRun } from "../../state/run";
 import { useUi } from "../../state/ui";
@@ -174,7 +175,11 @@ interface QuickAdd {
 }
 
 export function Canvas() {
-  const spec = useFlow((s) => s.spec)!;
+  const flowSpec = useFlow((s) => s.spec)!;
+  // While the copilot's proposal is open, the canvas shows it, and nothing can be edited.
+  const preview = useCopilot((s) => s.preview);
+  const previewing = preview != null;
+  const spec = preview ?? flowSpec;
   const apply = useFlow((s) => s.apply);
   const selected = useUi((s) => s.selected);
   const select = useUi((s) => s.select);
@@ -182,7 +187,7 @@ export function Canvas() {
   const mode = useUi((s) => s.mode);
   const catalog = useCatalog((s) => s.catalog);
   const fields = useCheck((s) => s.analysis?.fields);
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, fitView } = useReactFlow();
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [quickAdd, setQuickAdd] = useState<QuickAdd | null>(null);
@@ -192,6 +197,13 @@ export function Canvas() {
   const selectedSet = useMemo(() => new Set(selected), [selected]);
   useEffect(() => setNodes((prev) => syncNodes(prev, spec, selectedSet)), [spec, selectedSet]);
   useEffect(() => setEdges((prev) => syncEdges(prev, spec)), [spec]);
+
+  // Show the whole proposal when one opens.
+  useEffect(() => {
+    if (!previewing) return;
+    const t = setTimeout(() => void fitView({ padding: 0.12, maxZoom: 1.1, duration: 250 }), 50);
+    return () => clearTimeout(t);
+  }, [previewing, fitView]);
 
   useEffect(() => {
     if (!toast) return;
@@ -331,7 +343,7 @@ export function Canvas() {
     (event: React.DragEvent) => {
       event.preventDefault();
       const type = event.dataTransfer.getData(STEP_MIME);
-      if (!type) return;
+      if (!type || useCopilot.getState().preview) return;
       const pos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
       addAt(type, { x: Math.round(pos.x - NODE_WIDTH / 2), y: Math.round(pos.y - 40) });
     },
@@ -349,6 +361,9 @@ export function Canvas() {
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
+        nodesDraggable={!previewing}
+        nodesConnectable={!previewing}
+        elementsSelectable={!previewing}
         onEdgesChange={onEdgesChange}
         onNodeDragStop={onNodeDragStop}
         onSelectionChange={onSelectionChange}
@@ -372,7 +387,7 @@ export function Canvas() {
         maxZoom={2}
         snapToGrid
         snapGrid={[10, 10]}
-        deleteKeyCode={["Backspace", "Delete"]}
+        deleteKeyCode={previewing ? null : ["Backspace", "Delete"]}
         multiSelectionKeyCode={["Meta", "Control", "Shift"]}
         onlyRenderVisibleElements={spec.steps.length > 150}
         proOptions={{ hideAttribution: true }}
@@ -382,7 +397,16 @@ export function Canvas() {
         <MiniMap pannable zoomable position="bottom-right" className="!rounded-lg !border !border-border" nodeBorderRadius={8} />
       </ReactFlow>
 
-      {onlyEnds && (
+      {previewing && (
+        <div className="pointer-events-none absolute inset-x-0 top-4 z-10 flex justify-center" data-testid="copilot-preview-banner">
+          <div className="flex items-center gap-2 rounded-full border border-violet-500/40 bg-surface/95 px-4 py-2 text-sm shadow-sm">
+            <Sparkles size={15} className="text-violet-500" />
+            A preview of the copilot's proposal. Apply or discard it in the Copilot panel.
+          </div>
+        </div>
+      )}
+
+      {onlyEnds && !previewing && (
         <div className="pointer-events-none absolute inset-x-0 top-6 flex justify-center">
           <div className="flex items-center gap-2 rounded-full border border-border bg-surface/95 px-4 py-2 text-sm text-muted shadow-sm">
             <MousePointerClick size={15} className="text-accent" />

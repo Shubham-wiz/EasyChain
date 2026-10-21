@@ -85,7 +85,7 @@ test("copy and paste steps, quick-add from a dangling connection", async ({ page
 test("an invalid connection explains why", async ({ page }) => {
   await newFlow(page);
   await connect(page, "input", "output");
-  await expect(page.getByRole("status")).toContainText("Put at least one step between Input and Output");
+  await expect(page.getByTestId("canvas").getByRole("status")).toContainText("Put at least one step between Input and Output");
   await expect(page.locator(".react-flow__edge")).toHaveCount(0);
 });
 

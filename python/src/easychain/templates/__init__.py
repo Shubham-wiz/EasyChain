@@ -93,6 +93,17 @@ def load_template(template_id: str) -> FlowSpec:
     return load_spec(template_path(template_id))
 
 
+def template_cases(template_id: str) -> list[dict[str, Any]]:
+    """The cases of a template's Test Set (empty when it has none)."""
+    import yaml
+
+    path = HERE / f"{template_id}.tests.yaml"
+    if not path.exists():
+        return []
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return [c for c in data.get("cases") or [] if isinstance(c, dict)]
+
+
 def keys_needed(spec: FlowSpec) -> list[dict[str, str]]:
     seen: dict[str, dict[str, str]] = {}
     for _, _, model in flow_models(spec):

@@ -47,8 +47,8 @@ phases:
       "4.3 Helpers": done   # Helper steps (deepagents SubAgent), nested trace with usage per Helper, approvals through the Inbox
       "4.4 Skills": done   # skills.py, /api/skills, the Skills page, built-in skills in templates/skills/, tests/test_skills.py
       "4.5 Multi-agent patterns": done   # supervisor-team, handoff-chat, plan-and-execute templates (10 cases each), docs/patterns.md, tests/test_patterns.py
-      "4.6 Describe-it copilot": next
-      "4.7 Templates and report": pending
+      "4.6 Describe-it copilot": done   # copilot.py, /api/copilot, the Copilot panel (preview on the canvas, one undo step), docs/copilot.md, tests/test_copilot.py, e2e/phase4.spec.ts
+      "4.7 Templates and report": next
     plan: docs/ROADMAP.md#phase-4-autopilot-and-teams
     done_when: "A Research assistant template (Deep Agent + Helpers) passes a 10-case Test Set, and Code steps can't escape their sandbox"
     sandbox: "Docker, gVisor where installed (decision 4.2)"
@@ -67,11 +67,11 @@ waiting_for_review: false
 open_questions: []
 
 tests:
-  measured_at: 2026-10-21, after the agent team patterns
-  python: {passed: 474, skipped: 0, on: "Linux with SQLite, Postgres and Docker (the sandbox tests); Windows and Linux in CI"}
-  web_unit: {passed: 84}
+  measured_at: 2026-10-21, after the describe-it copilot
+  python: {passed: 501, skipped: 0, on: "Linux with SQLite, Postgres and Docker (the sandbox tests); Windows and Linux in CI"}
+  web_unit: {passed: 94}
   client: {passed: 11}
-  e2e: {passed: 33, skipped_unless_SCREENSHOTS: 1, on: "Linux (CI)"}
+  e2e: {passed: 35, skipped_unless_SCREENSHOTS: 2, on: "Linux (CI)"}
   template_test_sets: {support-bot: "12/12", sql-analyst: "10/10", supervisor-team: "10/10", handoff-chat: "10/10", plan-and-execute: "10/10", others: all pass}
   compiler_coverage: 0.93
   python_end_of_phase_3: {passed: 320}

@@ -7,13 +7,14 @@ import type { FlowSpec } from "../lib/types";
 import { useCheck } from "../state/check";
 import { redo, undo, useFlow } from "../state/flow";
 import { attachRun, tryRun, useRun } from "../state/run";
-import { useUi } from "../state/ui";
+import { type RightTab, useUi } from "../state/ui";
 import { Canvas } from "./canvas/Canvas";
 import { ExportDialog } from "./dialogs/ExportDialog";
 import { ImportApiDialog } from "./dialogs/ImportApiDialog";
 import { SettingsDialog } from "./dialogs/SettingsDialog";
 import { TriggersDialog } from "./dialogs/TriggersDialog";
 import { Inspector } from "./inspector/Inspector";
+import { CopilotPanel } from "./CopilotPanel";
 import { RunPanel } from "./run/RunPanel";
 import { StepLibrary } from "./StepLibrary";
 import { TopBar } from "./TopBar";
@@ -230,10 +231,11 @@ export function Editor({ flowId, tryIt, onHome }: { flowId: string; tryIt: boole
             <Canvas key={flowId} />
           </main>
           <aside className="flex w-[380px] shrink-0 flex-col border-l border-border bg-surface" aria-label="Inspector and run">
-            <Tabs value={rightTab} onValueChange={(v) => setRightTab(v as "inspect" | "run")} className="flex min-h-0 flex-1 flex-col">
+            <Tabs value={rightTab} onValueChange={(v) => setRightTab(v as RightTab)} className="flex min-h-0 flex-1 flex-col">
               <TabsList>
                 <TabsTrigger value="inspect">Inspect</TabsTrigger>
                 <TabsTrigger value="run">Run</TabsTrigger>
+                <TabsTrigger value="copilot">Copilot</TabsTrigger>
               </TabsList>
               <TabsContent value="inspect" className="min-h-0 flex-1 overflow-hidden">
                 <div className="scroll-thin h-full overflow-y-auto">
@@ -242,6 +244,9 @@ export function Editor({ flowId, tryIt, onHome }: { flowId: string; tryIt: boole
               </TabsContent>
               <TabsContent value="run" className="min-h-0 flex-1 overflow-hidden" forceMount hidden={rightTab !== "run"}>
                 <RunPanel />
+              </TabsContent>
+              <TabsContent value="copilot" className="min-h-0 flex-1 overflow-hidden" forceMount hidden={rightTab !== "copilot"}>
+                <CopilotPanel />
               </TabsContent>
             </Tabs>
           </aside>

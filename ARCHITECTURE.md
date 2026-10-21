@@ -279,6 +279,18 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
   the open flow (`insertPattern`, from `GET /api/templates/{id}`). Two small changes made them
   possible: an AI Decision's guidance takes `{field}` placeholders, and in a chat a field a
   later step sets counts as available (it carries over from the previous turn).
+- **The describe-it copilot** (Phase 4.6, `copilot.py`, [docs/copilot.md](docs/copilot.md)).
+  The model gets the step catalog (each type's settings, from the same models the editor
+  uses), the spec's rules, one example flow and the open flow as YAML, and writes the **whole**
+  flow back as YAML with a summary and Test Set cases. Easy Chain reads it with `parse_spec`,
+  runs `validate`, and sends errors back (twice at most), so a proposal is shown only when it
+  has none. Writing the whole flow, rather than a list of edits, keeps the model's job to the
+  format it is told and lets the checks see the result; the diff (`diff()`) then turns it into
+  separate changes with plain labels, which the editor previews and applies with one `apply()`
+  (one undo step). Steps that were there keep their positions; new ones go right of the step
+  that leads into them and later steps move right (`place_new_steps`, a `move_steps` change).
+  The model is any one the person has a key for (`copilot_model()`); with none, the stand-in
+  shows the closest template as a proposal.
 - **Helper events.** A Helper's graph runs inside the Deep Agent's `tools` task
   (`lead:<id>|tools:<id>`). The runner records which `task` call started each such task and
   tags the Helper's tool events with `helper` and `within` (the task's call id). It adds the
@@ -293,7 +305,9 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
   bundled locally (no CDN) and loaded lazily, and **dagre** for auto-layout.
 - **State.** `flow` holds the spec plus undo history (typing in one field merges into one undo
   step). `check` holds issues, analysis and compiled snippets, refreshed in the background
-  (debounced) after every edit. `run` holds per-step run state built from events (including
+  (debounced) after every edit. `copilot` holds an open proposal, the changes kept, and the preview:
+  the canvas and its step cards read the preview while it is open (`useShown`), with editing
+  paused. `run` holds per-step run state built from events (including
   waiting steps, For Each progress, Sub-flow detail and Save Points), plus chat. `ui` holds the
   selection, Beginner/Pro mode, theme, dialogs and breakpoints (kept per flow in the browser).
   Flows autosave; every save records a flow version.
@@ -367,8 +381,8 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
 | `test_api_phase2.py` | Inbox answers and notifications (webhook, Slack, SMTP), cancel, continue, Save Points and fork, double texting (queue, reject, interrupt, rollback), triggers (webhook, upload, schedule, after-flow), run limits, versions, `Last-Event-ID`, WebSocket |
 | `test_durability.py` | **The Phase 2 Done-when**, on SQLite and Postgres: a worker killed with SIGKILL mid-run resumes from the last step without repeating finished steps or side effects; a paused approval is answered a day later through a fresh server and worker |
 | `test_db_startup.py` | Several processes starting at once set up the Postgres tables without racing |
-| `apps/web/src/**/*.test.ts` | Editing helpers, undo grouping, SSE parsing, formatting |
-| `apps/web/e2e/*.spec.ts` | Playwright: build → run → debug → export (and run the export), templates and chat, fixes, undo, copy/paste, Pro mode, settings, Ask a Human in the run panel and the Inbox, For Each, breakpoints and Save Points, stop and carry on, reload during a run, triggers, the Flow Data panel, Sub-flows, agent tools and live tool calls, tool approval, the reply format builder, Knowledge Bases, cited answers, MCP servers, API import, axe WCAG 2.2 AA scans, 300-step canvas |
+| `apps/web/src/**/*.test.ts` | Editing helpers, undo grouping, SSE parsing, formatting, the copilot's changes and panel |
+| `apps/web/e2e/*.spec.ts` | Playwright: build → run → debug → export (and run the export), templates and chat, fixes, undo, copy/paste, Pro mode, settings, Ask a Human in the run panel and the Inbox, For Each, breakpoints and Save Points, stop and carry on, reload during a run, triggers, the Flow Data panel, Sub-flows, agent tools and live tool calls, tool approval, the reply format builder, Knowledge Bases, cited answers, MCP servers, API import, the copilot (propose, preview, apply as one undo step, discard), axe WCAG 2.2 AA scans, 300-step canvas |
 | `test_standin_tools.py` | The stand-in AI calls tools, fills arguments and JSON schemas, cites sources, and plays scripts |
 | `test_agent.py` | Agent tool calls and their events, approvals (approve, edit, reject) through the Inbox shape, structured answers, add-ons, limits, MCP tools |
 | `test_knowledge.py` | Every file format, chunk provenance, hybrid search and citations on SQLite and on Postgres with pgvector, the API, an agent searching with its own queries, documents cut off by a restart, exported code searching on its own |
@@ -376,6 +390,7 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
 | `test_deep_agent.py` | The Deep Agent plans, hands a task to a Helper (nested trace, usage per Helper), keeps its files across turns; approvals inside the Deep Agent, inside a Helper and in the general helper pause the run and go through the Inbox (with a worker); the checks; Test Set `helpers:`/`files:`; **exported code runs on its own**. `test_durability.py` also kills a worker inside a Deep Agent: it resumes with the files it had |
 | `test_skills.py` | Skills are checked before they are saved; the library over the built-in skills (a copy replaces one, deleting it brings it back); the API; a missing skill is a problem with a fix; the skills ship inside the generated code and a changed skill recompiles; the stand-in reads the skill that matches the task and writes the file it asks for; a Helper reads its own skills |
 | `test_patterns.py` | The three agent team patterns use only ordinary steps and compile cleanly; an AI Decision fills Flow Data into its guidance; each exported pattern runs on its own against the fake model server (their Test Sets run in `test_templates.py`) |
+| `test_copilot.py` | **Proposals for ten written requests validate with no errors** (scripted replies); problems go back to the model until they are fixed, or it gives up and says why; a change becomes separate changes with plain labels; new steps never land on old ones; the stand-in picks the closest template; the copilot uses a model there is a key for; the API |
 | `test_sandbox.py` | **Phase 4's sandbox "Done when"**, with real containers: the host's files, the network, Easy Chain's environment and secrets, root and capabilities, the Docker socket, writes outside `/tmp`, a fork bomb, memory and time are all out of reach; errors come back as they were; a flow's Code step runs in the sandbox; the settings API and the check before a run |
 | `packages/client/src/*.test.ts(x)` | The client's SSE handling, errors, reconnecting `wait()`, and the React hook through a pause and an answer |
 
@@ -402,6 +417,7 @@ extras) and locked in `uv.lock`. Exported
 | SQLAlchemy + Alembic | SQLAlchemy Core with `create_all` and a schema version check | There is one schema version so far; Alembic migrations arrive with the first schema change. Startup takes an advisory lock so several processes can start together. |
 | Code modules run in a sandbox | Code steps run in a Docker container per call (gVisor when installed); without Docker they run in-process with a warning, unless the sandbox is set to "Always" | Docker works on Linux, Windows and macOS (decision 4.2) and needs no extra service. A warm pool of containers, microVMs and hosted sandboxes (E2B, Modal) can be added behind the same proxy. In Docker Compose the worker needs the host's Docker socket for this (`docker-compose.sandbox.yml`), which is powerful; it is an opt-in overlay. |
 | Deep Agents keep a virtual file area in the LangGraph store | Their files live in the agent's checkpointed state and are saved to a Flow Data field (`files`) | The state is saved with every Save Point, so the files survive a crash (tested) and rewind with time travel; the store would keep them outside the run's history. Flow Data also lets later steps read a file. A store-backed `/memories/` area can come with long-term memory for Deep Agents. |
+| The copilot has "Fix this" on any problem | **Ask the copilot** is on problems that have no fix button of their own | A problem with a fix already has a one-click, exact fix; sending it to a model would be slower and could change more than it needs. |
 | (not in prompt) | Deep Agents have no `execute` tool | Running commands belongs in Code steps, which run in the sandbox. A deepagents sandbox backend on the same Docker sandbox can add it later. |
 | Cancel stops a run | Cancel stops the run at once and keeps its Save Points, but a Code step already running in a thread finishes in the background (its result is dropped) | Python can't kill a thread. Time limits on steps bound this. |
 | Show ARCHITECTURE.md, schema and plan before writing feature code; one phase at a time | Phases 0 and 1 were built in one go and reported together ([report](docs/phases/phase-0-1.md)); Phases 2 and 3 followed, each after its report ([Phase 2](docs/phases/phase-2.md), [Phase 3](docs/phases/phase-3.md)) | The request was "take this and build, do testing and all", and each phase's questions were answered with "whatever you think is right" or "continue". |

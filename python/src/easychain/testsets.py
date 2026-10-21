@@ -242,3 +242,24 @@ async def run_test_set(
     if stand_in is None:
         stand_in = bool(data.get("stand_in"))
     return [await run_case(spec, case, stand_in, sandbox) for case in data.get("cases", [])]
+
+
+def add_cases(path: Path, flow_file: str, cases: list[dict[str, Any]]) -> dict[str, int]:
+    """Add cases to a Test Set file (made when there is none). A name already taken gets a
+    number, so no case replaces another."""
+    data: dict[str, Any] = {"flow": flow_file, "cases": []}
+    if path.exists():
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or data
+    existing = data.setdefault("cases", [])
+    names = {c.get("name") for c in existing if isinstance(c, dict)}
+    for case in cases:
+        name, n = str(case.get("name") or "Case"), 2
+        unique = name
+        while unique in names:
+            unique, n = f"{name} ({n})", n + 1
+        names.add(unique)
+        existing.append({**case, "name": unique})
+    path.write_text(
+        yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8", newline="\n"
+    )
+    return {"added": len(cases), "total": len(existing)}

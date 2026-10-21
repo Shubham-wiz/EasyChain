@@ -1,4 +1,4 @@
-import { AlertTriangle, ChevronDown, ChevronRight, CircleAlert, Wrench } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, CircleAlert, Sparkles, Wrench } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { applyFix } from "../../lib/fixes";
 import { getStep, helperOf, renameStepId, toIdent, toolOf, updateSettings, updateStep } from "../../lib/spec";
@@ -6,6 +6,7 @@ import type { Issue } from "../../lib/types";
 import { cn, preview } from "../../lib/utils";
 import { useStepInfo } from "../../state/catalog";
 import { useCheck } from "../../state/check";
+import { useCopilot } from "../../state/copilot";
 import { useFlow } from "../../state/flow";
 import { useRun } from "../../state/run";
 import { useUi } from "../../state/ui";
@@ -33,7 +34,8 @@ const GROUP_KINDS = new Set([
   "mcp_tools",
 ]);
 
-export function IssueList({ issues, compact, retry }: { issues: Issue[]; compact?: boolean; retry?: () => void }) {
+/** The flow's problems. With `askCopilot`, a problem with no fix of its own can go to the copilot. */
+export function IssueList({ issues, compact, retry, askCopilot }: { issues: Issue[]; compact?: boolean; retry?: () => void; askCopilot?: boolean }) {
   const steps = useFlow((s) => s.spec?.steps);
   const focus = useUi((s) => s.focus);
   if (!issues.length) return null;
@@ -68,6 +70,11 @@ export function IssueList({ issues, compact, retry }: { issues: Issue[]; compact
                     <Wrench size={12} /> {issue.fix.label}
                   </Button>
                 )}
+                {!issue.fix && askCopilot && (
+                  <Button size="sm" variant="outline" className="mt-1.5" onClick={() => void useCopilot.getState().ask("", issue)}>
+                    <Sparkles size={12} /> Ask the copilot
+                  </Button>
+                )}
               </div>
             </div>
           </li>
@@ -98,7 +105,7 @@ function FlowPanel() {
           />
         </Field>
       </div>
-      {flowIssues.length > 0 && <IssueList issues={flowIssues} />}
+      {flowIssues.length > 0 && <IssueList issues={flowIssues} askCopilot />}
       <FlowDataEditor />
       <FlowRunSettings />
     </div>
@@ -245,7 +252,7 @@ function StepPanel({ stepId }: { stepId: string }) {
             </Field>
           </div>
         )}
-        <IssueList issues={issues} compact />
+        <IssueList issues={issues} compact askCopilot />
         <StepRunResult stepId={stepId} />
       </div>
       <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col">

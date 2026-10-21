@@ -26,7 +26,7 @@ In development, Vite proxies `/api` to `EASYCHAIN_API` (default `http://127.0.0.
 | Route | Page |
 |---|---|
 | `#/` | Home: templates (**Try it** / **Use template**), your flows, links to the Inbox and Knowledge |
-| `#/flows/{id}` | The editor: Step library, canvas, inspector, run panel. **Try it** opens `#/flows/{id}?try=1`, which runs the flow on its sample data once; `?try=1` is dropped as the run starts, so a reload or Back shows that run instead of starting another. |
+| `#/flows/{id}` | The editor: Step library, canvas, inspector, run panel, Copilot. **Try it** opens `#/flows/{id}?try=1`, which runs the flow on its sample data once; `?try=1` is dropped as the run starts, so a reload or Back shows that run instead of starting another. |
 | `#/inbox`, `#/inbox/{id}` | Everything waiting for a person: approvals, answers, tool approvals (works on phones) |
 | `#/knowledge`, `#/knowledge/{id}` | Knowledge Bases: documents, chunk preview, test search |
 | `#/skills`, `#/skills/{name}`, `#/skills/new` | The Skills library: workspace and built-in skills, editing SKILL.md and its files |
@@ -44,6 +44,7 @@ src/
     Inbox.tsx           the Inbox page
     Knowledge.tsx       the Knowledge page
     Skills.tsx          the Skills page
+    CopilotPanel.tsx    the describe-it copilot: request, the proposal's changes and test cases
     CodeView.tsx, MonacoEditor.tsx   code views and editors (Monaco, lazy)
     ui.tsx              the small UI kit (buttons, inputs, dialogs, tabs, tooltips…)
     canvas/             React Flow canvas: step and note nodes, edges (incl. dashed tool edges), icons
@@ -60,6 +61,7 @@ src/
     types.ts            TypeScript mirror of the Python flow spec and API types
     api.ts              the API client (REST, SSE parsing)
     fixes.ts            one-click fixes for problems and run errors
+    copilot.ts          the copilot's changes: apply the kept ones to a flow, mark new and changed steps
   index.css             design tokens (light and dark themes, WCAG AA contrast)
 e2e/                    Playwright journeys against the real app and a fake model server
 ```
@@ -73,6 +75,7 @@ e2e/                    Playwright journeys against the real app and a fake mode
 | `run` | Per-step run state built from events: status, tokens, tool calls, progress, Sub-flow detail, waiting requests, Save Points; and the chat. The panel follows one stream at a time: a new run, a replay or opening another flow stops following the last one, and a stream that no longer owns the panel changes nothing. A stream that drops mid-run is picked up again from the last event (`?after=`, four tries over about 7 s), then the panel says the connection was lost and offers **Reconnect**. |
 | `ui` | Selection, Beginner/Pro mode, theme, open dialogs; breakpoints and the stand-in AI setting for the open flow (kept per flow in the browser). The Stand-in AI switch applies to every flow; **Try it** without a key turns it on for that flow only. |
 | `catalog` | Step types and their forms, providers and models, embedding models, templates. |
+| `copilot` | The copilot's request, an open proposal, the changes and test cases kept, and the preview of the flow with them. While a proposal is open the canvas and its step cards read the preview (`useShown`) and editing is paused; applying is one `apply()`, so one undo step. |
 
 Canvas nodes subscribe only to their own step, run state and problems, so a streaming token
 re-renders one node. That keeps a 300-step flow responsive.
@@ -89,7 +92,7 @@ reply from one polite live region (`RunAnnouncer`), not each streamed token.
 
 ```bash
 pnpm --filter @easychain/web typecheck
-pnpm --filter @easychain/web test         # vitest: editing helpers, undo, SSE parsing, citations
+pnpm --filter @easychain/web test         # vitest: editing helpers, undo, SSE parsing, citations, the copilot
 pnpm --filter @easychain/web build && pnpm --filter @easychain/web e2e   # Playwright
 SCREENSHOTS=1 pnpm --filter @easychain/web exec playwright test e2e/zz-screenshots.spec.ts  # refresh docs images
 ```
@@ -105,6 +108,7 @@ The Playwright config starts the fake OpenAI-compatible server, the test MCP ser
 - agent tools and tool approval;
 - Knowledge Bases and citations;
 - MCP and API import;
+- the copilot: propose, preview on the canvas, apply as one undo step, discard;
 - axe WCAG 2.2 AA scans;
 - a 300-step canvas.
 

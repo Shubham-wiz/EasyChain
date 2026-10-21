@@ -38,10 +38,12 @@ from .. import __version__
 from ..compiler import CompileError, FlowAnalysis, compile_flow, validate
 from ..compiler.issues import Fix, error, warning
 from ..compiler.templates import secrets as template_secrets
+from ..copilot import copilot_model, propose
 from ..export import export_zip
 from ..knowledge.store import KnowledgeStore
 from ..providers import EMBEDDING_MODELS, PROVIDERS, flow_models, get_provider
 from ..runtime import key_status
+from ..runtime.gateway import MissingAPIKey, MissingPackage
 from ..runtime.resources import open_resources
 from ..runtime.sandbox import SandboxSettings, docker_status, effective_mode
 from ..runtime.sandbox import prepare as prepare_sandbox
@@ -52,6 +54,7 @@ from ..spec.schema import flow_json_schema
 from ..steps import catalog as step_catalog
 from ..templates import list_templates, load_template
 from ..templates.samples import ensure_sample_knowledge, ensure_samples
+from ..testsets import add_cases
 from . import notify
 from .cron import CronError, next_fire
 from .cron import describe as describe_cron
@@ -1049,6 +1052,57 @@ def create_app(
             hub(), {**trig, "config": {**cfg, "inputs": cfg.get("inputs")}}, data
         )
         return {"run_id": run_id, "file": str(target)}
+
+    # ── the describe-it copilot ─────────────────────────────────────────────
+
+    async def _copilot_choice() -> str | None:
+        return (await hub().db.get_setting("copilot", {})).get("model") or None
+
+    @app.get("/api/settings/copilot")
+    async def get_copilot() -> dict[str, Any]:
+        chosen = await _copilot_choice()
+        return {"model": chosen, "using": copilot_model(chosen)}
+
+    @app.put("/api/settings/copilot")
+    async def set_copilot(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        model = body.get("model") or None
+        if model is not None and (not isinstance(model, str) or ":" not in model):
+            raise HTTPException(
+                422, detail={"message": "Pick a model as provider:model, like openai:gpt-4.1."}
+            )
+        await hub().db.set_setting("copilot", {"model": model})
+        return {"model": model, "using": copilot_model(model)}
+
+    @app.post("/api/copilot")
+    async def copilot(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        """A proposal for what the person describes (or a fix for one problem)."""
+        request = str(body.get("request") or "").strip()
+        issue = body.get("issue") if isinstance(body.get("issue"), dict) else None
+        if not request and not issue:
+            raise HTTPException(422, detail={"message": "Say what the flow should do."})
+        current = _spec_or_422(body["spec"]) if body.get("spec") else None
+        model = body.get("model") or await _copilot_choice()
+        stand_in = bool(body.get("stand_in")) or copilot_model(model) is None
+        try:
+            proposal = await asyncio.to_thread(
+                propose,
+                request,
+                current,
+                model=model,
+                stand_in=stand_in,
+                resolve=resolve_flow,
+                issue=issue,
+            )
+        except (MissingAPIKey, MissingPackage) as exc:
+            raise HTTPException(422, detail={"message": str(exc)}) from None
+        return proposal.to_dict()
+
+    @app.post("/api/flows/{flow_id}/tests")
+    def add_test_cases(flow_id: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        """Add cases (from the copilot) to the flow's Test Set, ``<flow id>.tests.yaml``."""
+        _get(flow_id)
+        cases = [c for c in body.get("cases") or [] if isinstance(c, dict)]
+        return add_cases(flows.workspace / f"{flow_id}.tests.yaml", f"{flow_id}.flow.yaml", cases)
 
     # ── the Skills library ──────────────────────────────────────────────────
 

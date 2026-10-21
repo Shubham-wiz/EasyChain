@@ -419,7 +419,17 @@ async def test_a_deep_agents_files_survive_a_worker_crash(
         async def slow_started() -> bool:
             return marker.exists()
 
-        await _wait_for(slow_started)
+        # The worker starts, imports deepagents and the LangChain stack, compiles the flow and
+        # makes two model calls before the slow tool starts: on CI's Windows runner (several
+        # times slower than Linux) that takes longer than a plain step.
+        try:
+            await _wait_for(slow_started, timeout=150)
+        except AssertionError:
+            run = await hub.db.get_run(run_id)
+            kinds = [e["type"] for e in await _events(hub, run_id)]
+            raise AssertionError(
+                f"the slow tool never started: run {run and run['status']}, events {kinds}"
+            ) from None
         workers.kill(first)  # /notes.md is written, the agent's slow tool is half-way
         workers.start()
 

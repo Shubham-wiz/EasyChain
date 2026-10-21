@@ -6,24 +6,31 @@ import type { Step } from "../../lib/types";
 import { cn, formatCost, formatMs, formatTokens } from "../../lib/utils";
 import { useStepInfo } from "../../state/catalog";
 import { useCheck } from "../../state/check";
-import { useFlow } from "../../state/flow";
+import { useCopilot, useShown } from "../../state/copilot";
 import { useRun } from "../../state/run";
 import { useUi } from "../../state/ui";
 import { Tooltip } from "../ui";
 import { colorsFor, iconFor, stepSummary } from "./stepMeta";
 
 function useStepView(id: string) {
-  const step = useFlow((s) => s.spec?.steps.find((x) => x.id === id));
-  const agentId = useFlow((s) => (s.spec ? toolOf(s.spec, id) : null));
-  const agentName = useFlow((s) => (agentId ? s.spec?.steps.find((x) => x.id === agentId)?.name || agentId : null));
-  const leadId = useFlow((s) => (s.spec ? helperOf(s.spec, id) : null));
-  const leadName = useFlow((s) => (leadId ? s.spec?.steps.find((x) => x.id === leadId)?.name || leadId : null));
+  // While the copilot's proposal is open, the canvas shows the flow as it would be.
+  const step = useShown((s) => s.steps.find((x) => x.id === id));
+  const agentName = useShown((s) => {
+    const agentId = toolOf(s, id);
+    return agentId ? s.steps.find((x) => x.id === agentId)?.name || agentId : null;
+  });
+  const leadName = useShown((s) => {
+    const leadId = helperOf(s, id);
+    return leadId ? s.steps.find((x) => x.id === leadId)?.name || leadId : null;
+  });
   const info = useStepInfo(step?.type);
   const run = useRun((s) => s.steps[id]);
   const allIssues = useCheck((s) => s.issues);
   const upstream = useCheck((s) => s.analysis?.upstream[id]);
   const mode = useUi((s) => s.mode);
-  const issues = useMemo(() => allIssues.filter((i) => i.step === id), [allIssues, id]);
+  // The checks are for the flow, not the copilot's preview (its problems are in the panel).
+  const previewing = useCopilot((s) => s.preview != null);
+  const issues = useMemo(() => (previewing ? [] : allIssues.filter((i) => i.step === id)), [allIssues, id, previewing]);
   return { step, info, run, issues, upstream, mode, agentName, leadName };
 }
 
@@ -40,6 +47,27 @@ function BottomHandle({ id, label, title, offset }: { id: string; label: string;
       </span>
     </>
   );
+}
+
+/** A step the copilot's proposal adds or changes. */
+function CopilotMark({ id }: { id: string }) {
+  const mark = useCopilot((s) => s.marks[id]);
+  if (!mark) return null;
+  return (
+    <span
+      className={cn(
+        "absolute -top-2.5 left-3 rounded-full px-1.5 text-[10px] leading-[16px] font-semibold text-white",
+        mark === "added" ? "bg-emerald-600" : "bg-amber-600",
+      )}
+      data-testid={`copilot-mark-${id}`}
+    >
+      {mark === "added" ? "New" : "Changed"}
+    </span>
+  );
+}
+
+function markRing(mark: string | undefined) {
+  return mark === "added" ? "ring-2 ring-emerald-500/70" : mark === "changed" ? "ring-2 ring-amber-500/70" : null;
 }
 
 /** Open a flow used as a Sub-flow. */
@@ -209,6 +237,7 @@ function SubflowLink({ step }: { step: Step }) {
 
 export const StepNode = memo(function StepNode({ id, selected }: NodeProps) {
   const { step, info, run, issues, upstream, mode, agentName, leadName } = useStepView(id);
+  const mark = useCopilot((s) => s.marks[id]);
   if (!step) return null;
   const Icon = iconFor(info?.icon);
   const colors = colorsFor(info?.category);
@@ -222,6 +251,7 @@ export const StepNode = memo(function StepNode({ id, selected }: NodeProps) {
         hasError ? "border-danger/60" : "border-border",
         run?.status === "running" && "step-running",
         run?.status === "waiting" && "border-warn/70",
+        markRing(mark),
         selected && "ring-2 ring-accent",
       )}
       data-testid={`step-${id}`}
@@ -229,6 +259,7 @@ export const StepNode = memo(function StepNode({ id, selected }: NodeProps) {
       onDoubleClick={() => openSubflow(step)}
     >
       <Breakpoints id={id} />
+      <CopilotMark id={id} />
       {step.type !== "input" && inFlow && <Handle type="target" position={Position.Left} title="Connect into this step" />}
       <div className="overflow-hidden rounded-[11px]">
         <div className="flex items-start gap-2.5 px-3 pt-2.5 pb-2">
@@ -302,6 +333,7 @@ export const StepNode = memo(function StepNode({ id, selected }: NodeProps) {
 /** A step that leaves by labelled exits: Decision, Ask a Human, For Each and Jump. */
 export const DecisionNode = memo(function DecisionNode({ id, selected }: NodeProps) {
   const { step, info, run, issues, upstream, mode } = useStepView(id);
+  const mark = useCopilot((s) => s.marks[id]);
   if (!step) return null;
   const Icon = iconFor(info?.icon);
   const colors = colorsFor(info?.category);
@@ -316,12 +348,14 @@ export const DecisionNode = memo(function DecisionNode({ id, selected }: NodePro
         hasError ? "border-danger/60" : "border-border",
         run?.status === "running" && "step-running",
         run?.status === "waiting" && "border-warn/70",
+        markRing(mark),
         selected && "ring-2 ring-accent",
       )}
       data-testid={`step-${id}`}
       data-status={run?.status ?? "idle"}
     >
       <Breakpoints id={id} />
+      <CopilotMark id={id} />
       <Handle type="target" position={Position.Left} title="Connect into this step" />
       {step.type === "for_each" && <Handle type="target" id="results" position={Position.Bottom} isConnectable={false} className="!opacity-0" />}
       <div className="flex items-center gap-3 px-3 pt-3 pb-2">

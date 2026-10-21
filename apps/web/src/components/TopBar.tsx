@@ -47,7 +47,7 @@ function ProblemsButton() {
       <Popover.Portal>
         <Popover.Content align="end" sideOffset={6} className="z-50 max-h-[70vh] w-96 overflow-y-auto rounded-xl border border-border bg-surface p-3 shadow-xl">
           <p className="mb-2 text-sm font-semibold">Checks before a run</p>
-          {issues.length ? <IssueList issues={issues} /> : <p className="text-sm text-muted">Everything looks good.</p>}
+          {issues.length ? <IssueList issues={issues} askCopilot /> : <p className="text-sm text-muted">Everything looks good.</p>}
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>

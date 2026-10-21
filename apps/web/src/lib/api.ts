@@ -1,4 +1,5 @@
-import type { Catalog, CheckResult, ChunkPreview, CompileResult, DataField, FlowListItem, FlowSpec, FlowVersion, InboxItem, KnowledgeBase, KnowledgeDocument, KnowledgeHit, McpServer, McpSettings, McpTool, NotificationSettings, OpenApiInspection, RunEvent, RunSummary, SandboxSettings, SandboxStatus, SavePoint, SecretInfo, Skill, SkillSummary, Step, TemplateInfo, ThreadInfo, Trigger, TriggerKind } from "./types";
+import type { Proposal, TestCase } from "./copilot";
+import type { Catalog, CheckResult, ChunkPreview, CompileResult, DataField, FlowListItem, FlowSpec, FlowVersion, InboxItem, Issue, KnowledgeBase, KnowledgeDocument, KnowledgeHit, McpServer, McpSettings, McpTool, NotificationSettings, OpenApiInspection, RunEvent, RunSummary, SandboxSettings, SandboxStatus, SavePoint, SecretInfo, Skill, SkillSummary, Step, TemplateInfo, ThreadInfo, Trigger, TriggerKind } from "./types";
 
 export class ApiError extends Error {
   status: number;
@@ -143,6 +144,13 @@ export const api = {
   },
 
   // MCP servers and OpenAPI import
+  copilot: (body: { request: string; spec: FlowSpec | null; issue?: Issue; model?: string }) =>
+    request<Proposal>("/api/copilot", { method: "POST", ...json(body) }),
+  copilotSettings: () => request<{ model: string | null; using: string | null }>("/api/settings/copilot"),
+  saveCopilotSettings: (model: string | null) =>
+    request<{ model: string | null; using: string | null }>("/api/settings/copilot", { method: "PUT", ...json({ model }) }),
+  addTestCases: (flowId: string, cases: TestCase[]) =>
+    request<{ added: number; total: number }>(`/api/flows/${encodeURIComponent(flowId)}/tests`, { method: "POST", ...json({ cases }) }),
   skills: () => request<{ skills: SkillSummary[] }>("/api/skills").then((r) => r.skills),
   skill: (name: string) => request<Skill>(`/api/skills/${encodeURIComponent(name)}`),
   saveSkill: (name: string, files: Record<string, string>) =>
