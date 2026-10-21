@@ -6,7 +6,9 @@ import pytest
 
 from easychain.compiler import CompileError, FlowAnalysis, compile_flow, validate
 from easychain.compiler.expressions import ExpressionError, compile_expression, field_names
+from easychain.compiler.helpers import HELPERS
 from easychain.compiler.templates import secrets, to_fstring_template, variables
+from easychain.runtime import RunOptions, run_flow
 
 from .conftest import input_step, make_spec, output_step
 
@@ -483,6 +485,62 @@ def test_expressions_compile_to_data_reads():
         == 'len(data.get("page")) > 10 and "x" not in data.get("page")'
     )
     assert field_names("max(a, b) > c.count('x')") == {"a", "b", "c"}
+
+
+def test_expressions_cant_build_a_huge_text_or_list():
+    source = compile_expression('2 * count > 5 and "a" * n')
+    assert (
+        source
+        == 'checked_multiply(2, data.get("count")) > 5 and checked_multiply("a", data.get("n"))'
+    )
+    namespace: dict = {}
+    exec(HELPERS["checked_multiply"].code, namespace)
+    check = namespace["checked_multiply"]
+    assert check(2, 3) == 6 and check("ab", 3) == "ababab" and check(3, [0]) == [0, 0, 0]
+    assert check(2.5, 2) == 5.0
+    with pytest.raises(ValueError, match="million"):
+        check("a", 999_999_999_999)  # used to fill the memory
+    with pytest.raises(ValueError, match="million"):
+        check(10**7, [1])
+
+
+async def test_a_decision_expression_that_multiplies_runs_and_stops_huge_repeats():
+    spec = make_spec(
+        [
+            input_step({"name": "n", "type": "number"}),
+            {
+                "id": "check",
+                "type": "decision",
+                "settings": {
+                    "exits": [{"label": "Long", "when": {"expression": 'len("ab" * n) > 5'}}],
+                    "otherwise": "Short",
+                },
+            },
+            {
+                "id": "long",
+                "type": "code",
+                "settings": {"code": "def run(data):\n    return {'r': 'long'}\n"},
+            },
+            {
+                "id": "short",
+                "type": "code",
+                "settings": {"code": "def run(data):\n    return {'r': 'short'}\n"},
+            },
+            output_step("r"),
+        ],
+        [
+            ("input", "check"),
+            ("check", "Long", "long"),
+            ("check", "Short", "short"),
+            ("long", "output"),
+            ("short", "output"),
+        ],
+    )
+    final, _ = await run_flow(spec, {"n": 3}, RunOptions(stand_in=True))
+    assert final["output"] == {"r": "long"}
+    final, _ = await run_flow(spec, {"n": 999_999_999_999}, RunOptions(stand_in=True))
+    assert final["status"] == "error"
+    assert "million" in final["error"]["message"]
 
 
 @pytest.mark.parametrize(

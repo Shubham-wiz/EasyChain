@@ -231,4 +231,17 @@ describe("field problems", () => {
     );
     expect(input).not.toHaveAttribute("aria-describedby");
   });
+
+  it("of an editor made of several inputs belong to the group", () => {
+    render(
+      <Field label="Input fields" htmlFor="f" group issue={{ level: "error", message: "Two fields share a name." }}>
+        <Input aria-label="Field name" />
+        <Input aria-label="Field name" />
+      </Field>,
+    );
+    const group = screen.getByRole("group", { name: "Input fields" });
+    expect(group).toHaveAccessibleDescription("Two fields share a name.");
+    expect(group).toHaveAttribute("data-invalid", "true");
+    for (const input of within(group).getAllByLabelText("Field name")) expect(input).not.toHaveAttribute("aria-describedby");
+  });
 });

@@ -2,7 +2,7 @@ import { Bell, Check, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../../lib/api";
 import type { NotificationSettings } from "../../lib/types";
-import { Button, DraftInput, Field, Input, SecretInput, Switch } from "../ui";
+import { AddressInput, Button, DraftInput, Field, Input, SecretInput, Switch } from "../ui";
 
 /** Where to tell people that a run is waiting for them (Ask a Human). */
 export function NotificationsSection() {
@@ -31,7 +31,7 @@ export function NotificationsSection() {
           <Switch checked={cfg.webhook.enabled} onCheckedChange={(v) => patch("webhook", { enabled: v })} label="Webhook" /> Webhook
         </label>
         {cfg.webhook.enabled && (
-          <Input aria-label="Webhook URL" placeholder="https://… (gets a JSON POST)" value={cfg.webhook.url} onChange={(e) => patch("webhook", { url: e.target.value })} />
+          <AddressInput aria-label="Webhook URL" placeholder="https://… (gets a JSON POST)" value={cfg.webhook.url} onChange={(url) => patch("webhook", { url })} />
         )}
       </div>
       <div className="space-y-2 rounded-lg border border-border p-3">

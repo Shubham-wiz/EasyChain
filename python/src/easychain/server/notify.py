@@ -15,7 +15,7 @@ from typing import Any
 
 import httpx
 
-from .secrets import masked, unmasked
+from .secrets import masked, masked_url, unmasked, unmasked_url
 
 DEFAULTS: dict[str, Any] = {
     "webhook": {"enabled": False, "url": ""},
@@ -35,6 +35,8 @@ DEFAULTS: dict[str, Any] = {
 
 # Settings the API never shows: (section, key).
 SECRET_SETTINGS = (("slack", "webhook_url"), ("email", "password"))
+# Addresses that may carry a token: shown with the site visible and the token parts hidden.
+URL_SETTINGS = (("webhook", "url"),)
 
 
 def merged(saved: dict[str, Any] | None) -> dict[str, Any]:
@@ -53,6 +55,8 @@ def shown(saved: dict[str, Any] | None) -> dict[str, Any]:
     out = merged(saved)
     for section, key in SECRET_SETTINGS:
         out[section][key] = masked(out[section][key])
+    for section, key in URL_SETTINGS:
+        out[section][key] = masked_url(out[section][key])
     return out
 
 
@@ -61,6 +65,8 @@ def to_save(sent: dict[str, Any] | None, saved: dict[str, Any] | None) -> dict[s
     out, before = merged(sent), merged(saved)
     for section, key in SECRET_SETTINGS:
         out[section][key] = unmasked(out[section][key], before[section][key])
+    for section, key in URL_SETTINGS:
+        out[section][key] = unmasked_url(out[section][key], before[section][key])
     return out
 
 

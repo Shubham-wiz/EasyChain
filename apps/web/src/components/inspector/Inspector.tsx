@@ -15,6 +15,22 @@ import { Button, Field, Input, Tabs, TabsContent, TabsList, TabsTrigger, Textare
 import { isVisible, renderControl } from "./fields";
 import { FlowDataEditor, FlowRunSettings, RunPolicySection } from "./FlowSettings";
 
+/** Form kinds made of several inputs: their label and problems belong to the whole group. */
+const GROUP_KINDS = new Set([
+  "input_fields",
+  "field_multi",
+  "key_value",
+  "string_list",
+  "examples",
+  "exits",
+  "field_updates",
+  "code",
+  "schema",
+  "tools",
+  "agent_addons",
+  "mcp_tools",
+]);
+
 export function IssueList({ issues, compact, retry }: { issues: Issue[]; compact?: boolean; retry?: () => void }) {
   const steps = useFlow((s) => s.spec?.steps);
   const focus = useUi((s) => s.focus);
@@ -151,7 +167,16 @@ function StepPanel({ stepId }: { stepId: string }) {
 
   const control = (f: (typeof visible)[number]) => (
     <div key={f.key} data-setting={f.key}>
-      <Field label={f.label} help={f.help} example={f.example} technical={f.technical} pro={mode === "pro"} htmlFor={`${stepId}-${f.key}`} issue={issueFor(f.key)}>
+      <Field
+        label={f.label}
+        help={f.help}
+        example={f.example}
+        technical={f.technical}
+        pro={mode === "pro"}
+        htmlFor={`${stepId}-${f.key}`}
+        issue={issueFor(f.key)}
+        group={GROUP_KINDS.has(f.kind)}
+      >
         {renderControl({
           field: f,
           value: step.settings[f.key],

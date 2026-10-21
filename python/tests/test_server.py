@@ -149,6 +149,71 @@ def test_missing_secret_is_flagged(client):
     assert client.post("/api/check", json=spec).json()["issues"] == []
 
 
+def test_missing_secrets_are_found_in_every_kind_of_step(client):
+    client.put(
+        "/api/settings/mcp",
+        json={
+            "servers": [
+                {
+                    "id": "docs",
+                    "name": "Docs",
+                    "transport": "http",
+                    "url": "https://docs.example.com/mcp",
+                    "headers": {"Authorization": "Bearer {secret:DOCS_TOKEN}"},
+                }
+            ]
+        },
+    )
+    spec = {
+        "name": "Secrets everywhere",
+        "steps": [
+            {"id": "input", "type": "input", "settings": {"fields": [{"name": "q"}]}},
+            {
+                "id": "lookup",
+                "type": "mcp_tool",
+                "settings": {"server": "docs", "tool": "search", "arguments": {"query": "{q}"}},
+            },
+            {
+                "id": "local_ai",
+                "type": "ai_model",
+                "settings": {
+                    "model": "openai:my-model",
+                    "prompt": "q",
+                    "base_url": "http://127.0.0.1:9000/v1",
+                    "api_key": "LOCAL_LLM_KEY",
+                    "save_as": "reply",
+                },
+            },
+            {
+                "id": "prompt",
+                "type": "instructions",
+                "settings": {"system": "Use {secret:NOT_FOR_THE_AI}", "user": "{q}"},
+            },
+            {"id": "output", "type": "output", "settings": {"fields": ["reply"]}},
+        ],
+        "connections": [
+            {"from": "input", "to": "lookup"},
+            {"from": "lookup", "to": "prompt"},
+            {"from": "prompt", "to": "local_ai"},
+            {"from": "local_ai", "to": "output"},
+        ],
+    }
+    issues = client.post("/api/check", json=spec).json()["issues"]
+    missing = {
+        (i["step"], i["setting"], i["message"]) for i in issues if i["code"] == "missing_secret"
+    }
+    assert missing == {
+        ("lookup", "server", "The secret DOCS_TOKEN isn't set yet."),  # in the MCP server's header
+        ("local_ai", "api_key", "The secret LOCAL_LLM_KEY isn't set yet."),
+    }
+    # A secret in a prompt is an error of its own; it isn't also reported as "not set yet".
+    assert any(i["code"] == "secret_in_prompt" and i["step"] == "prompt" for i in issues)
+    client.put("/api/secrets/DOCS_TOKEN", json={"value": "tok-123456"})
+    client.put("/api/secrets/LOCAL_LLM_KEY", json={"value": "key-123456"})
+    issues = client.post("/api/check", json=spec).json()["issues"]
+    assert not [i for i in issues if i["code"] == "missing_secret"]
+
+
 def test_export_zip(client):
     flow_id = client.post("/api/flows", json={"template": "summarise-url"}).json()["id"]
     response = client.get(f"/api/flows/{flow_id}/export")

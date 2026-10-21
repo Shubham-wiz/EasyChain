@@ -14,6 +14,7 @@ import os
 import re
 import threading
 from pathlib import Path
+from urllib.parse import unquote, urlsplit, urlunsplit
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -37,6 +38,59 @@ def masked(value: str | None) -> str:
     if not value:
         return ""
     return value if _REFERENCE.fullmatch(value) else MASK
+
+
+_TOKEN_LIKE = re.compile(r"^(?=.*\d)[A-Za-z0-9_\-.~%]{16,}$|^[A-Za-z0-9_\-.~%]{32,}$")
+
+
+def masked_url(value: str | None) -> str:
+    """A saved webhook or server address as the API shows it. The site stays visible, but a
+    password, query values, a fragment and path parts that look like tokens are hidden.
+    ``{secret:NAME}`` references are safe to show and are left as they are."""
+    if not value:
+        return ""
+    if _REFERENCE.fullmatch(value):
+        return value
+    try:
+        parts = urlsplit(value)
+    except ValueError:
+        return MASK
+    if not parts.scheme or not parts.netloc:
+        return MASK
+
+    def keep(text: str) -> str:
+        return text if _REFERENCE.fullmatch(unquote(text)) else MASK
+
+    host = parts.hostname or ""
+    if parts.port:
+        host = f"{host}:{parts.port}"
+    if parts.username:
+        host = f"{parts.username}:{MASK}@{host}" if parts.password else f"{parts.username}@{host}"
+    path = "/".join(
+        MASK
+        if _TOKEN_LIKE.match(segment) and not _REFERENCE.fullmatch(unquote(segment))
+        else segment
+        for segment in parts.path.split("/")
+    )
+    query = "&".join(
+        f"{name}={keep(val)}" if val else name
+        for name, val in (
+            (pair.split("=", 1) + [""])[:2] for pair in parts.query.split("&") if pair
+        )
+    )
+    return urlunsplit((parts.scheme, host, path, query, MASK if parts.fragment else ""))
+
+
+def unmasked_url(value: str | None, saved: str | None) -> str:
+    """What to save when a client sends an address back: the hidden form of the saved address,
+    unchanged, keeps it. A hidden part in any other address can't be saved."""
+    if saved and value == masked_url(saved):
+        return saved
+    if value and MASK in value:
+        raise ValueError(
+            "Part of this address is hidden (••••••). Type the whole address again to change it."
+        )
+    return value or ""
 
 
 def unmasked(value: str | None, saved: str | None) -> str:

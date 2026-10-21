@@ -64,12 +64,14 @@ Done:
   sub-flows work as agent tools, For Each bodies and with a time limit.
 - For Each "at most this many at once" limits that step only, inside sub-flows too.
 - Saving keeps spaces at the end of lines in multi-line text.
+- A sub-flow's own "most steps at the same time" applies inside it, whatever the parent's
+  setting (it is passed when the sub-flow is called).
+- Retries wait the documented 1 s by default (the generated `RetryPolicy` always says
+  `initial_interval`; LangGraph's own default is 0.5 s).
+- Decision and Jump expressions can't use up the memory: `*` goes through `checked_multiply()`,
+  which refuses to make a text or list longer than a million characters or items.
 
-Open:
-
-- `max_parallel` set on a sub-flow is ignored (only the root flow's applies).
-- With `retry_wait` left at its default (1 s), LangGraph waits its own 0.5 s before a retry.
-- The Decision expression sandbox has one known gap: memory exhaustion (`"a" * 999999999999`).
+Open: nothing.
 
 ### Runtime, server and workers
 
@@ -89,10 +91,12 @@ Done:
 - `/resume` checks the run before marking Inbox items answered; deleted secrets leave a
   separate worker's environment on reload; `chmod 0600` on Windows is documented.
 
-Open:
+- The generic notification webhook URL and MCP server URLs are shown with their token parts
+  hidden (password, query values, fragment, token-like path parts); the site stays visible.
+  Sent back unchanged they keep the saved address; edited around a hidden part, they are
+  refused with "type the whole address again".
 
-- The generic notification webhook URL and the MCP server URL are still shown in full (they may
-  carry a token in the query string).
+Open: nothing.
 
 ### Knowledge, integrations, CLI and export
 
@@ -113,13 +117,16 @@ Done:
   plainly that approving `npx` or `python` approves anything they can run.
 - `max_rows` streams plain reads; Postgres queries time out after 60 s; `SELECT 'a;b'` works.
 - The docs give the right shape for `EASYCHAIN_MCP_SERVERS`.
+- The pre-run check for missing secrets looks at every setting of every step, the AI Model's
+  "key for the custom endpoint", and the MCP servers a step or agent uses. Settings where a
+  secret is refused (text sent to the AI) aren't flagged twice.
 
 Open:
 
 - Server-side fetches (Knowledge Base web pages, OpenAPI import) have no address filter, so they
-  can reach internal addresses, and `/api/knowledge-preview` returns what it fetched (planned
-  egress allow-list: Phase 5).
-- The pre-run check for missing secrets looks only at Database query and Web request steps.
+  can reach internal addresses, and `/api/knowledge-preview` returns what it fetched. This is
+  planned with the egress allow-list in Phase 5 (milestone 5.6), because blocking internal
+  addresses by default would also block intranet documentation people want to add.
 
 ### Web app and client
 
@@ -140,13 +147,15 @@ Done:
 - Screen readers hear one status line (`RunAnnouncer`), not every streamed token; field
   problems are linked to their inputs.
 - The code editor's completion inserts what it shows.
+- The Webhook URL (Notifications) and MCP server URLs use `AddressInput`: a saved address shows
+  with its token parts hidden and stays as it is unless a new one is typed. Header values whose
+  name looks sensitive (Authorization, …key, …token, cookie, …) use the hidden `SecretInput`
+  with a nudge towards `{secret:NAME}`.
+- Problems of editors made of several inputs (input-field rows, key/value rows, exits, the reply
+  builder, the code editor, tools and add-ons) belong to a labelled group (`Field group`), so a
+  screen reader announces the problem when entering it.
 
-Open:
-
-- The generic Webhook URL in Notifications and header values in the Web request step's
-  key-value editor are still plain inputs.
-- Field problems of composite editors (input-field rows, the reply builder, the code editor)
-  aren't linked to a single input.
+Open: nothing.
 
 ### Tests and docs
 

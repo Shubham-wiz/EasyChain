@@ -36,7 +36,7 @@ phases:
     evidence: "python/tests/test_templates.py; support-bot 12/12, sql-analyst 10/10 (stand-in AI, scripted model turns, no key)"
   - id: review
     name: Fixes from the 2026-10-04 code review
-    state: in_progress
+    state: done   # two items are scheduled elsewhere: the egress allow-list (Phase 5) and a real-model check before a release
     tracker: docs/handover/review.md
   - id: 4
     name: Autopilot and teams
@@ -59,9 +59,9 @@ waiting_for_review: false
 open_questions: []
 
 tests:
-  measured_at: 2026-10-09, after the review fixes
-  python: {passed: 409, skipped: 0, on: "Windows 11 with SQLite and Postgres 18 (no pgvector); Linux in CI"}
-  web_unit: {passed: 64}
+  measured_at: 2026-10-21, after the last review items
+  python: {passed: 416, skipped: 0, on: "Linux with SQLite and Postgres; Windows and Linux in CI"}
+  web_unit: {passed: 65}
   client: {passed: 11}
   e2e: {passed: 33, skipped_unless_SCREENSHOTS: 1, on: "Linux (CI)"}
   template_test_sets: {support-bot: "12/12", sql-analyst: "10/10", others: all pass}

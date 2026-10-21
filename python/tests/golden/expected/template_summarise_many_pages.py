@@ -228,7 +228,7 @@ def build_graph(checkpointer=None, *, store=None, cache=None):
     builder.add_node(
         "fetch_page",
         fetch_page_for_each_page,
-        retry_policy=RetryPolicy(max_attempts=2),
+        retry_policy=RetryPolicy(max_attempts=2, initial_interval=1.0),
     )
     builder.add_node("write_prompt", write_prompt)
     builder.add_node("summarise", summarise)

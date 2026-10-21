@@ -621,7 +621,7 @@ def test_mcp_headers_and_env_are_hidden_and_kept(tmp_path, monkeypatch):
         "id": "docs",
         "name": "Docs",
         "transport": "http",
-        "url": "https://docs.example.com/mcp",
+        "url": "https://docs.example.com/mcp?api_key=k-998877",
         "headers": {"Authorization": "Bearer tok-123456", "X-Team": "Bearer {secret:DOCS_TEAM}"},
         "env": {"API_KEY": "key-abcdef"},
     }
@@ -634,8 +634,10 @@ def test_mcp_headers_and_env_are_hidden_and_kept(tmp_path, monkeypatch):
             "X-Team": "Bearer {secret:DOCS_TEAM}",
         }
         assert hidden["env"] == {"API_KEY": "••••••"}
+        assert hidden["url"] == "https://docs.example.com/mcp?api_key=••••••"
         assert client.get("/api/settings/mcp").json() == shown
         assert "tok-123456" not in json.dumps(shown) and "key-abcdef" not in json.dumps(shown)
+        assert "k-998877" not in json.dumps(shown)
 
         # The settings page sends everything back: hidden values, unchanged, stay as they were.
         hidden["name"] = "Company docs"
@@ -644,6 +646,7 @@ def test_mcp_headers_and_env_are_hidden_and_kept(tmp_path, monkeypatch):
         assert saved["name"] == "Company docs"
         assert saved["headers"]["Authorization"] == "Bearer tok-123456"
         assert saved["env"] == {"API_KEY": "key-abcdef"}
+        assert saved["url"] == "https://docs.example.com/mcp?api_key=k-998877"
 
         # "Show its tools" sends the server as shown; it connects with the saved token.
         used = []
@@ -655,6 +658,7 @@ def test_mcp_headers_and_env_are_hidden_and_kept(tmp_path, monkeypatch):
         monkeypatch.setattr(mcp_module, "list_tools", list_tools)
         assert client.post("/api/mcp/tools", json={"server": hidden}).json() == {"tools": []}
         assert used[0]["headers"]["Authorization"] == "Bearer tok-123456"
+        assert used[0]["url"] == "https://docs.example.com/mcp?api_key=k-998877"
 
         # A hidden value with nothing saved behind it has to be typed again.
         renamed = client.put("/api/settings/mcp", json={"servers": [{**hidden, "id": "docs2"}]})

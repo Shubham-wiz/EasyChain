@@ -700,11 +700,15 @@ class SubflowHandler(StepHandler):
         """A Sub-flow sharing Flow Data is added as its graph itself, except where a function
         has to call it: as an agent's tool, as a For Each's per-item step, or with a time limit
         (LangGraph enforces those on functions)."""
+        child = self.child(step, an)
         return bool(
             step.settings.share_data
             and step.id not in an.tool_of
             and step.id not in an.foreach_body
             and not step.run.timeout
+            # A sub-flow's own "most steps at the same time" has to be passed when it is
+            # called; as a node, the parent run's setting would win.
+            and not (child is not None and child.spec.settings.max_parallel)
         )
 
     def is_async(self, step: Any, an: Any) -> bool:
@@ -907,6 +911,8 @@ class SubflowHandler(StepHandler):
                 ],
                 node=parts.graph_var,
             )
+        limit = child.spec.settings.max_parallel
+        config = f", {{'max_concurrency': {limit}}}" if limit else ""
         if s.share_data:
             call = f"await {parts.graph_var}.ainvoke" if is_async else f"{parts.graph_var}.invoke"
             code = (
@@ -915,7 +921,7 @@ class SubflowHandler(StepHandler):
                     f"{self.title(step)}\n\nRuns the flow “{child.spec.name}” on this flow's data "
                     "and returns its results."
                 )
-                + f"\n    return {call}(data)"
+                + f"\n    return {call}(data{config})"
             )
             return StepCode([code], node=fn, is_async=is_async)
         values = [
@@ -934,10 +940,16 @@ class SubflowHandler(StepHandler):
         head = (
             f"{'async def' if is_async else 'def'} {fn}(data: {ctx.data_class}) -> dict[str, Any]:"
         )
-        invoke = f"    result = {call}({payload})"
+        invoke = f"    result = {call}({payload}{config})"
         if len(invoke) > 92:
             inner = "".join(f"            {v},\n" for v in values)
-            invoke = f"    result = {call}(\n        {{\n{inner}        }}\n    )"
+            if limit:
+                invoke = (
+                    f"    result = {call}(\n        {{\n{inner}        }},\n"
+                    f"        {{'max_concurrency': {limit}}},\n    )"
+                )
+            else:
+                invoke = f"    result = {call}(\n        {{\n{inner}        }}\n    )"
         returned = "{" + ", ".join(result_items) + "}"
         code = (
             head

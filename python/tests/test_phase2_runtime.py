@@ -148,6 +148,74 @@ async def test_for_each_limit_holds_inside_a_sub_flow():
     assert _most_at_once(spans) <= 2  # it used to be ignored inside a sub-flow (4 at once)
 
 
+def test_retries_wait_the_documented_second_by_default():
+    spec = make_spec(
+        [
+            input_step("x"),
+            {
+                "id": "flaky",
+                "type": "code",
+                "settings": {"code": "def run(data):\n    return {}\n"},
+                "run": {"retries": 2},
+            },
+            output_step("x"),
+        ],
+        [("input", "flaky"), ("flaky", "output")],
+    )
+    source = compile_flow(spec).source
+    assert "RetryPolicy(max_attempts=3, initial_interval=1.0)" in source  # was LangGraph's 0.5 s
+
+
+def _parallel_child(limit: int) -> object:
+    """Four branches that each take 0.2 s, with "most steps at the same time" set."""
+    branches = [f"b{i}" for i in range(4)]
+    return make_spec(
+        [
+            input_step("go"),
+            *[
+                {
+                    "id": b,
+                    "type": "code",
+                    "settings": {
+                        "code": _SPAN.replace("'span'", "'spans'").replace(
+                            "[began, time.perf_counter()]", "[[began, time.perf_counter()]]"
+                        )
+                    },
+                }
+                for b in branches
+            ],
+            output_step("spans"),
+        ],
+        [*[("input", b) for b in branches], *[(b, "output") for b in branches]],
+        name="Parallel",
+        data=[{"name": "spans", "type": "list", "update": "append"}],
+        settings={"max_parallel": limit},
+    )
+
+
+@pytest.mark.parametrize("share_data", [False, True])
+async def test_a_sub_flows_own_parallel_limit_applies(share_data):
+    child = _parallel_child(2)
+    alone, _ = await run(child, {"go": "x"})
+    assert _most_at_once(alone["output"]["spans"]) <= 2
+    sub = {"id": "par", "type": "subflow", "settings": {"flow": "parallel"}}
+    if share_data:
+        sub["settings"]["share_data"] = True
+    else:
+        sub["settings"]["outputs"] = {"spans": "spans"}
+    parent = make_spec(
+        [input_step("go"), sub, output_step("spans")],
+        [("input", "par"), ("par", "output")],
+        data=[{"name": "spans", "type": "list", "update": "append"}],
+        settings={"max_parallel": 10},  # the parent's own limit doesn't lift the sub-flow's
+    )
+    final, _ = await run(parent, {"go": "x"}, resolve={"parallel": child}.get)
+    assert final["status"] == "ok", final
+    spans = final["output"]["spans"]
+    assert len(spans) == 4
+    assert _most_at_once(spans) <= 2  # it used to be ignored (4 at once)
+
+
 async def test_for_each_limit_doesnt_hold_back_other_branches():
     spec = make_spec(
         [

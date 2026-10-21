@@ -59,10 +59,10 @@ def describe_condition(cond: Any) -> str:
     return f"{cond.field} {op} {cond.value!r}"
 
 
-def condition_source(cond: Any, field_type: str) -> str:
+def condition_source(cond: Any, field_type: str, helper: Any = None) -> str:
     """Python source for one condition, reading fields from ``data``."""
     if cond.expression:
-        return compile_expression(cond.expression)
+        return compile_expression(cond.expression, helper)
     get = f"data.get({py_str(cond.field)})"
     text = f'str({get} or "")'
     op, value = cond.op, cond.value
@@ -113,7 +113,7 @@ def conditions_body(
         if ex.when is None:
             body.append(f"{indent}return {out(ex.label)}")
             return body
-        src = condition_source(ex.when, ctx.field_type(ex.when.field))
+        src = condition_source(ex.when, ctx.field_type(ex.when.field), ctx.helper)
         if "re.search" in src:
             ctx.imports.add("re")
         body.append(f"{indent}if {src}:\n{indent}    return {out(ex.label)}")
@@ -703,7 +703,7 @@ class JumpHandler(StepHandler):
         lines: list[str] = []
         for up in s.updates:
             value = (
-                compile_expression(up.expression)
+                compile_expression(up.expression, ctx.helper)
                 if up.expression
                 else template_value(up.value, ctx)
             )

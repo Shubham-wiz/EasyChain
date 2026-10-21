@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import ast
 import json
+from collections.abc import Callable
 
 ALLOWED_FUNCS = {"len", "str", "int", "float", "bool", "abs", "min", "max", "round", "any", "all"}
 ALLOWED_METHODS = {
@@ -126,8 +127,20 @@ def _dq(value: str) -> ast.Name:
 
 
 class _ToDataGet(ast.NodeTransformer):
-    def __init__(self, call_targets: set[int]):
+    def __init__(self, call_targets: set[int], multiply: str):
         self.call_targets = call_targets
+        self.multiply = multiply
+
+    def visit_BinOp(self, node: ast.BinOp) -> ast.AST:
+        self.generic_visit(node)
+        if isinstance(node.op, ast.Mult):
+            # "a" * 999999999999 would use up the memory; checked_multiply() refuses huge repeats.
+            return ast.Call(
+                func=ast.Name(id=self.multiply, ctx=ast.Load()),
+                args=[node.left, node.right],
+                keywords=[],
+            )
+        return node
 
     def visit_Constant(self, node: ast.Constant) -> ast.AST:
         return _dq(node.value) if isinstance(node.value, str) else node
@@ -144,13 +157,23 @@ class _ToDataGet(ast.NodeTransformer):
         )
 
 
-def compile_expression(expression: str) -> str:
-    """Return Python source for the expression with fields read from ``data``."""
+def compile_expression(expression: str, helper: Callable[[str], str] | None = None) -> str:
+    """Return Python source for the expression with fields read from ``data``.
+
+    ``helper`` registers a helper function with the module being generated (``ctx.helper``);
+    multiplication goes through ``checked_multiply()``, so an expression can't build a huge
+    text or list.
+    """
     tree = parse_expression(expression)
     call_targets = {
         id(n.func)
         for n in ast.walk(tree)
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
     }
-    new_tree = ast.fix_missing_locations(_ToDataGet(call_targets).visit(tree))
+    multiplies = any(
+        isinstance(n, ast.BinOp) and isinstance(n.op, ast.Mult) for n in ast.walk(tree)
+    )
+    if multiplies and helper:
+        helper("checked_multiply")  # adds the function to the module being generated
+    new_tree = ast.fix_missing_locations(_ToDataGet(call_targets, "checked_multiply").visit(tree))
     return ast.unparse(new_tree)

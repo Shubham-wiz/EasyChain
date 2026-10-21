@@ -176,6 +176,24 @@ def readable_text(page: str) -> str:
     from_imports=(("html.parser", "HTMLParser"),),
 )
 
+CHECKED_MULTIPLY = Helper(
+    "checked_multiply",
+    '''
+def checked_multiply(left: Any, right: Any) -> Any:
+    """``left * right`` in a Decision or Jump expression, refusing to repeat a text or list
+    so many times that it would use up the memory."""
+    for repeated, count in ((left, right), (right, left)):
+        if isinstance(repeated, (str, bytes, list, tuple)) and isinstance(count, int):
+            if len(repeated) * count > 1_000_000:
+                raise ValueError(
+                    "An expression tried to make a text or list longer than a million "
+                    "characters or items. Check the numbers it multiplies."
+                )
+    return left * right
+''',
+    from_imports=(("typing", "Any"),),
+)
+
 PICK_EXIT = Helper(
     "pick_exit",
     '''
@@ -474,6 +492,7 @@ HELPERS = {
         FILL_JSON,
         READABLE_TEXT,
         PICK_EXIT,
+        CHECKED_MULTIPLY,
         PICK_OPTION,
         IN_THREAD,
         WITH_RUN_POLICY,

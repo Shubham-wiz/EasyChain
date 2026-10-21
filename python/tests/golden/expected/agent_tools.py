@@ -363,7 +363,7 @@ def lookup_order_tool(data: FlowData) -> BaseTool:
             lookup_order,
             {**data, "order_id": order_id},
             timeout=10.0,
-            retry=RetryPolicy(max_attempts=3),
+            retry=RetryPolicy(max_attempts=3, initial_interval=1.0),
         )
         return as_text(result.get("order"))
 

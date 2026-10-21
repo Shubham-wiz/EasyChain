@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from ..integrations import mcp as mcp_module
 from ..integrations import openapi
-from .secrets import MASK, masked
+from .secrets import MASK, masked, masked_url, unmasked_url
 
 # Parts of an MCP server's settings that can hold tokens: never shown by the API.
 _SECRET_PARTS = {"headers": "header", "env": "environment variable"}
@@ -58,6 +58,7 @@ def _shown(settings: dict[str, Any]) -> dict[str, Any]:
         server = dict(server)
         for part in _SECRET_PARTS:
             server[part] = {k: masked(v) for k, v in (server.get(part) or {}).items()}
+        server["url"] = masked_url(server.get("url"))
         servers.append(server)
     return {**settings, "servers": servers}
 
@@ -84,6 +85,11 @@ def _restored(server: dict[str, Any], saved: list[dict[str, Any]]) -> dict[str, 
                 )
             values[key] = kept
         out[part] = values
+    try:
+        out["url"] = unmasked_url(server.get("url"), before.get("url"))
+    except ValueError as exc:
+        name = server.get("name") or server["id"]
+        raise HTTPException(422, detail={"message": f"MCP server “{name}”: {exc}"}) from None
     return out
 
 

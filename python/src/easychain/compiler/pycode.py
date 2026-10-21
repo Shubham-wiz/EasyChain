@@ -127,9 +127,11 @@ class Imports:
 def retry_policy_code(policy: Any, imports: Imports) -> str:
     """``RetryPolicy(...)`` for a step's retries (from its run policy)."""
     imports.add_from("langgraph.types", "RetryPolicy")
-    retry = [f"max_attempts={policy.retries + 1}"]
-    if policy.retry_wait != 1.0:
-        retry.append(f"initial_interval={py_literal(policy.retry_wait)}")
+    # The wait is always written: LangGraph's own default (0.5 s) differs from ours (1 s).
+    retry = [
+        f"max_attempts={policy.retries + 1}",
+        f"initial_interval={py_literal(policy.retry_wait)}",
+    ]
     return f"RetryPolicy({', '.join(retry)})"
 
 

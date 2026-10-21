@@ -19,6 +19,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
+import anyio
 from fastapi import Body, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -477,7 +478,26 @@ def create_app(
                 )
         return issues
 
-    def runtime_issues(spec: FlowSpec) -> list[Any]:
+    def _secret_names(value: Any) -> list[str]:
+        """``{secret:NAME}`` references anywhere in a setting (text, lists, mappings)."""
+        if isinstance(value, str):
+            return template_secrets(value)
+        if isinstance(value, dict):
+            return [n for v in value.values() for n in _secret_names(v)]
+        if isinstance(value, list):
+            return [n for v in value for n in _secret_names(v)]
+        return []
+
+    def _mcp_servers() -> dict[str, dict[str, Any]]:
+        """The MCP servers in Settings (this runs in a worker thread, so it waits for the
+        database call on the server's event loop)."""
+        try:
+            saved = anyio.from_thread.run(hub().db.get_setting, "mcp", {}) or {}
+        except Exception:  # no server loop (a script) or no settings yet
+            return {}
+        return {s.get("id"): s for s in saved.get("servers") or [] if isinstance(s, dict)}
+
+    def runtime_issues(spec: FlowSpec, found: list[Any] = ()) -> list[Any]:
         """Checks that depend on this machine: missing API keys and secrets."""
         issues = []
         status = key_status()
@@ -504,21 +524,41 @@ def create_app(
                     )
                 )
         issues += knowledge_issues(spec)
+        # Settings where a secret is already refused (a prompt, a question) need no second word.
+        refused = {(i.step, i.setting) for i in found if "secret" in i.code}
+        servers: dict[str, dict[str, Any]] | None = None
         for step in spec.steps:
-            if step.type == "sql_query":
-                texts = [step.settings.connection]
-            elif step.type == "http_request":
-                texts = [step.settings.url, step.settings.body, *step.settings.headers.values()]
-            else:
-                continue
-            for name in sorted({n for t in texts for n in template_secrets(t)}):
+            needed: dict[str, str] = {}  # secret name -> the setting that uses it
+            settings = step.settings.model_dump() if hasattr(step.settings, "model_dump") else {}
+            for key, value in settings.items():
+                if (step.id, key) in refused:
+                    continue
+                for name in _secret_names(value):
+                    needed.setdefault(name, key)
+            if step.type == "ai_model" and settings.get("api_key"):
+                needed.setdefault(settings["api_key"], "api_key")
+            used = (
+                [settings.get("server")]
+                if step.type == "mcp_tool"
+                else [m.get("server") for m in settings.get("mcp") or []]
+                if step.type == "agent"
+                else []
+            )
+            for server_id in filter(None, used):
+                if servers is None:
+                    servers = _mcp_servers()
+                server = servers.get(server_id) or {}
+                parts = [server.get("url"), server.get("headers"), server.get("env")]
+                for name in _secret_names(parts):
+                    needed.setdefault(name, "server" if step.type == "mcp_tool" else "mcp")
+            for name, setting in sorted(needed.items()):
                 if not vault.has(name):
                     issues.append(
                         warning(
                             "missing_secret",
                             f"The secret {name} isn't set yet.",
                             step=step.id,
-                            setting="connection" if step.type == "sql_query" else "headers",
+                            setting=setting,
                             fix=Fix("add_secret", f"Add {name}", {"name": name}),
                         )
                     )
@@ -528,7 +568,8 @@ def create_app(
     def check(spec: dict[str, Any] = Body(...), flow_id: str | None = None) -> dict[str, Any]:
         parsed = _spec_or_422(spec)
         an = FlowAnalysis(parsed, resolve=resolve_flow, flow_id=flow_id)
-        issues = validate(parsed, analysis=an) + runtime_issues(parsed)
+        issues = validate(parsed, analysis=an)
+        issues += runtime_issues(parsed, issues)
         return {"issues": [i.to_dict() for i in issues], "analysis": an.summary()}
 
     @app.post("/api/compile")
@@ -967,7 +1008,10 @@ def create_app(
 
     @app.put("/api/settings/notifications")
     async def set_notifications(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
-        value = notify.to_save(body, await hub().db.get_setting("notifications", {}))
+        try:
+            value = notify.to_save(body, await hub().db.get_setting("notifications", {}))
+        except ValueError as exc:
+            raise HTTPException(422, detail={"message": str(exc)}) from None
         await hub().db.set_setting("notifications", value)
         return notify.shown(value)
 

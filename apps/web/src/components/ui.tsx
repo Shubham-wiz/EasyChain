@@ -135,6 +135,48 @@ export function isMasked(value: unknown): value is string {
 
 const SECRET_REF = /\{secret:[A-Za-z_][A-Za-z0-9_]*\}/;
 
+/** An address the server sent back with its token parts hidden ("https://site/••••••?k=••••••"). */
+export function hasHiddenParts(value: unknown): value is string {
+  return typeof value === "string" && value.includes("••••••") && !/^•{3,}$/.test(value);
+}
+
+type AddressInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "defaultValue" | "onChange"> & {
+  value: string;
+  onChange: (value: string) => void;
+};
+
+/**
+ * A webhook or server address. Saved addresses come back with their tokens hidden; the box
+ * then shows that hidden form (so you can see which site it goes to) and sends it back
+ * unchanged, which keeps the saved address. Typing replaces the whole address.
+ */
+export function AddressInput({ value, onChange, placeholder, ...props }: AddressInputProps) {
+  const [saved, setSaved] = useState(hasHiddenParts(value) ? value : null);
+  if (hasHiddenParts(value) && value !== saved) setSaved(value);
+  const hintId = useId();
+  const hidden = hasHiddenParts(value);
+  const fieldAria = useFieldAria(props.id);
+  const describedBy = [fieldAria["aria-describedby"], hidden ? hintId : null].filter(Boolean).join(" ") || undefined;
+  return (
+    <div className="space-y-1">
+      <Input
+        {...props}
+        autoComplete="off"
+        spellCheck={false}
+        value={hidden ? "" : value}
+        placeholder={hidden ? value : placeholder}
+        aria-describedby={describedBy}
+        onChange={(e) => onChange(e.target.value === "" && saved ? saved : e.target.value)}
+      />
+      {hidden && (
+        <p id={hintId} className="text-[11px] text-muted">
+          Saved. The parts that look like tokens are hidden; type a new address to replace it.
+        </p>
+      )}
+    </div>
+  );
+}
+
 type SecretInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "defaultValue" | "onChange" | "type"> & {
   value: string;
   onChange: (value: string) => void;
@@ -402,6 +444,7 @@ export function Field({
   children,
   pro,
   issue,
+  group,
 }: {
   label: string;
   help?: string;
@@ -411,19 +454,38 @@ export function Field({
   children: ReactNode;
   pro?: boolean;
   issue?: { level: "error" | "warning"; message: string } | null;
+  /** An editor made of several inputs (rows, a builder, a code editor): the label and the
+   *  problem belong to the group as a whole, not to one input. */
+  group?: boolean;
 }) {
   const issueId = useId();
-  const context = { id: htmlFor, describedBy: issue ? issueId : undefined, invalid: issue?.level === "error" };
+  const labelId = useId();
+  const context = group
+    ? { invalid: false }
+    : { id: htmlFor, describedBy: issue ? issueId : undefined, invalid: issue?.level === "error" };
+  const body = group ? (
+    <div role="group" aria-labelledby={labelId} aria-describedby={issue ? issueId : undefined} data-invalid={issue?.level === "error" || undefined}>
+      {children}
+    </div>
+  ) : (
+    children
+  );
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-1.5">
-        <label htmlFor={htmlFor} className="text-xs font-medium text-text">
-          {label}
-        </label>
+        {group ? (
+          <span id={labelId} className="text-xs font-medium text-text">
+            {label}
+          </span>
+        ) : (
+          <label htmlFor={htmlFor} className="text-xs font-medium text-text">
+            {label}
+          </label>
+        )}
         {pro && technical && <span className="font-mono text-[10px] text-faint">{technical}</span>}
         <Help text={help} example={example} technical={pro ? undefined : technical} />
       </div>
-      <FieldContext.Provider value={context}>{children}</FieldContext.Provider>
+      <FieldContext.Provider value={context}>{body}</FieldContext.Provider>
       {issue && (
         <p id={issueId} className={cn("text-xs", issue.level === "error" ? "text-danger" : "text-warn")}>
           {issue.message}

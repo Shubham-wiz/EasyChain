@@ -6,7 +6,7 @@ import { api, ApiError } from "../../lib/api";
 import { toIdent } from "../../lib/spec";
 import type { McpServer, McpSettings, McpTool } from "../../lib/types";
 import { useUi } from "../../state/ui";
-import { Badge, Button, DraftInput, Input, SecretInput, Select, useRowKeys } from "../ui";
+import { AddressInput, Badge, Button, DraftInput, Input, SecretInput, Select, useRowKeys } from "../ui";
 
 function blank(n: number): McpServer {
   return { id: `server_${n}`, name: "", transport: "http", url: "", headers: {}, command: "", args: [], env: {} };
@@ -56,7 +56,7 @@ function ServerCard({
           {!approved && <p className="text-xs text-warn">`{server.command.trim() || "?"}` isn't on the approved list below, so it won't run.</p>}
         </>
       ) : (
-        <Input aria-label="Server URL" className="font-mono text-[12px]" placeholder="https://example.com/mcp" value={server.url} onChange={(e) => set({ url: e.target.value })} />
+        <AddressInput aria-label="Server URL" className="font-mono text-[12px]" placeholder="https://example.com/mcp" value={server.url} onChange={(url) => set({ url })} />
       )}
       {server.transport !== "stdio" && (
         <SecretInput

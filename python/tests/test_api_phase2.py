@@ -200,6 +200,33 @@ def test_inbox_answer_resumes_the_run_and_notifies_people(client, fake_server, s
     assert client.post("/api/settings/notifications/test").json()["results"]
 
 
+def test_a_webhook_address_with_a_token_is_shown_with_the_token_hidden(client):
+    url = "https://hooks.example.com/run-waiting/7f3a9c2e5b1d4a8f9e0c?token=s3cret-abc&team=ops"
+    shown = client.put(
+        "/api/settings/notifications", json={"webhook": {"enabled": True, "url": url}}
+    ).json()
+    assert (
+        shown["webhook"]["url"]
+        == "https://hooks.example.com/run-waiting/••••••?token=••••••&team=••••••"
+    )
+    assert "s3cret" not in json.dumps(client.get("/api/settings/notifications").json())
+
+    # Sent back unchanged (the settings page always sends everything), the address is kept.
+    shown["email"]["smtp_host"] = "smtp.example.com"
+    client.put("/api/settings/notifications", json=shown)
+    saved = client.portal.call(client.app.state.hub.db.get_setting, "notifications")
+    assert saved["webhook"]["url"] == url
+
+    # Editing around the hidden part can't save it; a whole new address can.
+    shown["webhook"]["url"] = shown["webhook"]["url"].replace("hooks.", "other.")
+    refused = client.put("/api/settings/notifications", json=shown)
+    assert refused.status_code == 422 and "Type the whole address again" in refused.text
+    shown["webhook"]["url"] = "https://other.example.com/hook"
+    assert client.put("/api/settings/notifications", json=shown).json()["webhook"]["url"] == (
+        "https://other.example.com/hook"
+    )
+
+
 def test_notification_secrets_are_hidden_and_kept(client):
     sent = {
         "slack": {"enabled": True, "webhook_url": "https://hooks.slack.com/services/T0/B0/xyz789"},

@@ -13,7 +13,7 @@ import { CodeView } from "../CodeView";
 import { AddonsField, McpToolsField, ToolsField } from "./AgentFields";
 import { KnowledgeBasePicker, McpServerPicker, McpToolPicker, SecretPicker, SqlEditor } from "./IntegrationFields";
 import { SchemaBuilder } from "./SchemaBuilder";
-import { Button, DraftInput, Input, Select, Switch, Textarea, useRowKeys } from "../ui";
+import { Button, DraftInput, Input, SecretInput, Select, Switch, Textarea, useRowKeys } from "../ui";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Value = any;
@@ -303,6 +303,9 @@ const KEY_VALUE_LABELS: Record<string, { key: string; value: string; add: string
   arguments: { key: "Argument", value: "Value", add: "Add an argument", first: () => "argument", placeholder: "{field} or text" },
 };
 
+/** Headers whose values are keys or passwords: shown hidden, with a nudge to use a secret. */
+const SENSITIVE_HEADER = /auth|token|key|secret|password|cookie|signature|credential/i;
+
 export function KeyValueEditor({ value, onChange, field }: FieldProps) {
   const labels = KEY_VALUE_LABELS[field.key] ?? KEY_VALUE_LABELS.headers;
   const entries = Object.entries((value ?? {}) as Record<string, string>);
@@ -320,13 +323,25 @@ export function KeyValueEditor({ value, onChange, field }: FieldProps) {
             clean={clean}
             onCommit={(key) => write(entries.map((p, j) => (j === i ? [key, p[1]] : p)))}
           />
-          <Input
-            aria-label={`${labels.value} (${k})`}
-            className="font-mono text-[12px]"
-            placeholder={labels.placeholder}
-            value={v}
-            onChange={(e) => write(entries.map((p, j) => (j === i ? [p[0], e.target.value] : p)))}
-          />
+          {field.key === "headers" && SENSITIVE_HEADER.test(k) ? (
+            <div className="min-w-0 flex-1">
+              <SecretInput
+                aria-label={`${labels.value} (${k})`}
+                className="font-mono text-[12px]"
+                placeholder="Bearer {secret:API_KEY}"
+                value={v}
+                onChange={(text) => write(entries.map((p, j) => (j === i ? [p[0], text] : p)))}
+              />
+            </div>
+          ) : (
+            <Input
+              aria-label={`${labels.value} (${k})`}
+              className="font-mono text-[12px]"
+              placeholder={labels.placeholder}
+              value={v}
+              onChange={(e) => write(entries.map((p, j) => (j === i ? [p[0], e.target.value] : p)))}
+            />
+          )}
           <Button
             size="icon"
             variant="ghost"

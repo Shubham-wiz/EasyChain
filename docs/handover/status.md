@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-10-04 (after Phase 3: Windows support and fixes from the code review)._
+_Last updated: 2026-10-21 (the code review is done; Phase 4 starts with the Code sandbox)._
 
 ## In one paragraph
 
@@ -22,8 +22,8 @@ _Updated 2026-10-09 so work can carry on from another machine or session._
    its annotations name the failing tests; they are readable without admin rights:
    `curl -s https://api.github.com/repos/Shubham-wiz/EasyChain/check-runs/<job id>/annotations`
    (job ids: `…/actions/runs/<run id>/jobs`).
-3. **The review is worked through** ([review.md](review.md)): everything serious is fixed. What's
-   left there is listed under "Open" in each section; none of it blocks Phase 4. Before a
+3. **The review is done** ([review.md](review.md)). Two items are left on purpose. The address
+   filter for server-side fetches comes with the egress allow-list in Phase 5. Before a
    release, run the agent templates' Test Sets with a real model (`--real-model`).
 4. **Then Phase 4** ([ROADMAP.md](../ROADMAP.md#phase-4-autopilot-and-teams)); its questions are
    answered (decisions 4.1–4.3).
@@ -36,7 +36,7 @@ _Updated 2026-10-09 so work can carry on from another machine or session._
 | 1. Visual MVP | Canvas, step library, inspector, run panel, chat, export, templates | Done | [phase-0-1.md](../phases/phase-0-1.md) |
 | 2. Real runtime | Flow Data, loops, parallel joins, For Each, Sub-flows, Jump, Ask a Human, Inbox, Save Points, time travel, workers, triggers, notifications | Done | [phase-2.md](../phases/phase-2.md) |
 | 3. Agents and knowledge | Agent step + add-ons, MCP, OpenAPI import, structured output, Knowledge Base, memory, all providers | Done | [phase-3.md](../phases/phase-3.md) |
-| Review fixes | Windows support; the findings of the 2026-10-04 review | Done (small items left in review.md) | [review.md](review.md) |
+| Review fixes | Windows support; the findings of the 2026-10-04 review | Done (two items scheduled elsewhere, see review.md) | [review.md](review.md) |
 | 4. Autopilot and teams | Deep Agents, Helpers, Skills, sandboxes, multi-agent patterns, describe-it copilot | Next (questions answered: decisions 4.1–4.3) | plan in [ROADMAP.md](../ROADMAP.md#phase-4-autopilot-and-teams) |
 | 5. Platform | Test Sets and Checks, Test Runs, CI gate, dashboards, model gateway, Publish, environments, roles, SSO | Not started | |
 | 6. Ecosystem | LangGraph.js export, custom module registry, import, collaboration, prompt optimisation, Helm | Not started | |
@@ -45,13 +45,13 @@ _Updated 2026-10-09 so work can carry on from another machine or session._
 
 ## Tests
 
-| Suite | Result (2026-10-04) |
+| Suite | Result (2026-10-21) |
 |---|---|
-| Python on Windows 11 (`pnpm test`) | all pass, with SQLite and a throwaway Postgres 18 (no pgvector) |
-| Python on Linux (CI) | all pass, with SQLite and Postgres 16 + pgvector |
-| Web unit (vitest) | 36 passed (Linux CI and Windows) |
-| Client package (vitest) | 4 passed |
-| Playwright e2e | 31 passed in CI (Linux); the screenshot spec runs only with `SCREENSHOTS=1` |
+| Python on Linux (`pnpm test`, and CI) | 416 pass, with SQLite and Postgres (+ pgvector in CI) |
+| Python on Windows 11 (CI) | all pass |
+| Web unit (vitest) | 65 passed |
+| Client package (vitest) | 11 passed |
+| Playwright e2e | 33 passed (Linux); the screenshot spec runs only with `SCREENSHOTS=1` |
 | Template Test Sets | all 8 pass (`tests/test_templates.py`), with the stand-in AI and scripted turns |
 | Lint | ruff check + format clean; tsc clean for web and client |
 
@@ -60,9 +60,7 @@ Compose, and **Windows** (Python suite, CLI and worker, web checks, the app serv
 
 ## Next
 
-1. Work through the rest of [review.md](review.md), most serious first (the "fix first" list
-   is done).
-2. Then **Phase 4**, in this order: sandboxes for Code steps (Docker, gVisor where installed;
+1. **Phase 4**, in this order: sandboxes for Code steps (Docker, gVisor where installed;
    Docker Desktop on Windows), the Deep Agent step, Helpers, Skills, multi-agent patterns, the
    describe-it copilot, then the Research assistant and Inbox triage templates.
 
