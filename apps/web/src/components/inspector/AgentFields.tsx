@@ -1,6 +1,6 @@
 // Inspector controls for Phase 3 steps: an Agent's tools and Add-ons, and its MCP tools.
 
-import { ChevronDown, ChevronRight, ExternalLink, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink, Loader2, Trash2 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { api, ApiError } from "../../lib/api";
 import {
@@ -17,7 +17,7 @@ import {
   TOOL_TYPES,
   updateSettings,
 } from "../../lib/spec";
-import type { McpSettings, McpTool } from "../../lib/types";
+import type { McpSettings, McpTool, SkillSummary } from "../../lib/types";
 import { cn } from "../../lib/utils";
 import { useCatalog } from "../../state/catalog";
 import { useCheck } from "../../state/check";
@@ -227,6 +227,48 @@ export function HelpersField({ value, stepId }: FieldProps) {
           </Select>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Skills from the Skills library a Deep Agent or Helper can follow. */
+export function SkillsField({ value, onChange }: FieldProps) {
+  const [skills, setSkills] = useState<SkillSummary[] | null>(null);
+  useEffect(() => {
+    api.skills().then(setSkills).catch(() => setSkills([]));
+  }, []);
+  const chosen: string[] = value ?? [];
+  const toggle = (name: string, on: boolean) => onChange(on ? [...chosen, name] : chosen.filter((n) => n !== name));
+  const missing = chosen.filter((n) => skills && !skills.some((s) => s.name === n));
+  return (
+    <div className="space-y-1.5" data-testid="step-skills">
+      {!skills && <Loader2 size={14} className="animate-spin text-muted" />}
+      {skills?.map((skill) => (
+        <label key={skill.name} className="flex items-start gap-2 rounded-lg border border-border px-2.5 py-1.5 text-xs">
+          <input
+            type="checkbox"
+            className="mt-0.5 accent-[var(--accent)]"
+            checked={chosen.includes(skill.name)}
+            onChange={(e) => toggle(skill.name, e.target.checked)}
+          />
+          <span className="min-w-0">
+            <span className="font-mono font-medium">{skill.name}</span>
+            {skill.built_in && <span className="ml-1 text-faint">(built-in)</span>}
+            <span className="line-clamp-2 block text-muted">{skill.description}</span>
+          </span>
+        </label>
+      ))}
+      {missing.map((name) => (
+        <p key={name} className="flex items-center gap-2 text-xs text-danger">
+          “{name}” isn't in the Skills library.
+          <button type="button" className="font-medium underline" onClick={() => toggle(name, false)}>
+            Take it off
+          </button>
+        </p>
+      ))}
+      <a href="#/skills" className="inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline">
+        <ExternalLink size={11} /> Open the Skills library
+      </a>
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { timeAgo } from "../lib/utils";
 import { useUi } from "../state/ui";
 import { SettingsDialog } from "./dialogs/SettingsDialog";
 import { KnowledgeLink } from "./Knowledge";
+import { SkillsLink } from "./Skills";
 import { InboxLink } from "./TopBar";
 import { Badge, Button } from "./ui";
 
@@ -43,6 +44,7 @@ export function Home({ open }: { open: (flowId: string, opts?: { tryIt?: boolean
           <span className="text-base font-semibold">Easy Chain</span>
           <div className="ml-auto flex items-center gap-1">
             <KnowledgeLink />
+            <SkillsLink />
             <InboxLink />
             <Button variant="ghost" size="sm" onClick={() => openSettings()}>
               <Settings size={14} /> Settings

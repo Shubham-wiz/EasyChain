@@ -20,6 +20,8 @@ SPEC_VERSION = 1
 # Step ids and Flow Data field names become Python identifiers in generated code.
 IDENT_PATTERN = r"^[a-z][a-z0-9_]{0,62}$"
 Ident = Annotated[str, Field(pattern=IDENT_PATTERN)]
+# Skills (Agent Skills format) are named like report-writing.
+SkillName = Annotated[str, Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$", max_length=64)]
 
 FieldType = Literal["text", "number", "yes_no", "list", "object", "file", "messages", "any"]
 UpdateRule = Literal["replace", "append", "merge", "add", "custom"]
@@ -712,6 +714,11 @@ class DeepAgentSettings(AgentSettings):
     save_todos: Ident | None = Field(
         default=None, description="Also save its to-do list here (a list of {content, status})."
     )
+    skills: list[SkillName] = Field(
+        default_factory=list,
+        description="Skills from the Skills library it can use: it reads a skill's "
+        "instructions when the skill's description matches the task.",
+    )
     max_steps: int = Field(
         default=500,
         ge=10,
@@ -747,6 +754,9 @@ class HelperSettings(_Model):
         default_factory=list, description="Steps this helper can use as tools (their ids)."
     )
     mcp: list[McpTools] = Field(default_factory=list)
+    skills: list[SkillName] = Field(
+        default_factory=list, description="Skills from the Skills library this helper can use."
+    )
     temperature: float | None = Field(default=None, ge=0, le=2)
     addons: AgentAddons = Field(default_factory=AgentAddons)
 

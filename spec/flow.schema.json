@@ -1179,6 +1179,16 @@
           "default": null,
           "description": "Also save its to-do list here (a list of {content, status}).",
           "title": "Save Todos"
+        },
+        "skills": {
+          "description": "Skills from the Skills library it can use: it reads a skill's instructions when the skill's description matches the task.",
+          "items": {
+            "maxLength": 64,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Skills",
+          "type": "array"
         }
       },
       "title": "DeepAgentSettings",
@@ -1465,6 +1475,16 @@
             "$ref": "#/$defs/McpTools"
           },
           "title": "Mcp",
+          "type": "array"
+        },
+        "skills": {
+          "description": "Skills from the Skills library this helper can use.",
+          "items": {
+            "maxLength": 64,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "type": "string"
+          },
+          "title": "Skills",
           "type": "array"
         },
         "temperature": {

@@ -52,11 +52,12 @@ src/easychain/
   server/        FastAPI app, run database, job queue and workers, Inbox, triggers, notifications
   knowledge/     Knowledge Bases: reading files, splitting, embeddings, storage, hybrid search; memory
   integrations/  read-only SQL, MCP client, OpenAPI import
-  templates/     starter flows, their Test Sets, and the sample data they use
+  templates/     starter flows, their Test Sets, the sample data they use, and built-in skills
   testing/       a fake OpenAI-compatible server and a small MCP server, for tests and demos
   cli.py         the `easychain` command
   export.py      the export zip / folder
   testsets.py    Test Sets: run cases, apply checks
+  skills.py      the Skills library (Agent Skills folders in <workspace>/skills/, and built-in ones)
   providers.py   the 14 model providers, their models, prices and keys; embedding models
 ```
 
@@ -77,7 +78,7 @@ without bumping the spec `version`. After changing it, run `pnpm schema` to rege
 | `logic.py` | Decision |
 | `flow_control.py` | For Each, Sub-flow, Jump, Ask a Human |
 | `agent.py` | Agent (tools, add-ons, MCP tools) |
-| `deep_agent.py` | Deep Agent (`create_deep_agent`: to-do list, files, Helpers) and Helper (a sub-agent spec) |
+| `deep_agent.py` | Deep Agent (`create_deep_agent`: to-do list, files, Helpers, skills) and Helper (a sub-agent spec) |
 | `knowledge.py` | Knowledge Base search |
 | `memory.py` | Memory |
 | `sql.py` | Database query |
@@ -122,7 +123,7 @@ per call (gVisor when Docker has it); the loader swaps each Code step's function
 
 | File | Job |
 |---|---|
-| `app.py` | The FastAPI app: flows, catalog, checks, compile, export, runs (SSE and WebSocket), Inbox, secrets, settings, templates, triggers. Serves the web app. |
+| `app.py` | The FastAPI app: flows, catalog, checks, compile, export, runs (SSE and WebSocket), Inbox, secrets, settings, templates, triggers, the Skills library (`/api/skills`). Serves the web app. |
 | `db.py` | The run database (SQLite or Postgres): runs, events, jobs, Inbox, triggers, flow versions, settings. |
 | `hub.py` | Starting, resuming and watching runs; shared by the API, the worker and triggers. |
 | `worker.py` | Leases jobs, runs them, heartbeats, takes over jobs from dead workers. |

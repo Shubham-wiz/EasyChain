@@ -45,8 +45,8 @@ phases:
       "4.1 Code sandbox": done   # runtime/sandbox.py, docs/sandbox.md, tests/test_sandbox.py (escape tests)
       "4.2 Deep Agent step": done   # steps/deep_agent.py, docs/steps/deep_agent.md, tests/test_deep_agent.py; files survive a worker crash (test_durability.py)
       "4.3 Helpers": done   # Helper steps (deepagents SubAgent), nested trace with usage per Helper, approvals through the Inbox
-      "4.4 Skills": next
-      "4.5 Multi-agent patterns": pending
+      "4.4 Skills": done   # skills.py, /api/skills, the Skills page, built-in skills in templates/skills/, tests/test_skills.py
+      "4.5 Multi-agent patterns": next
       "4.6 Describe-it copilot": pending
       "4.7 Templates and report": pending
     plan: docs/ROADMAP.md#phase-4-autopilot-and-teams
@@ -67,9 +67,9 @@ waiting_for_review: false
 open_questions: []
 
 tests:
-  measured_at: 2026-10-21, after the Deep Agent step and Helpers
-  python: {passed: 450, skipped: 0, on: "Linux with SQLite, Postgres and Docker (the sandbox tests); Windows and Linux in CI"}
-  web_unit: {passed: 79}
+  measured_at: 2026-10-21, after Skills
+  python: {passed: 457, skipped: 0, on: "Linux with SQLite, Postgres and Docker (the sandbox tests); Windows and Linux in CI"}
+  web_unit: {passed: 83}
   client: {passed: 11}
   e2e: {passed: 33, skipped_unless_SCREENSHOTS: 1, on: "Linux (CI)"}
   template_test_sets: {support-bot: "12/12", sql-analyst: "10/10", others: all pass}

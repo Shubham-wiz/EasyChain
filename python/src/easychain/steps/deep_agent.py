@@ -19,6 +19,7 @@ from ..compiler.helpers import DEEPAGENTS_REQ
 from ..compiler.issues import Fix, Issue, error, warning
 from ..compiler.pycode import docstring, py_str
 from ..compiler.templates import variables
+from ..skills import library
 from .agent import AgentHandler, check_approvals, check_tools, has_run_policy
 from .ai import check_model, missing_field_issue, secrets_in_prompt
 from .base import FormField, StepCode
@@ -44,6 +45,57 @@ def _names(ids: list[str]) -> str:
 def _use_deepagents(ctx: Any) -> None:
     if DEEPAGENTS_REQ not in ctx.extra_requirements:
         ctx.extra_requirements.append(DEEPAGENTS_REQ)
+
+
+def check_skills(step: Any) -> list[Issue]:
+    """Skills a Deep Agent or Helper uses that aren't in the Skills library."""
+    lib = library()
+    issues: list[Issue] = []
+    for name in step.settings.skills:
+        if lib.get(name) is None:
+            issues.append(
+                error(
+                    "skill_missing",
+                    f"There's no skill “{name}” in the Skills library.",
+                    step=step.id,
+                    setting="skills",
+                    hint="Add it on the Skills page, or take it off this step's skills.",
+                    fix=Fix(
+                        "remove_from_list",
+                        "Take it off the skills",
+                        {"setting": "skills", "value": name},
+                    ),
+                )
+            )
+    return issues
+
+
+def skill_files(agent_id: str, names: list[str]) -> dict[str, str]:
+    """The files of an agent's skills, where its SkillsMiddleware looks for them:
+    ``/skills/<agent>/<skill>/<file>``."""
+    lib = library()
+    files: dict[str, str] = {}
+    for name in names:
+        skill = lib.get(name)
+        if skill is None:
+            continue
+        for path, text in sorted(skill.files.items()):
+            files[f"/skills/{agent_id}/{name}/{path}"] = text
+    return files
+
+
+def skill_sources(agent_id: str, names: list[str]) -> str:
+    return f'["/skills/{agent_id}/"]' if names else ""
+
+
+SKILLS_FIELD = FormField(
+    key="skills",
+    label="Skills",
+    kind="skills",
+    help="Instructions from the Skills library it can follow. It sees each skill's description, "
+    "and reads the skill when it matches the task.",
+    technical="skills · SkillsMiddleware",
+)
 
 
 class DeepAgentHandler(AgentHandler):
@@ -83,6 +135,7 @@ class DeepAgentHandler(AgentHandler):
                         technical="subagents · task",
                     )
                 )
+                fields.append(SKILLS_FIELD)
             if f.key == "save_as":
                 fields.append(
                     FormField(
@@ -180,6 +233,7 @@ class DeepAgentHandler(AgentHandler):
                         fix=remove,
                     )
                 )
+        issues += check_skills(step)
         names = [("save_as", s.save_as), ("files", s.files), ("save_todos", s.save_todos)]
         seen: dict[str, str] = {}
         for setting, name in names:
@@ -217,12 +271,22 @@ class DeepAgentHandler(AgentHandler):
 
         helpers: list[str] = []
         helper_ids: list[str] = []
+        team_skills = skill_files(step.id, s.skills)
         for helper in self.helper_steps(step, an):
             handler = an.handlers[helper.id]
             factory, defs, helper_async = handler.emit_spec(helper, ctx, step)
             definitions += defs
             helpers.append(f"await {factory}(data)" if helper_async else f"{factory}(data)")
             helper_ids.append(helper.id)
+            team_skills.update(skill_files(helper.id, helper.settings.skills))
+        skills_const = None
+        if team_skills:
+            skills_const = ctx.names.claim(f"{step.id}_skills".upper())
+            entries = "".join(f"    {py_str(k)}: {py_str(v)},\n" for k, v in team_skills.items())
+            definitions.append(
+                f"# The skills (from the Skills library) of “{step.name or step.id}” and its "
+                f"Helpers, in their files.\n{skills_const} = {{\n{entries}}}"
+            )
 
         body: list[str] = []
         if mcp_line:
@@ -251,11 +315,17 @@ class DeepAgentHandler(AgentHandler):
         middleware = f"[TodoListMiddleware(), FilesystemMiddleware(tools={file_tools})" + (
             ", *addons]" if addons else "]"
         )
-        subagents = [f"{ctx.helper('general_helper')}(model, tools, {addons_src})", *helpers]
+        sources = skill_sources(step.id, s.skills)
+        general = f"{ctx.helper('general_helper')}(model, tools, {addons_src}" + (
+            f", {sources})" if sources else ")"
+        )
+        subagents = [general, *helpers]
         args = ["model=model", "tools=tools"]
         if instructions_src != "None":
             args.append(f"system_prompt={instructions_src}")
         args.append(f"middleware={middleware}")
+        if sources:
+            args.append(f"skills={sources}")
         args.append(
             "subagents=[\n" + "".join(f"            {h},\n" for h in subagents) + "        ]"
         )
@@ -268,8 +338,10 @@ class DeepAgentHandler(AgentHandler):
 
         field, messages = self._messages(step, ctx)
         entries = [f'"messages": {messages}']
-        if s.files:
-            entries.append(f'"files": {ctx.helper("agent_files")}(data.get({py_str(s.files)}))')
+        if s.files or skills_const:
+            kept = f"data.get({py_str(s.files)})" if s.files else "None"
+            extra = f", {skills_const}" if skills_const else ""
+            entries.append(f'"files": {ctx.helper("agent_files")}({kept}{extra})')
         payload = "{" + ", ".join(entries) + "}"
         if len(payload) > 76:
             payload = "{\n" + "".join(f"            {e},\n" for e in entries) + "        }"
@@ -358,6 +430,7 @@ class HelperHandler(AgentHandler):
             help="Approvals, limits, retries and more, for this Helper's own work.",
             technical="middleware",
         ),
+        SKILLS_FIELD,
         FormField(
             key="temperature",
             label="Creativity",
@@ -441,6 +514,7 @@ class HelperHandler(AgentHandler):
         tool_issues, names = check_tools(step.id, s.tools, an)
         issues += tool_issues
         issues += check_approvals(step.id, s, names | self.built_in_tools(step, an))
+        issues += check_skills(step)
         if s.addons.emulate_tools:
             issues.append(
                 warning(
@@ -505,6 +579,8 @@ class HelperHandler(AgentHandler):
         entries.append(
             '"middleware": [\n' + "".join(f"            {m},\n" for m in middleware) + "        ]"
         )
+        if s.skills:
+            entries.append(f'"skills": {skill_sources(step.id, s.skills)}')
         is_async = self.is_async(step, an)
         factory = ctx.names.claim(f"{step.id}_helper")
         tool_ids = [t.id for t in self.tool_steps(step, an)]

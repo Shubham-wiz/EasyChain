@@ -437,11 +437,11 @@ FILE_TOOLS: list[FsToolName] = [
 AGENT_FILES = Helper(
     "agent_files",
     '''
-def agent_files(files: Any) -> dict[str, Any]:
-    """Flow Data files ({path: text}) as a Deep Agent's file area."""
-    if not isinstance(files, dict):
-        return {}
-    return {str(path): create_file_data(str(text)) for path, text in files.items()}
+def agent_files(files: Any, skills: dict[str, str] | None = None) -> dict[str, Any]:
+    """Flow Data files ({path: text}), and the skills' files, as a Deep Agent's file area."""
+    found = dict(files) if isinstance(files, dict) else {}
+    found.update(skills or {})
+    return {str(path): create_file_data(str(text)) for path, text in found.items()}
 ''',
     from_imports=(("typing", "Any"), ("deepagents.backends.utils", "create_file_data")),
     requirements=(DEEPAGENTS_REQ,),
@@ -451,10 +451,15 @@ FLOW_FILES = Helper(
     "flow_files",
     '''
 def flow_files(files: Any) -> dict[str, str]:
-    """A Deep Agent's file area as Flow Data: {path: text}, by path."""
+    """A Deep Agent's file area as Flow Data: {path: text}, by path. Skills come from the
+    flow each time, and large tool results are the agent's own scratch, so they stay out."""
     if not isinstance(files, dict):
         return {}
-    return {path: file_data_to_string(data) for path, data in sorted(files.items()) if data}
+    return {
+        path: file_data_to_string(data)
+        for path, data in sorted(files.items())
+        if data and not path.startswith(("/skills/", "/large_tool_results/"))
+    }
 ''',
     from_imports=(("typing", "Any"), ("deepagents.backends.utils", "file_data_to_string")),
     requirements=(DEEPAGENTS_REQ,),
@@ -463,15 +468,20 @@ def flow_files(files: Any) -> dict[str, str]:
 GENERAL_HELPER = Helper(
     "general_helper",
     '''
-def general_helper(model: Any, tools: list[Any], middleware: list[Any]) -> SubAgent:
-    """deepagents' general-purpose helper, with the Deep Agent's own tools and add-ons, so
-    the approvals and limits that apply to the Deep Agent apply to this helper too."""
-    return {
+def general_helper(
+    model: Any, tools: list[Any], middleware: list[Any], skills: list[str] | None = None
+) -> SubAgent:
+    """deepagents' general-purpose helper, with the Deep Agent's own tools, add-ons and
+    skills, so the approvals and limits that apply to the Deep Agent apply to it too."""
+    helper: SubAgent = {
         **GENERAL_PURPOSE_SUBAGENT,
         "model": model,
         "tools": tools,
         "middleware": [FilesystemMiddleware(tools=FILE_TOOLS), *middleware],
     }
+    if skills:
+        helper["skills"] = skills
+    return helper
 ''',
     from_imports=(
         ("typing", "Any"),

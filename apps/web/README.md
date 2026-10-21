@@ -29,6 +29,7 @@ In development, Vite proxies `/api` to `EASYCHAIN_API` (default `http://127.0.0.
 | `#/flows/{id}` | The editor: Step library, canvas, inspector, run panel. **Try it** opens `#/flows/{id}?try=1`, which runs the flow on its sample data once; `?try=1` is dropped as the run starts, so a reload or Back shows that run instead of starting another. |
 | `#/inbox`, `#/inbox/{id}` | Everything waiting for a person: approvals, answers, tool approvals (works on phones) |
 | `#/knowledge`, `#/knowledge/{id}` | Knowledge Bases: documents, chunk preview, test search |
+| `#/skills`, `#/skills/{name}`, `#/skills/new` | The Skills library: workspace and built-in skills, editing SKILL.md and its files |
 
 ## How the code is organised
 
@@ -42,6 +43,7 @@ src/
     StepLibrary.tsx     searchable list of step types (from the catalog)
     Inbox.tsx           the Inbox page
     Knowledge.tsx       the Knowledge page
+    Skills.tsx          the Skills page
     CodeView.tsx, MonacoEditor.tsx   code views and editors (Monaco, lazy)
     ui.tsx              the small UI kit (buttons, inputs, dialogs, tabs, tooltips…)
     canvas/             React Flow canvas: step and note nodes, edges (incl. dashed tool edges), icons

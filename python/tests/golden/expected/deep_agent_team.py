@@ -156,29 +156,39 @@ def tell_agent(error: Exception, request: Any) -> str:
     return f"The tool failed ({type(error).__name__}): {error}"
 
 
-def general_helper(model: Any, tools: list[Any], middleware: list[Any]) -> SubAgent:
-    """deepagents' general-purpose helper, with the Deep Agent's own tools and add-ons, so
-    the approvals and limits that apply to the Deep Agent apply to this helper too."""
-    return {
+def general_helper(
+    model: Any, tools: list[Any], middleware: list[Any], skills: list[str] | None = None
+) -> SubAgent:
+    """deepagents' general-purpose helper, with the Deep Agent's own tools, add-ons and
+    skills, so the approvals and limits that apply to the Deep Agent apply to it too."""
+    helper: SubAgent = {
         **GENERAL_PURPOSE_SUBAGENT,
         "model": model,
         "tools": tools,
         "middleware": [FilesystemMiddleware(tools=FILE_TOOLS), *middleware],
     }
+    if skills:
+        helper["skills"] = skills
+    return helper
 
 
-def agent_files(files: Any) -> dict[str, Any]:
-    """Flow Data files ({path: text}) as a Deep Agent's file area."""
-    if not isinstance(files, dict):
-        return {}
-    return {str(path): create_file_data(str(text)) for path, text in files.items()}
+def agent_files(files: Any, skills: dict[str, str] | None = None) -> dict[str, Any]:
+    """Flow Data files ({path: text}), and the skills' files, as a Deep Agent's file area."""
+    found = dict(files) if isinstance(files, dict) else {}
+    found.update(skills or {})
+    return {str(path): create_file_data(str(text)) for path, text in found.items()}
 
 
 def flow_files(files: Any) -> dict[str, str]:
-    """A Deep Agent's file area as Flow Data: {path: text}, by path."""
+    """A Deep Agent's file area as Flow Data: {path: text}, by path. Skills come from the
+    flow each time, and large tool results are the agent's own scratch, so they stay out."""
     if not isinstance(files, dict):
         return {}
-    return {path: file_data_to_string(data) for path, data in sorted(files.items()) if data}
+    return {
+        path: file_data_to_string(data)
+        for path, data in sorted(files.items())
+        if data and not path.startswith(("/skills/", "/large_tool_results/"))
+    }
 
 
 def ask_in_terminal(request: dict[str, Any]) -> dict[str, Any]:
@@ -292,6 +302,7 @@ def researcher_helper(data: FlowData) -> SubAgent:
             ToolErrorMiddleware(tell_agent),
             ToolRetryMiddleware(max_retries=1, on_failure="error"),
         ],
+        "skills": ["/skills/researcher/"],
     }
 
 
@@ -314,6 +325,78 @@ def editor_helper(data: FlowData) -> SubAgent:
             ToolErrorMiddleware(tell_agent),
         ],
     }
+
+
+# The skills (from the Skills library) of “Lead researcher” and its Helpers, in their files.
+LEAD_SKILLS = {
+    "/skills/lead/research-report/SKILL.md": """\
+---
+name: research-report
+description: How to research a topic and write a short report with sources. Use it when asked to research, investigate or write a report or briefing.
+---
+
+# Research report
+
+## Plan first
+
+Write a to-do list before you start:
+
+1. What the reader needs to know (two to four questions).
+2. Find facts for each question (hand this to a helper when you have one).
+3. Write the report.
+4. Check it against the questions.
+
+## Collect facts
+
+- Keep notes in `/notes.md`: one line per fact, followed by its source in brackets.
+- Only keep facts that come from a source you read. If a question has no answer in your
+  sources, say so in the report rather than guessing.
+
+## Write the report
+
+Write it to `/report.md`, following `/skills/…/research-report/outline.md` (the outline next to
+this file):
+
+- A title, then a two-sentence summary for a busy reader.
+- One short section per question, plain words, short paragraphs.
+- Mark each fact with its source number, like [1].
+- End with a **Sources** list: the number, the title and the address.
+
+Then answer with the summary and say the report is in `/report.md`.
+""",
+    "/skills/lead/research-report/outline.md": """\
+# <Title: the topic, in a few words>
+
+<Two sentences: what a busy reader should take away.>
+
+## <First question, as a heading>
+
+<Short paragraphs. Each fact ends with its source number, like [1].>
+
+## <Second question>
+
+<…>
+
+## Sources
+
+1. <Title> — <address>
+2. <Title> — <address>
+""",
+    "/skills/researcher/source-notes/SKILL.md": """\
+---
+name: source-notes
+description: How to take notes from web pages or documents so that every fact keeps its source. Use it when asked to find facts, read pages or gather information.
+---
+
+# Notes with sources
+
+1. Read the page or document you were given, or search for one.
+2. Write down only what the source says, in your own short words: one fact per line.
+3. After each fact, put the source in brackets: `(Title, address)`.
+4. Leave out opinions, adverts and anything you can't trace to the source.
+5. Reply with the notes, grouped by question, and say which questions found no answer.
+""",
+}
 
 
 def lead(data: FlowData) -> dict[str, Any]:
@@ -339,8 +422,9 @@ def lead(data: FlowData) -> dict[str, Any]:
         tools=tools,
         system_prompt=fill(LEAD_INSTRUCTIONS, data),
         middleware=[TodoListMiddleware(), FilesystemMiddleware(tools=FILE_TOOLS), *addons],
+        skills=["/skills/lead/"],
         subagents=[
-            general_helper(model, tools, addons),
+            general_helper(model, tools, addons, ["/skills/lead/"]),
             researcher_helper(data),
             editor_helper(data),
         ],
@@ -349,7 +433,7 @@ def lead(data: FlowData) -> dict[str, Any]:
     result = agent.invoke(
         {
             "messages": [HumanMessage(str(data.get("topic", "")))],
-            "files": agent_files(data.get("files")),
+            "files": agent_files(data.get("files"), LEAD_SKILLS),
         },
         {"recursion_limit": 500},
     )

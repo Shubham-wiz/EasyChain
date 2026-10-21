@@ -236,10 +236,14 @@ _compiled_cache: OrderedDict[str, CompiledFlow] = OrderedDict()
 
 
 def _flow_key(spec: FlowSpec, resolve: Resolver | None, seen: tuple[str, ...] = ()) -> str:
-    """A key that changes when the flow, or any flow it uses as a Sub-flow, changes."""
+    """A key that changes when the flow, a flow it uses as a Sub-flow, or a skill it uses
+    changes."""
+    from ..skills import skills_key
     from ..steps.flow_control import subflow_ids
 
     parts = [spec.model_dump_json()]
+    if skills := skills_key(spec):
+        parts.append(skills)
     if resolve is not None:
         for flow_id in subflow_ids(spec):
             if flow_id in seen:

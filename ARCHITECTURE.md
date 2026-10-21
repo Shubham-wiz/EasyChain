@@ -263,6 +263,15 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
   deepagents `SubAgent` spec (own model, prompt, tools, add-on middleware, the same file tools).
   deepagents always adds a general-purpose helper; Easy Chain passes its own, with the Deep
   Agent's tools and add-ons, so approvals and limits can't be bypassed through it.
+- **Skills** (`skills.py`): Agent Skills folders (`SKILL.md` with name and description, plus
+  files) in `<workspace>/skills/`, over built-in ones in `templates/skills/`. The process's
+  library is set by the server, the worker and the CLI (next to the flow file). The compiler puts
+  the skill files of a Deep Agent and its Helpers into a constant in the generated code
+  (`/skills/<step>/<skill>/…`), passes them in with the agent's files, and points
+  `create_deep_agent(skills=[...])` and each Helper's `skills` at them; deepagents'
+  `SkillsMiddleware` shows the descriptions and the agent reads a skill with `read_file`. The
+  skills' content is part of the compile cache key; `flow_files` keeps `/skills/` out of Flow
+  Data.
 - **Helper events.** A Helper's graph runs inside the Deep Agent's `tools` task
   (`lead:<id>|tools:<id>`). The runner records which `task` call started each such task and
   tags the Helper's tool events with `helper` and `within` (the task's call id). It adds the
@@ -358,6 +367,7 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
 | `test_knowledge.py` | Every file format, chunk provenance, hybrid search and citations on SQLite and on Postgres with pgvector, the API, an agent searching with its own queries, documents cut off by a restart, exported code searching on its own |
 | `test_integrations.py` | Memory (remember, recall, trim, summarise), read-only SQL, MCP over stdio and HTTP and its allow-list, OpenAPI import |
 | `test_deep_agent.py` | The Deep Agent plans, hands a task to a Helper (nested trace, usage per Helper), keeps its files across turns; approvals inside the Deep Agent, inside a Helper and in the general helper pause the run and go through the Inbox (with a worker); the checks; Test Set `helpers:`/`files:`; **exported code runs on its own**. `test_durability.py` also kills a worker inside a Deep Agent: it resumes with the files it had |
+| `test_skills.py` | Skills are checked before they are saved; the library over the built-in skills (a copy replaces one, deleting it brings it back); the API; a missing skill is a problem with a fix; the skills ship inside the generated code and a changed skill recompiles; the stand-in reads the skill that matches the task and writes the file it asks for; a Helper reads its own skills |
 | `test_sandbox.py` | **Phase 4's sandbox "Done when"**, with real containers: the host's files, the network, Easy Chain's environment and secrets, root and capabilities, the Docker socket, writes outside `/tmp`, a fork bomb, memory and time are all out of reach; errors come back as they were; a flow's Code step runs in the sandbox; the settings API and the check before a run |
 | `packages/client/src/*.test.ts(x)` | The client's SSE handling, errors, reconnecting `wait()`, and the React hook through a pause and an answer |
 

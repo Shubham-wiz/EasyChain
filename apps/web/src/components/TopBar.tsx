@@ -9,6 +9,7 @@ import { useRun } from "../state/run";
 import { useUi } from "../state/ui";
 import { useInboxCount } from "./Inbox";
 import { KnowledgeLink } from "./Knowledge";
+import { SkillsLink } from "./Skills";
 import { IssueList } from "./inspector/Inspector";
 import { Button, Tooltip } from "./ui";
 
@@ -109,6 +110,7 @@ export function TopBar({ onHome }: { onHome: () => void }) {
       <div className="ml-auto flex items-center gap-1.5">
         <ProblemsButton />
         <KnowledgeLink />
+        <SkillsLink />
         <InboxLink />
         <Tooltip content="Import an API (OpenAPI) as steps or agent tools">
           <Button variant="ghost" size="icon-sm" aria-label="Import an API" onClick={() => setImportOpen(true)}>

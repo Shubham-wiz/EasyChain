@@ -1,4 +1,4 @@
-import type { Catalog, CheckResult, ChunkPreview, CompileResult, DataField, FlowListItem, FlowSpec, FlowVersion, InboxItem, KnowledgeBase, KnowledgeDocument, KnowledgeHit, McpServer, McpSettings, McpTool, NotificationSettings, OpenApiInspection, RunEvent, RunSummary, SandboxSettings, SandboxStatus, SavePoint, SecretInfo, Step, TemplateInfo, ThreadInfo, Trigger, TriggerKind } from "./types";
+import type { Catalog, CheckResult, ChunkPreview, CompileResult, DataField, FlowListItem, FlowSpec, FlowVersion, InboxItem, KnowledgeBase, KnowledgeDocument, KnowledgeHit, McpServer, McpSettings, McpTool, NotificationSettings, OpenApiInspection, RunEvent, RunSummary, SandboxSettings, SandboxStatus, SavePoint, SecretInfo, Skill, SkillSummary, Step, TemplateInfo, ThreadInfo, Trigger, TriggerKind } from "./types";
 
 export class ApiError extends Error {
   status: number;
@@ -142,6 +142,12 @@ export const api = {
   },
 
   // MCP servers and OpenAPI import
+  skills: () => request<{ skills: SkillSummary[] }>("/api/skills").then((r) => r.skills),
+  skill: (name: string) => request<Skill>(`/api/skills/${encodeURIComponent(name)}`),
+  saveSkill: (name: string, files: Record<string, string>) =>
+    request<SkillSummary>(`/api/skills/${encodeURIComponent(name)}`, { method: "PUT", ...json({ files }) }),
+  deleteSkill: (name: string) =>
+    request<{ ok: boolean; built_in: SkillSummary | null }>(`/api/skills/${encodeURIComponent(name)}`, { method: "DELETE" }),
   sandboxSettings: () => request<SandboxSettings>("/api/settings/sandbox"),
   saveSandboxSettings: (body: SandboxSettings) => request<SandboxSettings>("/api/settings/sandbox", { method: "PUT", ...json(body) }),
   sandboxStatus: (refresh = false) => request<SandboxStatus>(`/api/sandbox/status${refresh ? "?refresh=true" : ""}`),

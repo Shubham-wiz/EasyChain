@@ -14,6 +14,8 @@ also:
 - **files.** It can `ls`, `read_file`, `write_file`, `edit_file`, `delete`, `glob` and `grep`
   files in its own file area: notes, drafts, the report it is asked for. The run panel shows
   each file as it is written.
+- **skills.** It follows [skills](../skills.md) from the Skills library when they fit the
+  task: it sees each skill's description and reads the skill's instructions when it matches.
 - **Helpers.** It hands focused sub-tasks to [Helpers](helper.md) with its `task` tool. A
   Helper works on its own (its own role, model and tools), so the Deep Agent's conversation
   stays short, and replies with what it found. It can also hand a task to a **general helper**
@@ -26,6 +28,7 @@ The settings of an [Agent](agent.md#settings), and:
 | Setting | What it does |
 |---|---|
 | Helpers | The Helpers it can hand tasks to. Connect a Helper's top handle to the Deep Agent's **Helpers** handle (the round one under the card), or use **Add a Helper** in the inspector. |
+| Skills | [Skills](../skills.md) from the Skills library it can follow (its Helpers pick their own). |
 | Keep its files in | The Flow Data field for its files (default `files`): `{path: text}`, for example `{"/report.md": "# Otters…"}`. The files are there when it starts, so in a chat it finds the files of earlier turns. Empty: the files are gone when it finishes. |
 | Keep its to-do list in *(Pro, More options)* | Also save its to-do list (a list of `{content, status}`) for later steps. |
 | Most rounds *(More options)* | Default 500: each model call, tool call and add-on of the Deep Agent and its Helpers counts. |

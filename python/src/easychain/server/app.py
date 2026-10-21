@@ -45,6 +45,7 @@ from ..runtime import key_status
 from ..runtime.resources import open_resources
 from ..runtime.sandbox import SandboxSettings, docker_status, effective_mode
 from ..runtime.sandbox import prepare as prepare_sandbox
+from ..skills import SkillError, SkillLibrary, library, use_library
 from ..spec import FlowSpec, SpecError, loads_spec, parse_spec, spec_json
 from ..spec.models import SPEC_VERSION
 from ..spec.schema import flow_json_schema
@@ -195,6 +196,7 @@ def create_app(
     home_path = Path(home or os.environ.get("EASYCHAIN_HOME") or Path.home() / ".easychain")
     workspace_path = Path(workspace or os.environ.get("EASYCHAIN_WORKSPACE") or home_path / "flows")
     flows = FlowStore(workspace_path)
+    use_library(SkillLibrary(workspace_path / "skills"))
     vault = SecretStore(home_path)
     if vault.problem:
         log.warning(vault.problem)
@@ -1039,6 +1041,44 @@ def create_app(
             hub(), {**trig, "config": {**cfg, "inputs": cfg.get("inputs")}}, data
         )
         return {"run_id": run_id, "file": str(target)}
+
+    # ── the Skills library ──────────────────────────────────────────────────
+
+    @app.get("/api/skills")
+    async def list_skills() -> dict[str, Any]:
+        return {"skills": [skill.summary() for skill in library().list()]}
+
+    @app.get("/api/skills/{name}")
+    async def get_skill(name: str) -> dict[str, Any]:
+        skill = library().get(name)
+        if skill is None:
+            raise HTTPException(404, detail={"message": f"There's no skill “{name}”."})
+        return skill.to_dict()
+
+    @app.put("/api/skills/{name}")
+    async def save_skill(name: str, body: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        files = body.get("files")
+        if not isinstance(files, dict):
+            raise HTTPException(422, detail={"message": "Send the skill's files: {path: text}."})
+        try:
+            return library().save(name, files).summary()
+        except SkillError as exc:
+            raise HTTPException(422, detail={"message": str(exc)}) from None
+
+    @app.delete("/api/skills/{name}")
+    async def delete_skill(name: str) -> dict[str, Any]:
+        lib = library()
+        if not lib.delete(name):
+            skill = lib.get(name)
+            message = (
+                "Built-in skills can't be deleted. Save a changed copy to replace it."
+                if skill is not None and skill.built_in
+                else f"There's no skill “{name}”."
+            )
+            raise HTTPException(404, detail={"message": message})
+        # A workspace copy of a built-in skill leaves the built-in one in its place.
+        left = lib.get(name)
+        return {"ok": True, "built_in": left.summary() if left is not None else None}
 
     # ── settings: notifications ─────────────────────────────────────────────
 

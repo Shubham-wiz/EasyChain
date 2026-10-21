@@ -28,6 +28,7 @@ const GROUP_KINDS = new Set([
   "schema",
   "tools",
   "helpers",
+  "skills",
   "agent_addons",
   "mcp_tools",
 ]);

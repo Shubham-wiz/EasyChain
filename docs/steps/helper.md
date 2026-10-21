@@ -21,6 +21,7 @@ inspector. A Helper works for one Deep Agent; "Helper of …" shows on its card.
 | Role and rules | Its system prompt. Put Flow Data in with `{field}`: it sees what its Deep Agent sees. |
 | Tools | Steps it can use, connected to its own **Tools** handle. They take as arguments what the Deep Agent can't see in Flow Data, as for an [Agent](agent.md#tools). |
 | MCP tools *(More options)* | Tools from MCP servers. |
+| Skills | [Skills](../skills.md) from the Skills library this Helper can follow. |
 | Add-ons | The Agent [Add-ons](agent.md#add-ons), for this Helper's own work. **Ask a person before …** can also name `write_file`, `edit_file` and `delete`. |
 | Creativity *(More options)* | Temperature. |
 

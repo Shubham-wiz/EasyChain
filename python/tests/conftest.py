@@ -61,6 +61,10 @@ def clean_env(monkeypatch: pytest.MonkeyPatch, _test_home: Path) -> Any:
     # TestClient calls the app as http://testserver.
     monkeypatch.setenv("EASYCHAIN_ALLOWED_HOSTS", "testserver")
     yield
+    # An app or a CLI command sets the process's Skills library; the next test starts afresh.
+    from easychain.skills import use_library
+
+    use_library(None)
     # The secrets vault writes keys into os.environ; don't let them reach the next test.
     for name in _ENV_TO_CLEAR:
         os.environ.pop(name, None)

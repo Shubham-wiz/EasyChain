@@ -4,6 +4,7 @@ import { Editor } from "./components/Editor";
 import { Home } from "./components/Home";
 import { Inbox } from "./components/Inbox";
 import { Knowledge } from "./components/Knowledge";
+import { Skills } from "./components/Skills";
 import { Button } from "./components/ui";
 import { useCatalog } from "./state/catalog";
 
@@ -12,6 +13,7 @@ interface Route {
   tryIt: boolean;
   inbox: string | null | undefined;
   knowledge?: string | null;
+  skills?: string | null;
 }
 
 function parseHash(): Route {
@@ -19,6 +21,8 @@ function parseHash(): Route {
   if (inbox) return { flowId: null, tryIt: false, inbox: inbox[1] ?? null };
   const knowledge = /^#\/knowledge(?:\/([a-z0-9_]+))?/.exec(window.location.hash);
   if (knowledge) return { flowId: null, tryIt: false, inbox: undefined, knowledge: knowledge[1] ?? null };
+  const skills = /^#\/skills(?:\/([a-z0-9-]+))?/.exec(window.location.hash);
+  if (skills) return { flowId: null, tryIt: false, inbox: undefined, skills: skills[1] ?? null };
   const match = /^#\/flows\/([a-z0-9-]+)(\?try=1)?/.exec(window.location.hash);
   return match ? { flowId: match[1], tryIt: !!match[2], inbox: undefined } : { flowId: null, tryIt: false, inbox: undefined };
 }
@@ -67,6 +71,7 @@ export default function App() {
   }
   if (route.inbox !== undefined) return <Inbox focus={route.inbox} onHome={() => navigate(null)} />;
   if (route.knowledge !== undefined) return <Knowledge id={route.knowledge} />;
+  if (route.skills !== undefined) return <Skills name={route.skills} />;
   return route.flowId ? (
     <Editor key={route.flowId} flowId={route.flowId} tryIt={route.tryIt} onHome={() => navigate(null)} />
   ) : (

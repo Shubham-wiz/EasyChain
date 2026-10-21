@@ -24,6 +24,7 @@ steps:
     input: topic
     tools: [read_page]
     helpers: [researcher, editor]
+    skills: [research-report]
     save_todos: plan
     addons:
       approve_tools: [write_file]
@@ -35,6 +36,7 @@ steps:
   settings:
     instructions: Find facts for {audience}. Reply with short notes and the pages you used.
     tools: [read_page, web_search]
+    skills: [source-notes]
     addons:
       tool_retries: 1
 - id: editor

@@ -10,7 +10,7 @@ import { useCatalog } from "../../state/catalog";
 import { useFlow } from "../../state/flow";
 import { useUi } from "../../state/ui";
 import { CodeView } from "../CodeView";
-import { AddonsField, HelpersField, McpToolsField, ToolsField } from "./AgentFields";
+import { AddonsField, HelpersField, McpToolsField, SkillsField, ToolsField } from "./AgentFields";
 import { KnowledgeBasePicker, McpServerPicker, McpToolPicker, SecretPicker, SqlEditor } from "./IntegrationFields";
 import { SchemaBuilder } from "./SchemaBuilder";
 import { Button, DraftInput, Input, SecretInput, Select, Switch, Textarea, useRowKeys } from "../ui";
@@ -715,6 +715,8 @@ export function renderControl(props: FieldProps): ReactNode {
       return <ToolsField {...props} />;
     case "helpers":
       return <HelpersField {...props} />;
+    case "skills":
+      return <SkillsField {...props} />;
     case "agent_addons":
       return <AddonsField {...props} />;
     case "mcp_tools":

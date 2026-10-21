@@ -339,9 +339,11 @@ def cmd_worker(args: argparse.Namespace) -> int:
     workspace = Path(args.workspace or os.environ.get("EASYCHAIN_WORKSPACE") or home / "flows")
     url = args.database_url or default_database_url(home)
     from .server.knowledge_api import use_database
+    from .skills import SkillLibrary, use_library
     from .templates.samples import ensure_samples
 
     use_database(url)
+    use_library(SkillLibrary(workspace / "skills"))
     ensure_samples(home)
 
     async def go() -> int:
@@ -535,6 +537,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     _platform.utf8_console()
     args = build_parser().parse_args(argv)
+    if isinstance(getattr(args, "file", None), str):
+        # Skills, like Sub-flows, are found next to the flow (or Test Set) file.
+        from .skills import SkillLibrary, use_library
+
+        use_library(SkillLibrary(Path(args.file).resolve().parent / "skills"))
     return int(args.func(args) or 0)
 
 

@@ -333,6 +333,83 @@ def _tool_call(name: str, args: dict[str, Any]) -> dict[str, Any]:
     return {"name": name, "args": args, "id": f"call_{uuid.uuid4().hex[:12]}", "type": "tool_call"}
 
 
+def _call(name: str, args: dict[str, Any]) -> AIMessage:
+    return AIMessage(content="", tool_calls=[_tool_call(name, args)])
+
+
+# deepagents' own tools (the to-do list, files, Helpers). The stand-in uses them in a planned
+# order, not by matching words: plan, read a skill that matches, hand the task to the best
+# Helper, use its other tools, write the file its instructions name, answer.
+DEEP_TOOLS = {
+    "write_todos",
+    "task",
+    "ls",
+    "read_file",
+    "write_file",
+    "edit_file",
+    "delete",
+    "glob",
+    "grep",
+    "execute",
+}
+# How deepagents lists skills in the system prompt, and Helpers in the task tool.
+_SKILL = re.compile(
+    r"^- \*\*([a-z0-9-]+)\*\*: (.+)\n(?:\s+-> Allowed tools: .*\n)?\s+-> Read `([^`]+)`", re.M
+)
+_HELPER = re.compile(r"^- ([A-Za-z0-9_-]+): (.+)$", re.M)
+_FILE_PATH = re.compile(r"(?<![\w./])(/[\w-]+(?:/[\w-]+)*\.(?:md|txt|csv|json|html))\b")
+_WRITE_TO = re.compile(r"(?i)\bwrite\b[^.\n]{0,40}?\bto\s+`?(/[\w-]+(?:/[\w-]+)*\.\w+)")
+
+
+def _target_file(text: str) -> str | None:
+    """The file a text asks to write: "write … to /path" first, else the first path named."""
+    for found in (m.group(1) for m in _WRITE_TO.finditer(text)):
+        if not found.startswith(("/skills/", "/large_tool_results/")):
+            return found
+    for found in (m.group(1) for m in _FILE_PATH.finditer(text)):
+        if not found.startswith(("/skills/", "/large_tool_results/")):
+            return found
+    return None
+
+
+def _short(text: str, size: int = 80) -> str:
+    flat = " ".join(text.split())
+    return flat if len(flat) <= size else flat[: size - 1] + "…"
+
+
+def _deep_agent_move(
+    system: str, by_name: dict[str, Any], question: str, calls: list[dict[str, Any]]
+) -> AIMessage | None:
+    """A Deep Agent's (or a Helper's) next planned move, or None for the usual turn."""
+    called = {c["name"] for c in calls}
+    if "write_todos" in by_name and "write_todos" not in called:
+        plan = [
+            {"content": f"Work out: {_short(question)}", "status": "in_progress"},
+            {"content": "Write up what I found", "status": "pending"},
+        ]
+        return _call("write_todos", {"todos": plan})
+    found = words(question)
+    if "read_file" in by_name:
+        read = {c["args"].get("file_path") for c in calls if c["name"] == "read_file"}
+        score, path = max(
+            (
+                (len(words(f"{name.replace('-', ' ')} {text}") & found), where)
+                for name, text, where in _SKILL.findall(system)
+                if where not in read
+            ),
+            default=(0, None),
+        )
+        if path and score >= 2:
+            return _call("read_file", {"file_path": path, "limit": 1000})
+    if "task" in by_name and "task" not in called:
+        helpers = _HELPER.findall(by_name["task"].get("description", ""))
+        named = [h for h in helpers if h[0] != "general-purpose"] or helpers
+        if named:
+            best = max(named, key=lambda h: len(words(f"{h[0]} {h[1]}") & found))
+            return _call("task", {"subagent_type": best[0], "description": question})
+    return None
+
+
 def stand_in_turn(
     messages: list[BaseMessage],
     tools: list[Any] | None = None,
@@ -386,7 +463,21 @@ def stand_in_turn(
 
     if forced is not None and output_tool is not None:
         return structured(answer_from_results(question, results) if results else question)
+    system = "\n".join(_text(m) for m in messages if m.type == "system")
+    deep = "write_todos" in by_name or "read_file" in by_name
+    skills_read = ""
+    if deep and question.strip():
+        move = _deep_agent_move(system, by_name, question, calls)
+        if move is not None:
+            return move
+        # The skills it read say what to do; what the tools found is what goes in the answer.
+        skills_read = "\n".join(t for n, t in results if n == "read_file")
+        results = [(n, t) for n, t in results if n not in DEEP_TOOLS or n == "task"]
     regular = specs[:-1] if (must_call and specs) else specs
+    if deep:
+        handed = any(c["name"] == "task" for c in calls)
+        regular = [] if handed else [s for s in regular if s["name"] not in DEEP_TOOLS]
+        calls = [c for c in calls if c["name"] not in DEEP_TOOLS]
     if regular and not calls:
         found = words(question)
         best, best_score = None, 0
@@ -412,6 +503,17 @@ def stand_in_turn(
                 tool_calls=[_tool_call(best["name"], fill_arguments(best["parameters"], question))],
             )
     answer = answer_from_results(question, results) if results else stand_in_reply(messages)
+    if deep and "write_file" in by_name and question.strip():
+        wrote = any(m.type == "tool" and getattr(m, "name", "") == "write_file" for m in turn)
+        # The file its instructions (or a skill it read) ask for. A Helper's task may name
+        # its Deep Agent's file, which isn't the Helper's to write.
+        asked = f"{question}\n" if "task" in by_name else ""
+        target = _target_file(system) or _target_file(f"{asked}{skills_read}")
+        if target and not wrote:
+            content = f"# {_short(question, 60)}\n\n{answer}\n"
+            return _call("write_file", {"file_path": target, "content": content})
+        if target and wrote:
+            answer = f"{answer}\n\nIt's written to {target}."
     if must_call and output_tool is not None:
         return structured(answer)
     return AIMessage(content=answer)

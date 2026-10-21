@@ -587,3 +587,17 @@ export interface SandboxStatus {
   /** "docker": Code steps run in the sandbox; "off": in Easy Chain's process; "unavailable": required but no Docker. */
   effective: "docker" | "off" | "unavailable";
 }
+
+/** A skill in the Skills library (Agent Skills format: a SKILL.md and the files it uses). */
+export interface SkillSummary {
+  name: string;
+  description: string;
+  files: string[];
+  built_in: boolean;
+  /** A workspace skill named like a built-in one, which it replaces. */
+  replaces_built_in: boolean;
+}
+
+export interface Skill extends Omit<SkillSummary, "files"> {
+  files: Record<string, string>;
+}
