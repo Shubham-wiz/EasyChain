@@ -117,6 +117,38 @@ CRASH_INSIDE = {
     "connections": [{"from": "start", "to": "pay"}, {"from": "pay", "to": "finish"}],
 }
 
+# A Deep Agent writes a file, then the worker dies while one of its tools runs.
+DEEP_AGENT = {
+    "name": "Deep agent crash",
+    "steps": [
+        {
+            "id": "start",
+            "type": "input",
+            "settings": {"fields": [{"name": "topic"}, {"name": "marker"}]},
+        },
+        {
+            "id": "lead",
+            "type": "deep_agent",
+            "settings": {"input": "topic", "tools": ["slow"]},
+        },
+        {
+            "id": "slow",
+            "type": "code",
+            "description": "Takes a while.",
+            "settings": {
+                "code": "import time\n\n"
+                "def run(data):\n"
+                "    with open(data['marker'], 'a') as f:\n"
+                "        f.write('slow\\n')\n"
+                "    time.sleep(4)\n"
+                "    return {'waited': 'yes'}\n"
+            },
+        },
+        {"id": "finish", "type": "output", "settings": {"fields": ["answer", "files"]}},
+    ],
+    "connections": [{"from": "start", "to": "lead"}, {"from": "lead", "to": "finish"}],
+}
+
 APPROVAL = {
     "name": "Approval",
     "steps": [
@@ -171,7 +203,13 @@ def database_url(request: pytest.FixtureRequest, tmp_path: Path) -> str:
 def workspace(tmp_path: Path) -> Path:
     folder = tmp_path / "flows"
     folder.mkdir()
-    for flow_id, data in (("chaos", CHAOS), ("crash-inside", CRASH_INSIDE), ("approval", APPROVAL)):
+    flows = (
+        ("chaos", CHAOS),
+        ("crash-inside", CRASH_INSIDE),
+        ("approval", APPROVAL),
+        ("deep-agent", DEEP_AGENT),
+    )
+    for flow_id, data in flows:
         (folder / f"{flow_id}.flow.yaml").write_text(dumps_spec(parse_spec(data)), encoding="utf-8")
     return folder
 
@@ -347,6 +385,57 @@ async def test_side_effect_interrupted_by_a_crash_is_not_applied_twice(
         assert len(log["applied"]) == 1, "so the payment happened once"
         assert run["output"]["receipt"]["replayed"] is True
     finally:
+        await _close(hub)
+
+
+async def test_a_deep_agents_files_survive_a_worker_crash(
+    database_url: str,
+    workspace: Path,
+    workers: Workers,
+    fake_server: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    # The workers use the fake OpenAI server, whose scripted turns outlive a worker.
+    monkeypatch.setenv("OPENAI_BASE_URL", fake_server.base_url)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-durability")
+    turns = [
+        {"call": "write_file", "args": {"file_path": "/notes.md", "content": "before"}},
+        {"call": "slow", "args": {}},
+        {"call": "write_file", "args": {"file_path": "/report.md", "content": "after"}},
+        "Done.",
+    ]
+    httpx.post(f"{fake_server.url}/__script", json=turns)
+    marker = tmp_path / "slow.txt"
+    hub = await _hub(database_url, workspace)
+    try:
+        first = workers.start()
+        run_id = await hub.start_run(
+            hub.flows.get("deep-agent"),
+            flow_id="deep-agent",
+            inputs={"topic": "Write two files", "marker": str(marker)},
+        )
+
+        async def slow_started() -> bool:
+            return marker.exists()
+
+        await _wait_for(slow_started)
+        workers.kill(first)  # /notes.md is written, the agent's slow tool is half-way
+        workers.start()
+
+        async def finished() -> dict[str, Any] | None:
+            run = await hub.db.get_run(run_id)
+            return run if run and run["status"] in ("ok", "error") else None
+
+        run = await _wait_for(finished)
+        assert run["status"] == "ok", run
+        # Started again from scratch, the agent would have lost /notes.md (and its model
+        # would have been asked for turns it had already taken).
+        assert run["output"]["files"] == {"/notes.md": "before", "/report.md": "after"}
+        assert run["output"]["answer"] == "Done."
+        assert marker.read_text(encoding="utf-8").count("slow") == 2, "the cut-off tool ran again"
+    finally:
+        httpx.post(f"{fake_server.url}/__script", json=[])
         await _close(hub)
 
 

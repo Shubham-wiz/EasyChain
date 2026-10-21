@@ -13,16 +13,28 @@ import {
   Send,
   SkipForward,
   Square,
+  UserCog,
   Wrench,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../lib/api";
 import { applyFix } from "../../lib/fixes";
-import type { RunError, RunSummary, Step, ThreadInfo } from "../../lib/types";
+import type { RunError, RunSummary, Step, ThreadInfo, Todo } from "../../lib/types";
 import { cn, formatCost, formatMs, formatTokens, preview, timeAgo } from "../../lib/utils";
 import { useCheck } from "../../state/check";
 import { useFlow } from "../../state/flow";
-import { answerWaiting, attachRun, continueRun, replayRun, startRun, stopRun, useRun, type InnerEvent, type StepRun } from "../../state/run";
+import {
+  answerWaiting,
+  attachRun,
+  continueRun,
+  replayRun,
+  startRun,
+  stopRun,
+  useRun,
+  type InnerEvent,
+  type StepRun,
+  type ToolCallRun,
+} from "../../state/run";
 import { useUi } from "../../state/ui";
 import { IssueList } from "../inspector/Inspector";
 import { Badge, Button, Field, Input, Select, Switch, Textarea, Tooltip } from "../ui";
@@ -113,46 +125,119 @@ function findSources(values: Record<string, unknown> | undefined | null) {
   return null;
 }
 
+/** One tool call: what the agent sent and what came back. A Deep Agent's task shows the
+ * Helper it went to, what that Helper used, and the Helper's own calls under it. */
+function ToolCallItem({ call, nested }: { call: ToolCallRun; nested?: ToolCallRun[] }) {
+  const [open, setOpen] = useState(false);
+  const task = call.toHelper != null;
+  const what = task ? String(call.args.description ?? "") : preview(call.args, 60);
+  return (
+    <li className="rounded-md border border-border bg-surface" data-testid={task ? `helper-task-${call.toHelper}` : undefined}>
+      <button type="button" className="flex w-full items-center gap-1.5 px-2 py-1 text-left" aria-expanded={open} onClick={() => setOpen(!open)}>
+        {call.status === "running" ? (
+          <Loader2 size={11} className="animate-spin text-accent" />
+        ) : call.status === "error" ? (
+          <CircleAlert size={11} className="text-danger" />
+        ) : task ? (
+          <UserCog size={11} className="text-fuchsia-500" />
+        ) : (
+          <Wrench size={11} className="text-faint" />
+        )}
+        <span className="font-mono font-medium">{task ? `Helper ${call.toHelper}` : call.tool}</span>
+        <span className={cn("min-w-0 flex-1 truncate text-faint", !task && "font-mono")}>{what}</span>
+        {call.usage && <span className="text-faint">{formatTokens(call.usage.input_tokens + call.usage.output_tokens)} tok</span>}
+        {call.cost != null && call.cost > 0 && <span className="text-faint">{formatCost(call.cost)}</span>}
+        {call.durationMs != null && <span className="text-faint">{formatMs(call.durationMs)}</span>}
+      </button>
+      {open && (
+        <div className="space-y-1 border-t border-border px-2 py-1.5">
+          <p className="text-faint">{task ? "Task" : "Sent"}</p>
+          <pre className="overflow-auto font-mono text-[11px] whitespace-pre-wrap">{task ? what : JSON.stringify(call.args, null, 2)}</pre>
+          {call.model && <p className="text-faint">Model: {call.model}</p>}
+          <p className="text-faint">{call.status === "error" ? "Failed" : call.status === "running" ? "Working…" : task ? "Replied" : "Got back"}</p>
+          {call.status !== "running" && (
+            <pre className={cn("max-h-48 overflow-auto font-mono text-[11px] whitespace-pre-wrap", call.status === "error" && "text-danger")}>
+              {typeof call.result === "string" ? call.result : JSON.stringify(call.result, null, 2)}
+            </pre>
+          )}
+        </div>
+      )}
+      {nested && nested.length > 0 && (
+        <ol className="ml-3 space-y-1 border-l border-fuchsia-500/30 py-1 pl-2" aria-label={`What ${call.toHelper} did`}>
+          {nested.map((child, i) => (
+            <ToolCallItem key={child.callId ?? i} call={child} />
+          ))}
+        </ol>
+      )}
+    </li>
+  );
+}
+
 /** The tools an Agent called, with what it sent and what came back. */
 function ToolCallsView({ run }: { run: StepRun }) {
-  const [open, setOpen] = useState<number | null>(null);
   if (!run.tools?.length) return null;
+  const top = run.tools.filter((t) => !t.helper);
+  const inside = (call: ToolCallRun) => run.tools!.filter((t) => t.helper && t.within != null && t.within === call.callId);
   return (
     <div data-testid="trace-tool-calls">
       <p className="font-semibold text-muted">Tool calls</p>
       <ol className="space-y-1">
-        {run.tools.map((call, i) => (
-          <li key={i} className="rounded-md border border-border bg-surface">
-            <button
-              type="button"
-              className="flex w-full items-center gap-1.5 px-2 py-1 text-left"
-              aria-expanded={open === i}
-              onClick={() => setOpen(open === i ? null : i)}
-            >
-              {call.status === "running" ? (
-                <Loader2 size={11} className="animate-spin text-accent" />
-              ) : call.status === "error" ? (
-                <CircleAlert size={11} className="text-danger" />
-              ) : (
-                <Wrench size={11} className="text-faint" />
-              )}
-              <span className="font-mono font-medium">{call.tool}</span>
-              <span className="min-w-0 flex-1 truncate font-mono text-faint">{preview(call.args, 60)}</span>
-              {call.durationMs != null && <span className="text-faint">{formatMs(call.durationMs)}</span>}
-            </button>
-            {open === i && (
-              <div className="space-y-1 border-t border-border px-2 py-1.5">
-                <p className="text-faint">Sent</p>
-                <pre className="overflow-auto font-mono text-[11px] whitespace-pre-wrap">{JSON.stringify(call.args, null, 2)}</pre>
-                <p className="text-faint">{call.status === "error" ? "Failed" : "Got back"}</p>
-                <pre className={cn("max-h-48 overflow-auto font-mono text-[11px] whitespace-pre-wrap", call.status === "error" && "text-danger")}>
-                  {typeof call.result === "string" ? call.result : JSON.stringify(call.result, null, 2)}
-                </pre>
-              </div>
-            )}
-          </li>
+        {top.map((call, i) => (
+          <ToolCallItem key={call.callId ?? i} call={call} nested={call.toHelper ? inside(call) : undefined} />
         ))}
       </ol>
+    </div>
+  );
+}
+
+const TODO_ICON: Record<Todo["status"], string> = { pending: "○", in_progress: "◐", completed: "●" };
+
+/** A Deep Agent's to-do list, as it last wrote it. */
+function TodosView({ run }: { run: StepRun }) {
+  if (!run.todos?.length) return null;
+  return (
+    <div data-testid="trace-todos">
+      <p className="font-semibold text-muted">To-do list</p>
+      <ul className="space-y-0.5">
+        {run.todos.map((todo, i) => (
+          <li key={i} className={cn("flex gap-1.5", todo.status === "completed" && "text-faint line-through")}>
+            <span aria-label={todo.status.replace("_", " ")} className={cn(todo.status === "in_progress" && "text-accent")}>
+              {TODO_ICON[todo.status] ?? "○"}
+            </span>
+            {todo.content}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** A Deep Agent's files: pick one to read it. */
+function FilesView({ run }: { run: StepRun }) {
+  const paths = Object.keys(run.files ?? {}).sort();
+  const [shown, setShown] = useState<string | null>(null);
+  if (!paths.length) return null;
+  const current = shown && run.files![shown] != null ? shown : paths[0];
+  return (
+    <div data-testid="trace-files">
+      <p className="font-semibold text-muted">Files</p>
+      <div className="mb-1 flex flex-wrap gap-1" role="tablist" aria-label="Files">
+        {paths.map((path) => (
+          <button
+            key={path}
+            type="button"
+            role="tab"
+            aria-selected={path === current}
+            className={cn("rounded border px-1.5 py-px font-mono text-[11px]", path === current ? "border-accent bg-accent-soft" : "border-border")}
+            onClick={() => setShown(path)}
+          >
+            {path}
+          </button>
+        ))}
+      </div>
+      <pre className="max-h-64 overflow-auto rounded-md border border-border bg-surface p-2 font-mono text-[11px] whitespace-pre-wrap" role="tabpanel">
+        {run.files![current]}
+      </pre>
     </div>
   );
 }
@@ -214,7 +299,9 @@ function Trace() {
                     <p className="font-semibold text-muted">Saved</p>
                     {run.error ? <p className="text-danger">{run.error.message}</p> : Object.keys(run.output ?? {}).length ? <ValueView value={run.output} /> : <p className="text-faint">no changes</p>}
                   </div>
+                  <TodosView run={run} />
                   <ToolCallsView run={run} />
+                  <FilesView run={run} />
                   <ItemsView run={run} />
                   <InnerView inner={run.inner} />
                 </div>

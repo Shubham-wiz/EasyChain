@@ -77,6 +77,7 @@ without bumping the spec `version`. After changing it, run `pnpm schema` to rege
 | `logic.py` | Decision |
 | `flow_control.py` | For Each, Sub-flow, Jump, Ask a Human |
 | `agent.py` | Agent (tools, add-ons, MCP tools) |
+| `deep_agent.py` | Deep Agent (`create_deep_agent`: to-do list, files, Helpers) and Helper (a sub-agent spec) |
 | `knowledge.py` | Knowledge Base search |
 | `memory.py` | Memory |
 | `sql.py` | Database query |

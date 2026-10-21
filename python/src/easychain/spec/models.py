@@ -688,6 +688,77 @@ class AgentStep(_StepBase):
     settings: AgentSettings = Field(default_factory=AgentSettings)
 
 
+DEFAULT_DEEP_AGENT_INSTRUCTIONS = (
+    "You work on longer tasks. Plan the work as a to-do list and keep it up to date, keep notes "
+    "and drafts in files, hand focused sub-tasks to your helpers, and finish with a clear answer."
+)
+
+
+class DeepAgentSettings(AgentSettings):
+    instructions: str = Field(
+        default=DEFAULT_DEEP_AGENT_INSTRUCTIONS,
+        description="Role and rules (the system prompt). Put Flow Data in with {field}.",
+    )
+    helpers: list[Ident] = Field(
+        default_factory=list,
+        description="Helper steps it can hand sub-tasks to (their ids). It can also hand tasks "
+        "to a general helper that has its own tools.",
+    )
+    files: Ident | None = Field(
+        default="files",
+        description="The Flow Data field that keeps its files ({path: text}): they are there "
+        "when it starts, and saved when it finishes. Empty: files last only while it works.",
+    )
+    save_todos: Ident | None = Field(
+        default=None, description="Also save its to-do list here (a list of {content, status})."
+    )
+    max_steps: int = Field(
+        default=500,
+        ge=10,
+        le=10000,
+        description="Most rounds the agent and its helpers may take in one run (each model call, "
+        "tool call and add-on counts).",
+    )
+
+
+class DeepAgentStep(_StepBase):
+    """An agent for longer tasks: it plans with a to-do list, keeps files, and hands sub-tasks
+    to Helpers (deepagents' create_deep_agent)."""
+
+    type: Literal["deep_agent"]
+    settings: DeepAgentSettings = Field(default_factory=DeepAgentSettings)
+
+
+DEFAULT_HELPER_INSTRUCTIONS = (
+    "You are a focused helper. Do the task you are given, using your tools, and reply with what "
+    "you found or made: briefly, with sources when you used any."
+)
+
+
+class HelperSettings(_Model):
+    model: str | None = Field(
+        default=None, description="The model this helper uses. Empty: its Deep Agent's model."
+    )
+    instructions: str = Field(
+        default=DEFAULT_HELPER_INSTRUCTIONS,
+        description="Its role and rules (the system prompt). Put Flow Data in with {field}.",
+    )
+    tools: list[Ident] = Field(
+        default_factory=list, description="Steps this helper can use as tools (their ids)."
+    )
+    mcp: list[McpTools] = Field(default_factory=list)
+    temperature: float | None = Field(default=None, ge=0, le=2)
+    addons: AgentAddons = Field(default_factory=AgentAddons)
+
+
+class HelperStep(_StepBase):
+    """A specialist a Deep Agent hands sub-tasks to: its own role, tools and model (a
+    deepagents sub-agent). Its description tells the Deep Agent when to use it."""
+
+    type: Literal["helper"]
+    settings: HelperSettings = Field(default_factory=HelperSettings)
+
+
 Step = Annotated[
     InputStep
     | OutputStep
@@ -701,6 +772,8 @@ Step = Annotated[
     | SubflowStep
     | JumpStep
     | AgentStep
+    | DeepAgentStep
+    | HelperStep
     | KnowledgeSearchStep
     | MemoryStep
     | SqlQueryStep
@@ -806,6 +879,8 @@ STEP_MODELS: dict[str, type[BaseModel]] = {
     "subflow": SubflowStep,
     "jump": JumpStep,
     "agent": AgentStep,
+    "deep_agent": DeepAgentStep,
+    "helper": HelperStep,
     "knowledge_search": KnowledgeSearchStep,
     "memory": MemoryStep,
     "sql_query": SqlQueryStep,

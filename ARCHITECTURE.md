@@ -251,6 +251,23 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
 - **The stand-in AI** (`runtime/standin.py`) picks tools by keyword overlap with their
   descriptions, fills arguments from the question, answers from tool results with `[n]`
   citations, and fills JSON schemas. Test Sets can **script** its turns instead.
+- **Deep Agent step** (Phase 4, `steps/deep_agent.py`). The node builds `deepagents.
+  create_deep_agent(model, tools, system_prompt, middleware=[TodoListMiddleware(),
+  FilesystemMiddleware(tools=FILE_TOOLS), *addons], subagents=[general_helper(...),
+  <helper>_helper(data), ...])`. `FILE_TOOLS` is every file tool except `execute` (there is no
+  shell). The agent's files live in its own graph state (deepagents' `StateBackend`), so they are
+  checkpointed with the flow: a worker crash resumes inside the agent with its files, and time
+  travel rewinds them. The node passes the Flow Data `files` field (`{path: text}`) in and saves
+  it back. Approvals may name the built-in tools (`write_file`, `task`, …).
+- **Helpers** are steps of type `helper` with no node. Each compiles to a function returning a
+  deepagents `SubAgent` spec (own model, prompt, tools, add-on middleware, the same file tools).
+  deepagents always adds a general-purpose helper; Easy Chain passes its own, with the Deep
+  Agent's tools and add-ons, so approvals and limits can't be bypassed through it.
+- **Helper events.** A Helper's graph runs inside the Deep Agent's `tools` task
+  (`lead:<id>|tools:<id>`). The runner records which `task` call started each such task and
+  tags the Helper's tool events with `helper` and `within` (the task's call id). It adds the
+  Helper's model usage to that task's `tool_finished` and to the step's total, and emits `todos`
+  and `files` events from the tool results. A Helper's own tokens don't stream into the answer.
 
 ## 6. The web app
 
@@ -340,6 +357,7 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
 | `test_agent.py` | Agent tool calls and their events, approvals (approve, edit, reject) through the Inbox shape, structured answers, add-ons, limits, MCP tools |
 | `test_knowledge.py` | Every file format, chunk provenance, hybrid search and citations on SQLite and on Postgres with pgvector, the API, an agent searching with its own queries, documents cut off by a restart, exported code searching on its own |
 | `test_integrations.py` | Memory (remember, recall, trim, summarise), read-only SQL, MCP over stdio and HTTP and its allow-list, OpenAPI import |
+| `test_deep_agent.py` | The Deep Agent plans, hands a task to a Helper (nested trace, usage per Helper), keeps its files across turns; approvals inside the Deep Agent, inside a Helper and in the general helper pause the run and go through the Inbox (with a worker); the checks; Test Set `helpers:`/`files:`; **exported code runs on its own**. `test_durability.py` also kills a worker inside a Deep Agent: it resumes with the files it had |
 | `test_sandbox.py` | **Phase 4's sandbox "Done when"**, with real containers: the host's files, the network, Easy Chain's environment and secrets, root and capabilities, the Docker socket, writes outside `/tmp`, a fork bomb, memory and time are all out of reach; errors come back as they were; a flow's Code step runs in the sandbox; the settings API and the check before a run |
 | `packages/client/src/*.test.ts(x)` | The client's SSE handling, errors, reconnecting `wait()`, and the React hook through a pause and an answer |
 
@@ -365,6 +383,8 @@ extras) and locked in `uv.lock`. Exported
 | Postgres for flows, versions, checkpoints; Redis queue; workers | Postgres (or SQLite locally) for runs, events, jobs, versions and Save Points; flows stay YAML files in a workspace folder; the queue is a database table; workers are `easychain worker` processes | Files keep flows git-friendly, and every run still records the exact version it ran. A table queue (`SKIP LOCKED` + advisory locks) needs no extra service; Redis Streams can come later if load needs it. |
 | SQLAlchemy + Alembic | SQLAlchemy Core with `create_all` and a schema version check | There is one schema version so far; Alembic migrations arrive with the first schema change. Startup takes an advisory lock so several processes can start together. |
 | Code modules run in a sandbox | Code steps run in a Docker container per call (gVisor when installed); without Docker they run in-process with a warning, unless the sandbox is set to "Always" | Docker works on Linux, Windows and macOS (decision 4.2) and needs no extra service. A warm pool of containers, microVMs and hosted sandboxes (E2B, Modal) can be added behind the same proxy. In Docker Compose the worker needs the host's Docker socket for this (`docker-compose.sandbox.yml`), which is powerful; it is an opt-in overlay. |
+| Deep Agents keep a virtual file area in the LangGraph store | Their files live in the agent's checkpointed state and are saved to a Flow Data field (`files`) | The state is saved with every Save Point, so the files survive a crash (tested) and rewind with time travel; the store would keep them outside the run's history. Flow Data also lets later steps read a file. A store-backed `/memories/` area can come with long-term memory for Deep Agents. |
+| (not in prompt) | Deep Agents have no `execute` tool | Running commands belongs in Code steps, which run in the sandbox. A deepagents sandbox backend on the same Docker sandbox can add it later. |
 | Cancel stops a run | Cancel stops the run at once and keeps its Save Points, but a Code step already running in a thread finishes in the background (its result is dropped) | Python can't kill a thread. Time limits on steps bound this. |
 | Show ARCHITECTURE.md, schema and plan before writing feature code; one phase at a time | Phases 0 and 1 were built in one go and reported together ([report](docs/phases/phase-0-1.md)); Phases 2 and 3 followed, each after its report ([Phase 2](docs/phases/phase-2.md), [Phase 3](docs/phases/phase-3.md)) | The request was "take this and build, do testing and all", and each phase's questions were answered with "whatever you think is right" or "continue". |
 | Decision = conditional edge | Decision = a node (no-op for rules; the classifier for AI mode) plus a conditional edge | Keeps one node per step, so the trace, glow and errors map 1:1 to canvas boxes, and AI classification tokens are attributed to the Decision. The routing itself is still a standard conditional edge. |

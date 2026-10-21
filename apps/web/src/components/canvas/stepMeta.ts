@@ -2,6 +2,7 @@ import {
   Bot,
   Box,
   Brain,
+  BrainCircuit,
   Code2,
   CornerDownRight,
   Database,
@@ -16,6 +17,7 @@ import {
   Sparkles,
   Split,
   UserCheck,
+  UserCog,
   type LucideIcon,
 } from "lucide-react";
 import type { Step } from "../../lib/types";
@@ -33,6 +35,8 @@ export const ICONS: Record<string, LucideIcon> = {
   "user-check": UserCheck,
   "corner-down-right": CornerDownRight,
   bot: Bot,
+  "brain-circuit": BrainCircuit,
+  "user-cog": UserCog,
   library: Library,
   brain: Brain,
   database: Database,
@@ -99,6 +103,17 @@ export function stepSummary(step: Step, upstream?: string | null): string {
       const tools = ((s.tools ?? []) as string[]).length + ((s.mcp ?? []) as unknown[]).length;
       const model = String(s.model ?? "").split(":").slice(1).join(":") || s.model;
       return `${model} · ${tools ? `${tools} tool${tools === 1 ? "" : "s"}` : "no tools yet"} → ${s.output ? `${s.save_as} (fields)` : s.save_as}`;
+    }
+    case "deep_agent": {
+      const helpers = ((s.helpers ?? []) as string[]).length;
+      const model = String(s.model ?? "").split(":").slice(1).join(":") || s.model;
+      const team = helpers ? `${helpers} Helper${helpers === 1 ? "" : "s"}` : "no Helpers yet";
+      return `${model} · ${team}${s.files ? ` · files in ${s.files}` : ""} → ${s.save_as}`;
+    }
+    case "helper": {
+      const tools = ((s.tools ?? []) as string[]).length + ((s.mcp ?? []) as unknown[]).length;
+      const model = s.model ? String(s.model).split(":").slice(1).join(":") || s.model : "its Deep Agent's model";
+      return `${model} · ${tools ? `${tools} tool${tools === 1 ? "" : "s"}` : "files only"}`;
     }
     case "knowledge_search":
       return s.knowledge_base ? `Searches “${s.knowledge_base}” for ${s.query || upstream || "?"} → ${s.save_as}` : "Pick a Knowledge Base";

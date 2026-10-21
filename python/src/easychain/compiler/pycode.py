@@ -198,6 +198,11 @@ class Names:
         "mcp_tools",
         "run_tool",
         "agent",
+        # Phase 4: Deep Agents and Helpers (their code's locals)
+        "create_deep_agent",
+        "model",
+        "tools",
+        "addons",
         "result",
         # Locals of a For Each item wrapper that also calls the step it runs per item.
         "items",

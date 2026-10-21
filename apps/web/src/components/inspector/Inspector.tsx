@@ -1,7 +1,7 @@
 import { AlertTriangle, ChevronDown, ChevronRight, CircleAlert, Wrench } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { applyFix } from "../../lib/fixes";
-import { getStep, renameStepId, toIdent, toolOf, updateSettings, updateStep } from "../../lib/spec";
+import { getStep, helperOf, renameStepId, toIdent, toolOf, updateSettings, updateStep } from "../../lib/spec";
 import type { Issue } from "../../lib/types";
 import { cn, preview } from "../../lib/utils";
 import { useStepInfo } from "../../state/catalog";
@@ -27,6 +27,7 @@ const GROUP_KINDS = new Set([
   "code",
   "schema",
   "tools",
+  "helpers",
   "agent_addons",
   "mcp_tools",
 ]);
@@ -138,6 +139,10 @@ function StepPanel({ stepId }: { stepId: string }) {
     const agentId = s.spec ? toolOf(s.spec, stepId) : null;
     return agentId ? s.spec?.steps.find((x) => x.id === agentId)?.name || agentId : null;
   });
+  const leadOf = useFlow((s) => {
+    const leadId = s.spec ? helperOf(s.spec, stepId) : null;
+    return leadId ? s.spec?.steps.find((x) => x.id === leadId)?.name || leadId : null;
+  });
 
   useEffect(() => setMoreOpen(mode === "pro"), [mode, stepId]);
 
@@ -212,12 +217,20 @@ function StepPanel({ stepId }: { stepId: string }) {
           </div>
         </div>
         <p className="text-xs leading-relaxed text-muted">{info.summary}</p>
-        {agentOf && (
+        {(agentOf || step.type === "helper") && (
           <div data-setting="description">
             <Field
-              label="What this tool does"
-              help={`The agent “${agentOf}” reads this to decide when to use the tool. Say what it does and what it needs.`}
-              example="Looks up an order by its number and returns its status and items."
+              label={agentOf ? "What this tool does" : "What this Helper does"}
+              help={
+                agentOf
+                  ? `The agent “${agentOf}” reads this to decide when to use the tool. Say what it does and what it needs.`
+                  : `${leadOf ? `The Deep Agent “${leadOf}”` : "Its Deep Agent"} reads this to decide which tasks to hand this Helper.`
+              }
+              example={
+                agentOf
+                  ? "Looks up an order by its number and returns its status and items."
+                  : "Finds facts about a topic on the web and replies with short notes and their sources."
+              }
               htmlFor={`${stepId}-description`}
               issue={issueFor("description")}
             >
@@ -225,7 +238,7 @@ function StepPanel({ stepId }: { stepId: string }) {
                 id={`${stepId}-description`}
                 rows={2}
                 value={step.description ?? ""}
-                placeholder="Looks up … and returns …"
+                placeholder={agentOf ? "Looks up … and returns …" : "Finds … and replies with …"}
                 onChange={(e) => apply((s) => updateStep(s, stepId, { description: e.target.value }), `${stepId}:description`)}
               />
             </Field>

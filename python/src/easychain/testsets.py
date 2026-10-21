@@ -191,6 +191,22 @@ async def run_case(
         for tool in expect.pop("not_tools"):
             if tool in called:
                 failures.append(f"tools: expected the agent not to call {tool!r}")
+    if "helpers" in expect:
+        handed = [e["to_helper"] for e in events if e.get("to_helper") and "result" not in e]
+        for helper in expect.pop("helpers"):
+            if helper not in handed:
+                failures.append(f"helpers: expected a task for {helper!r} (got {handed})")
+    if "files" in expect:
+        # A Deep Agent's files, {path: text}, in whichever output field holds them.
+        output = final.get("output") or {}
+        for path, rules in expect.pop("files").items():
+            found = next(
+                (v[path] for v in output.values() if isinstance(v, dict) and path in v), None
+            )
+            if found is None:
+                failures.append(f"files: expected the file {path!r}")
+                continue
+            failures += [f"files {path}: {msg}" for msg in check_value(found, rules)]
     if "route" in expect:
         routes = {e["step"]: e["exit"] for e in events if e["type"] == "route"}
         for step, label in expect.pop("route").items():

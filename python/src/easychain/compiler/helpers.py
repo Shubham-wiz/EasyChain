@@ -413,6 +413,77 @@ def tell_agent(error: Exception, request: Any) -> str:
 )
 
 
+DEEPAGENTS_REQ = "deepagents==0.7.22"
+
+FILE_TOOLS = Helper(
+    "FILE_TOOLS",
+    """
+# A Deep Agent's file tools: every one except `execute`. The files live in the run's
+# state (saved with each Save Point), where there is no shell to run commands in.
+FILE_TOOLS: list[FsToolName] = [
+    "ls",
+    "read_file",
+    "write_file",
+    "edit_file",
+    "delete",
+    "glob",
+    "grep",
+]
+""",
+    from_imports=(("deepagents", "FsToolName"),),
+    requirements=(DEEPAGENTS_REQ,),
+)
+
+AGENT_FILES = Helper(
+    "agent_files",
+    '''
+def agent_files(files: Any) -> dict[str, Any]:
+    """Flow Data files ({path: text}) as a Deep Agent's file area."""
+    if not isinstance(files, dict):
+        return {}
+    return {str(path): create_file_data(str(text)) for path, text in files.items()}
+''',
+    from_imports=(("typing", "Any"), ("deepagents.backends.utils", "create_file_data")),
+    requirements=(DEEPAGENTS_REQ,),
+)
+
+FLOW_FILES = Helper(
+    "flow_files",
+    '''
+def flow_files(files: Any) -> dict[str, str]:
+    """A Deep Agent's file area as Flow Data: {path: text}, by path."""
+    if not isinstance(files, dict):
+        return {}
+    return {path: file_data_to_string(data) for path, data in sorted(files.items()) if data}
+''',
+    from_imports=(("typing", "Any"), ("deepagents.backends.utils", "file_data_to_string")),
+    requirements=(DEEPAGENTS_REQ,),
+)
+
+GENERAL_HELPER = Helper(
+    "general_helper",
+    '''
+def general_helper(model: Any, tools: list[Any], middleware: list[Any]) -> SubAgent:
+    """deepagents' general-purpose helper, with the Deep Agent's own tools and add-ons, so
+    the approvals and limits that apply to the Deep Agent apply to this helper too."""
+    return {
+        **GENERAL_PURPOSE_SUBAGENT,
+        "model": model,
+        "tools": tools,
+        "middleware": [FilesystemMiddleware(tools=FILE_TOOLS), *middleware],
+    }
+''',
+    from_imports=(
+        ("typing", "Any"),
+        ("deepagents", "FilesystemMiddleware"),
+        ("deepagents", "SubAgent"),
+        ("deepagents.middleware.subagents", "GENERAL_PURPOSE_SUBAGENT"),
+    ),
+    requires=("FILE_TOOLS",),
+    requirements=(DEEPAGENTS_REQ,),
+)
+
+
 def _knowledge_helpers() -> tuple[Helper, ...]:
     from ..integrations import mcp, sql
     from ..knowledge import memory, search
@@ -500,6 +571,10 @@ HELPERS = {
         RUN_ONCE,
         ASK_IN_TERMINAL,
         TELL_AGENT,
+        FILE_TOOLS,
+        AGENT_FILES,
+        FLOW_FILES,
+        GENERAL_HELPER,
         *_knowledge_helpers(),
     )
 }

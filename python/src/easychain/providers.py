@@ -354,20 +354,22 @@ def get_provider(model: str) -> Provider | None:
 def flow_models(spec: Any) -> list[tuple[str, str, str]]:
     """Every model a flow's steps call, as (step id, setting, model).
 
-    AI Models, AI Decisions, Agents (and their fallback models), Memory steps that
-    summarise, and Knowledge Base searches (the embedding model and the re-ranking model).
+    AI Models, AI Decisions, Agents, Deep Agents and Helpers (and their fallback models),
+    Memory steps that summarise, and Knowledge Base searches (the embedding model and the
+    re-ranking model).
     This is how Easy Chain works out which API keys a flow needs.
     """
     found: list[tuple[str, str, str]] = []
     for step in spec.steps:
         s = step.settings
         if (
-            step.type in ("ai_model", "agent")
+            step.type in ("ai_model", "agent", "deep_agent", "helper")
             or (step.type == "decision" and s.mode == "ai")
             or (step.type == "memory" and s.action == "summarise")
         ):
+            # A Helper with no model of its own uses its Deep Agent's.
             found.append((step.id, "model", s.model))
-        if step.type == "agent":
+        if step.type in ("agent", "deep_agent", "helper"):
             found += [(step.id, "addons", model) for model in s.addons.fallback_models]
         if step.type == "knowledge_search":
             if s.embedding_model != "keywords":

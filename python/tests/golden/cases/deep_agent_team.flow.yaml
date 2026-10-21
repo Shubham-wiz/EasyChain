@@ -1,0 +1,70 @@
+version: 1
+name: Deep Agent with Helpers
+description: A lead researcher plans the work, hands sub-tasks to two Helpers, and writes a report
+  to its files.
+data:
+- name: page_url
+  description: The address of a page to read.
+steps:
+- id: input
+  type: input
+  settings:
+    fields:
+    - name: topic
+      example: Sea otters
+    - name: audience
+      example: school children
+- id: lead
+  type: deep_agent
+  name: Lead researcher
+  settings:
+    instructions: |-
+      You research a topic for {audience} and write a report to /report.md.
+      Plan the work first. Ask the researcher for facts and the editor for a review.
+    input: topic
+    tools: [read_page]
+    helpers: [researcher, editor]
+    save_todos: plan
+    addons:
+      approve_tools: [write_file]
+      max_model_calls: 30
+- id: researcher
+  type: helper
+  name: Researcher
+  description: Finds facts about a topic and replies with short notes and their sources.
+  settings:
+    instructions: Find facts for {audience}. Reply with short notes and the pages you used.
+    tools: [read_page, web_search]
+    addons:
+      tool_retries: 1
+- id: editor
+  type: helper
+  name: Editor
+  description: Reviews a draft in the files and suggests changes.
+  settings:
+    model: anthropic:claude-haiku-4-5
+    instructions: Read the draft and reply with the three most useful changes.
+    temperature: 0.2
+- id: read_page
+  type: http_request
+  name: Read a page
+  description: Reads a web page and returns its text.
+  settings:
+    url: '{page_url}'
+    save_as: page_text
+- id: web_search
+  type: code
+  name: Search the web
+  description: Searches the web (a stand-in that returns a fixed result).
+  settings:
+    code: |
+      def run(data):
+          """Return search results for a query."""
+          return {"results": [f"https://example.com/{data['query'].replace(' ', '-')}"]}
+- id: output
+  type: output
+  settings:
+    fields: [answer, files, plan]
+connections:
+- {from: input, to: lead}
+- {from: lead, to: output}

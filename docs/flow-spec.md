@@ -109,6 +109,8 @@ Step ids can't contain two underscores in a row (`__`); Easy Chain keeps those f
 | `subflow` | [Sub-flow](steps/subflow.md) |
 | `jump` | [Jump](steps/jump.md) |
 | `agent` | [Agent](steps/agent.md) |
+| `deep_agent` | [Deep Agent](steps/deep_agent.md) |
+| `helper` | [Helper](steps/helper.md) (not connected: a Deep Agent's `helpers` lists it) |
 | `knowledge_search` | [Knowledge Base search](steps/knowledge_search.md) |
 | `memory` | [Memory](steps/memory.md) |
 | `sql_query` | [Database query](steps/sql_query.md) |

@@ -8,7 +8,7 @@ Start with the [project README](../README.md). This page lists every document.
 |---|---|
 | [flow-spec.md](flow-spec.md) | The flow file format (YAML): settings, Flow Data, steps, connections, placeholders |
 | [runs.md](runs.md) | How runs work: workers, Save Points, Ask a Human and the Inbox, triggers, notifications, the runs API and events |
-| [agents.md](agents.md) | Agents and tools: steps as tools, Add-ons, MCP servers, Import an API, structured answers, testing agents |
+| [agents.md](agents.md) | Agents and tools: steps as tools, Add-ons, MCP servers, Import an API, structured answers, testing agents; Deep Agents and Helpers |
 | [knowledge.md](knowledge.md) | Knowledge Bases: adding documents, search modes, citations, storage, the API |
 | [sandbox.md](sandbox.md) | The Code step sandbox: what code can't do, what it needs, settings, Docker Compose |
 | [steps/](steps) | One page per step type (below) |
@@ -22,6 +22,7 @@ Start with the [project README](../README.md). This page lists every document.
 | Instructions | [instructions.md](steps/instructions.md) | Sub-flow | [subflow.md](steps/subflow.md) |
 | AI Model | [ai_model.md](steps/ai_model.md) | Jump | [jump.md](steps/jump.md) |
 | Agent | [agent.md](steps/agent.md) | Knowledge Base search | [knowledge_search.md](steps/knowledge_search.md) |
+| Deep Agent | [deep_agent.md](steps/deep_agent.md) | Helper | [helper.md](steps/helper.md) |
 | Web request | [http_request.md](steps/http_request.md) | Memory | [memory.md](steps/memory.md) |
 | Code | [code.md](steps/code.md) | Database query | [sql_query.md](steps/sql_query.md) |
 | Decision | [decision.md](steps/decision.md) | MCP tool | [mcp_tool.md](steps/mcp_tool.md) |

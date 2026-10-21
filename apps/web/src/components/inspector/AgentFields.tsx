@@ -3,7 +3,20 @@
 import { ChevronDown, ChevronRight, ExternalLink, Trash2 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { api, ApiError } from "../../lib/api";
-import { addTool, addToolStep, canAddTool, createStep, getStep, removeTool, TOOL_TYPES, updateSettings } from "../../lib/spec";
+import {
+  addHelper,
+  addHelperStep,
+  addTool,
+  addToolStep,
+  canAddHelper,
+  canAddTool,
+  createStep,
+  getStep,
+  removeHelper,
+  removeTool,
+  TOOL_TYPES,
+  updateSettings,
+} from "../../lib/spec";
 import type { McpSettings, McpTool } from "../../lib/types";
 import { cn } from "../../lib/utils";
 import { useCatalog } from "../../state/catalog";
@@ -123,6 +136,105 @@ export function ToolsField({ value, stepId }: FieldProps) {
   );
 }
 
+/** A Deep Agent's Helpers: the specialists it hands sub-tasks to. */
+export function HelpersField({ value, stepId }: FieldProps) {
+  const spec = useFlow((s) => s.spec)!;
+  const apply = useFlow((s) => s.apply);
+  const select = useUi((s) => s.select);
+  const catalog = useCatalog((s) => s.catalog);
+  const lead = stepId ? getStep(spec, stepId) : undefined;
+  if (!lead || !stepId) return null;
+  const helpers: string[] = value ?? [];
+  const info = catalog?.steps.find((s) => s.type === "helper");
+  const Icon = iconFor(info?.icon);
+  const spare = spec.steps.filter((s) => s.type === "helper" && canAddHelper(spec, s.id, stepId) === null);
+  return (
+    <div className="space-y-2" data-testid="deep-agent-helpers">
+      {!helpers.length && (
+        <p className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted">
+          No Helpers yet. It can still hand tasks to a general helper. Add a specialist below, or drag a Helper's handle onto the Deep
+          Agent's <strong>Helpers</strong> handle.
+        </p>
+      )}
+      {helpers.map((helperId) => {
+        const helper = getStep(spec, helperId);
+        const model = helper?.settings.model || "its Deep Agent's model";
+        return (
+          <div key={helperId} className="space-y-1.5 rounded-lg border border-border bg-surface-2/50 p-2" data-testid={`helper-${helperId}`}>
+            <div className="flex items-center gap-2">
+              <span className={cn("flex h-6 w-6 shrink-0 items-center justify-center rounded", colorsFor(info?.category).chip)}>
+                <Icon size={13} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{helper?.name || helperId}</p>
+                <p className="truncate text-[11px] text-faint">
+                  {model} · {((helper?.settings.tools ?? []) as string[]).length} tool(s)
+                </p>
+              </div>
+              <Button size="icon-sm" variant="ghost" aria-label={`Open ${helper?.name || helperId}`} onClick={() => select([helperId])}>
+                <ExternalLink size={13} />
+              </Button>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label={`Take ${helper?.name || helperId} off the team`}
+                onClick={() => apply((s) => removeHelper(s, stepId, helperId))}
+              >
+                <Trash2 size={13} />
+              </Button>
+            </div>
+            {helper?.description ? (
+              <p className="line-clamp-2 text-xs text-muted">{helper.description}</p>
+            ) : (
+              <p className="text-xs text-warn">
+                Describe this Helper so the Deep Agent knows which tasks to hand it.{" "}
+                <button type="button" className="font-medium underline" onClick={() => useUi.getState().focus(helperId, "description")}>
+                  Describe it
+                </button>
+              </p>
+            )}
+          </div>
+        );
+      })}
+      <div className="flex flex-wrap gap-1.5">
+        {info && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="flex-1"
+            onClick={() => {
+              const step = createStep(info, spec);
+              apply((s) => addHelperStep(s, stepId, step));
+              select([step.id]);
+            }}
+          >
+            + Add a Helper
+          </Button>
+        )}
+        {spare.length > 0 && (
+          <Select
+            aria-label="Put a Helper on the team"
+            className="h-8 w-auto flex-1 text-xs"
+            value=""
+            onChange={(e) => e.target.value && apply((s) => addHelper(s, stepId, e.target.value))}
+          >
+            <option value="">Use a Helper on the canvas…</option>
+            {spare.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name || s.id}
+              </option>
+            ))}
+          </Select>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// A Deep Agent's own tools (approvals may name them); its Helpers have the file tools.
+const DEEP_AGENT_TOOLS = ["write_file", "edit_file", "delete", "task"];
+const FILE_TOOLS = ["write_file", "edit_file", "delete"];
+
 function Addon({
   title,
   technical,
@@ -176,11 +288,13 @@ const PII = [
 ];
 
 /** Agent Add-ons: middleware toggles, each with its few settings. */
-export function AddonsField({ value, onChange, settings }: FieldProps) {
+export function AddonsField({ value, onChange, settings, stepId }: FieldProps) {
   const [open, setOpen] = useState(false);
+  const type = useFlow((s) => (stepId ? s.spec?.steps.find((x) => x.id === stepId)?.type : undefined));
   const a: Record<string, Value> = value ?? {};
   const set = (patch: Record<string, unknown>) => onChange({ ...a, ...patch });
-  const tools: string[] = [...(settings.tools ?? []), ...(settings.mcp ?? []).flatMap((m: { tools: string[] }) => m.tools ?? [])];
+  const own = type === "deep_agent" ? DEEP_AGENT_TOOLS : type === "helper" ? FILE_TOOLS : [];
+  const tools: string[] = [...(settings.tools ?? []), ...(settings.mcp ?? []).flatMap((m: { tools: string[] }) => m.tools ?? []), ...own];
   const active = [
     a.approve_tools?.length,
     a.max_model_calls,
@@ -295,7 +409,9 @@ export function AddonsField({ value, onChange, settings }: FieldProps) {
           >
             <NumberInput label="Tools to offer the agent" value={a.select_tools} onChange={(v) => set({ select_tools: v })} />
           </Addon>
-          <Addon title="Plan with a to-do list" technical="TodoListMiddleware" on={!!a.todo_list} onToggle={(on) => set({ todo_list: on })} testId="todo" />
+          {type !== "deep_agent" && (
+            <Addon title="Plan with a to-do list" technical="TodoListMiddleware" on={!!a.todo_list} onToggle={(on) => set({ todo_list: on })} testId="todo" />
+          )}
           <Addon title="Remember the user across conversations" technical="LangGraph store" on={!!a.memory} onToggle={(on) => set({ memory: on })} testId="memory" />
           <Addon title="Pretend tools (for testing)" technical="LLMToolEmulator" on={!!a.emulate_tools} onToggle={(on) => set({ emulate_tools: on })} testId="emulate" />
         </div>

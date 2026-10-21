@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { api, ApiError } from "../lib/api";
-import type { AskRequest, FlowSpec, Issue, RunError, RunEvent, RunStatus, Usage, Waiting } from "../lib/types";
+import type { AskRequest, FlowSpec, Issue, RunError, RunEvent, RunStatus, Todo, Usage, Waiting } from "../lib/types";
 import { useCheck } from "./check";
 import { useFlow } from "./flow";
 import { useUi } from "./ui";
@@ -18,7 +18,7 @@ export interface InnerEvent {
   durationMs?: number;
 }
 
-/** One tool call an Agent made. */
+/** One tool call an Agent made (or a Deep Agent's Helper made, inside the task it was given). */
 export interface ToolCallRun {
   callId: string | null;
   tool: string;
@@ -26,6 +26,14 @@ export interface ToolCallRun {
   status: StepStatus;
   result?: unknown;
   durationMs?: number;
+  /** Made by this Helper, inside the task with this call id. */
+  helper?: string;
+  within?: string | null;
+  /** A Deep Agent's `task` call: the Helper it hands work to, and what that Helper used. */
+  toHelper?: string;
+  usage?: Usage;
+  cost?: number | null;
+  model?: string | null;
 }
 
 export interface StepRun {
@@ -50,6 +58,9 @@ export interface StepRun {
   inner?: InnerEvent[];
   /** Agent: the tools it called, in order. */
   tools?: ToolCallRun[];
+  /** Deep Agent: its to-do list, and its files as they were last written. */
+  todos?: Todo[];
+  files?: Record<string, string>;
 }
 
 export interface ChatMessage {
@@ -273,7 +284,18 @@ export const useRun = create<RunState>()((set, get) => ({
         set({
           ...withStep(state, event.step, (prev) => ({
             ...prev,
-            tools: [...(prev.tools ?? []), { callId: event.call_id ?? null, tool: event.tool, args: event.args, status: "running" }],
+            tools: [
+              ...(prev.tools ?? []),
+              {
+                callId: event.call_id ?? null,
+                tool: event.tool,
+                args: event.args,
+                status: "running",
+                helper: event.helper,
+                within: event.within,
+                toHelper: event.to_helper,
+              },
+            ],
           })),
           events,
           lastEventId,
@@ -285,10 +307,38 @@ export const useRun = create<RunState>()((set, get) => ({
             const tools = [...(prev.tools ?? [])];
             let i = tools.findIndex((t) => t.callId != null && t.callId === event.call_id);
             if (i === -1) i = tools.findIndex((t) => t.status === "running" && (!event.tool || t.tool === event.tool));
-            const done = { status: (event.status === "error" ? "error" : "done") as StepStatus, result: event.result, durationMs: event.duration_ms };
-            if (i === -1) tools.push({ callId: event.call_id ?? null, tool: event.tool ?? "tool", args: {}, ...done });
+            const done = {
+              status: (event.status === "error" ? "error" : "done") as StepStatus,
+              result: event.result,
+              durationMs: event.duration_ms,
+              ...(event.usage ? { usage: event.usage, cost: event.cost, model: event.model } : {}),
+            };
+            if (i === -1)
+              tools.push({ callId: event.call_id ?? null, tool: event.tool ?? "tool", args: {}, helper: event.helper, within: event.within, ...done });
             else tools[i] = { ...tools[i], ...done };
             return { ...prev, tools };
+          }),
+          events,
+          lastEventId,
+        });
+        return;
+      case "todos":
+        // A Helper's own to-do list stays with its work; the step shows the Deep Agent's.
+        if (event.helper) {
+          set({ events, lastEventId });
+          return;
+        }
+        set({ ...withStep(state, event.step, (prev) => ({ ...prev, todos: event.todos })), events, lastEventId });
+        return;
+      case "files":
+        set({
+          ...withStep(state, event.step, (prev) => {
+            const files = { ...(prev.files ?? {}) };
+            for (const [path, text] of Object.entries(event.files)) {
+              if (text == null) delete files[path];
+              else files[path] = text;
+            }
+            return { ...prev, files };
           }),
           events,
           lastEventId,

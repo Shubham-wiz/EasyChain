@@ -109,14 +109,28 @@ class FlowAnalysis:
                     if conn.exit == EACH_ITEM and conn.target not in self.foreach_body:
                         self.foreach_body[conn.target] = sid
 
-        # Steps an Agent uses as tools -> the first Agent that uses them. They don't run as
-        # part of the flow, so what they save doesn't become Flow Data.
+        # Helpers -> the first Deep Agent that hands them tasks. Steps an Agent (or a Deep
+        # Agent, or one of its Helpers) uses as tools -> that agent: the tools and Helpers
+        # run inside the agent's step, so they don't run as part of the flow and what they
+        # save doesn't become Flow Data.
+        self.helper_of: dict[str, str] = {}
+        for sid, step in self.steps.items():
+            if step.type == "deep_agent":
+                for helper_id in step.settings.helpers:
+                    helper = self.steps.get(helper_id)
+                    if helper is not None and helper.type == "helper":
+                        self.helper_of.setdefault(helper_id, sid)
         self.tool_of: dict[str, str] = {}
         for sid, step in self.steps.items():
-            if step.type == "agent":
-                for tool_id in step.settings.tools:
-                    if tool_id in self.steps and tool_id != sid:
-                        self.tool_of.setdefault(tool_id, sid)
+            if step.type in ("agent", "deep_agent"):
+                owner = sid
+            elif step.type == "helper" and sid in self.helper_of:
+                owner = self.helper_of[sid]
+            else:
+                continue
+            for tool_id in step.settings.tools:
+                if tool_id in self.steps and tool_id not in (sid, owner):
+                    self.tool_of.setdefault(tool_id, owner)
 
         self.fields: dict[str, FieldInfo] = {}
         self.field_conflicts: list[tuple[str, str, str]] = []
@@ -185,10 +199,13 @@ class FlowAnalysis:
         """Fields that may have a value when ``sid`` runs.
 
         A step used as a tool gets what its Agent can see, plus whatever else it reads
-        (the agent fills those in when it calls the tool).
+        (the agent fills those in when it calls the tool). A Helper sees what its Deep Agent
+        sees.
         """
         if sid in self.tool_of:
             return self.available_fields(self.tool_of[sid]) | self.reads.get(sid, set())
+        if sid in self.helper_of:
+            return self.available_fields(self.helper_of[sid])
         names = {f.name for f in self.fields.values() if f.is_input}
         for anc in self.ancestors[sid]:
             names.update(self.writes.get(anc, {}))
@@ -307,6 +324,7 @@ class FlowAnalysis:
             "fields": [f.to_dict() for f in self.fields.values()],
             "foreach_body": self.foreach_body,
             "tool_of": self.tool_of,
+            "helper_of": self.helper_of,
             "reads": {k: sorted(v) for k, v in self.reads.items()},
             "writes": self.writes,
             "reachable": sorted(self.reachable),

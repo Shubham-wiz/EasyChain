@@ -325,15 +325,42 @@ def _path(ns: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(part.split(":", 1)[0] for part in ns)
 
 
-def _agent_at(flows: _Flows, path: tuple[str, ...]) -> str | None:
-    """The Agent step whose own graph (model, tools, add-ons) emitted an event at ``path``."""
-    if not path:
-        return None
-    parent = flows.at(path[:-1])
-    if parent is None:
-        return None
-    step = parent.analysis.steps.get(path[-1])
-    return path[-1] if step is not None and step.type == "agent" else None
+AGENT_TYPES = ("agent", "deep_agent")
+
+
+def _agent_at(flows: _Flows, path: tuple[str, ...]) -> tuple[str, int] | None:
+    """The Agent (or Deep Agent) step whose own graph (model, tools, add-ons) emitted an event
+    at ``path``, and how deep: 1 is the agent itself, 2 is inside its tools node, where a Deep
+    Agent's Helpers run (the caller checks that a ``task`` call started that graph)."""
+    for depth in (1, 2):
+        if len(path) < depth or (depth == 2 and path[-1] != "tools"):
+            continue
+        parent = flows.at(path[:-depth])
+        step = parent.analysis.steps.get(path[-depth]) if parent is not None else None
+        if step is None or step.type not in AGENT_TYPES:
+            continue
+        if depth == 1 or step.type == "deep_agent":
+            return path[-depth], depth
+    return None
+
+
+# How much of a Deep Agent's file goes into a "files" event (Flow Data keeps all of it).
+_FILE_EVENT_CHARS = 20000
+
+
+def _changed_files(files: Any) -> dict[str, str | None]:
+    """A Deep Agent's file changes as {path: text}, None for a deleted file."""
+    out: dict[str, str | None] = {}
+    for path, data in (files or {}).items() if isinstance(files, dict) else ():
+        if not data:
+            out[str(path)] = None
+            continue
+        text = data.get("content", "") if isinstance(data, dict) else str(data)
+        if isinstance(text, list):
+            text = "\n".join(str(line) for line in text)
+        text = str(text)
+        out[str(path)] = text if len(text) <= _FILE_EVENT_CHARS else text[:_FILE_EVENT_CHARS] + "…"
+    return out
 
 
 def describe_request(value: Any) -> Any:
@@ -521,20 +548,35 @@ async def stream_run(
         return event("route", **where(path, step=jump, exit=label)) if label else None
 
     tool_started: dict[str, float] = {}
+    # A Deep Agent's tools task that runs a Helper (its namespace) -> (Helper, task call id).
+    helper_tasks: dict[str, tuple[str, str | None]] = {}
 
     def agent_event(
-        ns: tuple[str, ...], path: tuple[str, ...], agent: str, name: str, payload: dict[str, Any]
+        ns: tuple[str, ...],
+        outer: tuple[str, ...],
+        agent: str,
+        name: str,
+        payload: dict[str, Any],
+        helper: tuple[str, str | None] | None = None,
     ) -> list[dict[str, Any]]:
-        """Tool calls (and model usage) from inside an Agent step's own graph."""
+        """Tool calls, the to-do list, files (and model usage) from inside an Agent or Deep
+        Agent step's own graph, or from one of its Helpers (``helper``: its name and the call
+        that started it)."""
         nonlocal total_cost
         key = "|".join([*ns, f"{name}:{payload.get('id')}"])
-        outer = path[:-1]
+        who = {"helper": helper[0], "within": helper[1]} if helper else {}
         out: list[dict[str, Any]] = []
         if "input" in payload:
             if name == "tools":
                 tool_started[key] = time.perf_counter()
                 for call in payload.get("input") or []:
                     if isinstance(call, dict) and "name" in call:
+                        args = call.get("args") or {}
+                        extra = dict(who)
+                        if call["name"] == "task" and not helper and isinstance(args, dict):
+                            # A Deep Agent hands a task to a Helper: its graph runs in here.
+                            extra["to_helper"] = args.get("subagent_type")
+                            helper_tasks[key] = (str(args.get("subagent_type")), call.get("id"))
                         out.append(
                             event(
                                 "tool_started",
@@ -542,8 +584,9 @@ async def stream_run(
                                     outer,
                                     step=agent,
                                     tool=call["name"],
-                                    args=to_jsonable(call.get("args") or {}),
+                                    args=to_jsonable(args),
                                     call_id=call.get("id"),
+                                    **extra,
                                 ),
                             )
                         )
@@ -560,6 +603,10 @@ async def stream_run(
             return out
         began = tool_started.pop(key, time.perf_counter())
         duration = round((time.perf_counter() - began) * 1000, 1)
+        # A Helper's tokens and cost: shown on its task, and counted toward the step.
+        helper_usage = child_usage.pop(key, None) if key in helper_tasks else None
+        if helper_usage:
+            _add_usage(child_usage.setdefault("|".join(ns), _empty_usage()), helper_usage)
         if payload.get("error"):
             out.append(
                 event(
@@ -572,15 +619,27 @@ async def stream_run(
                         result=str(payload["error"])[:2000],
                         status="error",
                         duration_ms=duration,
+                        **who,
                     ),
                 )
             )
             return out
         result = payload.get("result") or {}
-        messages = result.get("messages") if isinstance(result, dict) else None
-        for message in messages or []:
+        if not isinstance(result, dict):
+            return out
+        for message in result.get("messages") or []:
             if getattr(message, "type", None) != "tool":
                 continue
+            extra = dict(who)
+            if message.name == "task" and key in helper_tasks:
+                extra["to_helper"] = helper_tasks[key][0]
+                if helper_usage:
+                    extra["usage"] = {
+                        "input_tokens": helper_usage["input_tokens"],
+                        "output_tokens": helper_usage["output_tokens"],
+                    }
+                    extra["cost"] = helper_usage["cost"]
+                    extra["model"] = helper_usage["model"]
             out.append(
                 event(
                     "tool_finished",
@@ -592,7 +651,21 @@ async def stream_run(
                         result=to_jsonable(message.text),
                         status=getattr(message, "status", "success") or "success",
                         duration_ms=duration,
+                        **extra,
                     ),
+                )
+            )
+        if isinstance(result.get("todos"), list):
+            out.append(
+                event(
+                    "todos", **where(outer, step=agent, todos=to_jsonable(result["todos"]), **who)
+                )
+            )
+        if result.get("files"):
+            out.append(
+                event(
+                    "files",
+                    **where(outer, step=agent, files=_changed_files(result["files"]), **who),
                 )
             )
         return out
@@ -687,9 +760,12 @@ async def stream_run(
                 if not isinstance(chunk, AIMessageChunk) or not chunk.text:
                     continue
                 node = meta.get("langgraph_node")
-                agent = _agent_at(flows, path)
-                if agent is not None:
-                    if node == "model":
+                found = _agent_at(flows, path)
+                if found is not None:
+                    # The agent's own model streams its answer; a Helper's reply comes back
+                    # to it as the task's result instead.
+                    agent, depth = found
+                    if depth == 1 and node == "model":
                         yield event("token", **where(path[:-1], step=agent, text=chunk.text))
                     continue
                 flow = flows.at(path)
@@ -700,10 +776,13 @@ async def stream_run(
                 continue
 
             name = payload.get("name")
-            agent = _agent_at(flows, path)
-            if agent is not None and name is not None:
-                for ev in agent_event(ns, path, agent, name, payload):
-                    yield ev
+            found = _agent_at(flows, path)
+            if found is not None and name is not None:
+                agent, depth = found
+                helper = helper_tasks.get("|".join(ns)) if depth == 2 else None
+                if depth == 1 or helper is not None:
+                    for ev in agent_event(ns, path[:-depth], agent, name, payload, helper):
+                        yield ev
                 continue
             flow = flows.at(path)
             if flow is None or name is None:
@@ -859,7 +938,7 @@ async def stream_run(
         if (
             isinstance(failure, GraphRecursionError)
             and step_obj is not None
-            and step_obj.type == "agent"
+            and step_obj.type in AGENT_TYPES
         ):
             info = {
                 "kind": "too_many_steps",

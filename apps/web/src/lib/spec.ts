@@ -148,10 +148,19 @@ export function hasExits(step: Step): boolean {
 /** Step types an Agent can use as tools. */
 export const TOOL_TYPES = new Set<StepType>(["http_request", "code", "subflow", "knowledge_search", "sql_query", "mcp_tool", "memory"]);
 
-/** The Agent that uses a step as a tool, if any. */
+/** Step types that have tools: Agents, Deep Agents and Helpers. */
+export const HAS_TOOLS = new Set<StepType>(["agent", "deep_agent", "helper"]);
+
+/** The Agent (Deep Agent or Helper) that uses a step as a tool, if any. */
 export function toolOf(spec: FlowSpec, stepId: string): string | null {
-  const agent = spec.steps.find((s) => s.type === "agent" && ((s.settings.tools ?? []) as string[]).includes(stepId));
+  const agent = spec.steps.find((s) => HAS_TOOLS.has(s.type) && ((s.settings.tools ?? []) as string[]).includes(stepId));
   return agent?.id ?? null;
+}
+
+/** The Deep Agent a Helper works for, if any. */
+export function helperOf(spec: FlowSpec, stepId: string): string | null {
+  const lead = spec.steps.find((s) => s.type === "deep_agent" && ((s.settings.helpers ?? []) as string[]).includes(stepId));
+  return lead?.id ?? null;
 }
 
 /** Why a step can't become an Agent's tool, or null when it can. */
@@ -159,7 +168,7 @@ export function canAddTool(spec: FlowSpec, toolId: string, agentId: string): str
   const tool = getStep(spec, toolId);
   const agent = getStep(spec, agentId);
   if (!tool || !agent) return "That step no longer exists.";
-  if (agent.type !== "agent") return "Only an Agent has tools.";
+  if (!HAS_TOOLS.has(agent.type)) return "Only an Agent, a Deep Agent or a Helper has tools.";
   if (!TOOL_TYPES.has(tool.type)) return "Tools can be Web request, Code, Sub-flow, Knowledge Base search, Database query, MCP tool and Memory steps.";
   if (((agent.settings.tools ?? []) as string[]).includes(toolId)) return "The agent already has this tool.";
   if (spec.connections.some((c) => c.from === toolId || c.to === toolId))
@@ -185,6 +194,35 @@ export function removeTool(spec: FlowSpec, agentId: string, toolId: string): Flo
   return next;
 }
 
+/** Why a step can't join a Deep Agent's Helpers, or null when it can. */
+export function canAddHelper(spec: FlowSpec, helperId: string, leadId: string): string | null {
+  const helper = getStep(spec, helperId);
+  const lead = getStep(spec, leadId);
+  if (!helper || !lead) return "That step no longer exists.";
+  if (lead.type !== "deep_agent") return "Only a Deep Agent has Helpers.";
+  if (helper.type !== "helper") return "Only a Helper step can join a Deep Agent's Helpers.";
+  const owner = helperOf(spec, helperId);
+  if (owner === leadId) return "It's already one of this Deep Agent's Helpers.";
+  if (owner) return `This Helper already works for “${getStep(spec, owner)?.name || owner}”. A Helper belongs to one Deep Agent.`;
+  return null;
+}
+
+export function addHelper(spec: FlowSpec, leadId: string, helperId: string): FlowSpec {
+  if (canAddHelper(spec, helperId, leadId)) return spec;
+  const next = clone(spec);
+  const lead = next.steps.find((s) => s.id === leadId)!;
+  lead.settings = { ...lead.settings, helpers: [...((lead.settings.helpers ?? []) as string[]), helperId] };
+  return next;
+}
+
+export function removeHelper(spec: FlowSpec, leadId: string, helperId: string): FlowSpec {
+  const next = clone(spec);
+  const lead = next.steps.find((s) => s.id === leadId);
+  if (!lead) return spec;
+  lead.settings = { ...lead.settings, helpers: ((lead.settings.helpers ?? []) as string[]).filter((h) => h !== helperId) };
+  return next;
+}
+
 /** Why a connection is not allowed, or null when it is fine. */
 export function canConnect(spec: FlowSpec, from: string, to: string, exit: string | null): string | null {
   const source = getStep(spec, from);
@@ -194,6 +232,8 @@ export function canConnect(spec: FlowSpec, from: string, to: string, exit: strin
   for (const id of [from, to]) {
     const agent = toolOf(spec, id);
     if (agent) return `“${getStep(spec, id)?.name || id}” is a tool of the agent “${getStep(spec, agent)?.name || agent}”; it runs when the agent calls it.`;
+    if (getStep(spec, id)?.type === "helper")
+      return "A Helper works when its Deep Agent hands it a task. Connect it to a Deep Agent's Helpers handle instead.";
   }
   if (target.type === "input") return "Nothing can lead into Input; it's where runs start.";
   if (source.type === "output") return "Output is the end of the flow.";
@@ -238,13 +278,16 @@ export function removeSteps(spec: FlowSpec, ids: string[]): FlowSpec {
   next.steps = next.steps.filter((s) => !drop.has(s.id));
   next.connections = next.connections.filter((c) => !drop.has(c.from) && !drop.has(c.to));
   for (const step of next.steps) {
-    if (step.type === "agent" && ((step.settings.tools ?? []) as string[]).some((t) => drop.has(t))) {
-      const keep = (list: string[] | undefined) => (list ?? []).filter((t) => !drop.has(t));
+    const keep = (list: string[] | undefined) => (list ?? []).filter((t) => !drop.has(t));
+    if (HAS_TOOLS.has(step.type) && ((step.settings.tools ?? []) as string[]).some((t) => drop.has(t))) {
       step.settings = {
         ...step.settings,
         tools: keep(step.settings.tools),
         addons: { ...(step.settings.addons ?? {}), approve_tools: keep(step.settings.addons?.approve_tools) },
       };
+    }
+    if (step.type === "deep_agent" && ((step.settings.helpers ?? []) as string[]).some((h) => drop.has(h))) {
+      step.settings = { ...step.settings, helpers: keep(step.settings.helpers) };
     }
   }
   for (const id of ids) delete next.canvas.steps[id];
@@ -264,13 +307,14 @@ export function renameStepId(spec: FlowSpec, from: string, to: string): FlowSpec
   const next = clone(spec);
   for (const step of next.steps) if (step.id === from) step.id = to;
   for (const step of next.steps) {
-    if (step.type !== "agent") continue;
+    if (!HAS_TOOLS.has(step.type)) continue;
     const rename = (list: string[] | undefined) => (list ?? []).map((t) => (t === from ? to : t));
     step.settings = {
       ...step.settings,
       tools: rename(step.settings.tools),
       addons: { ...(step.settings.addons ?? {}), approve_tools: rename(step.settings.addons?.approve_tools) },
     };
+    if (step.type === "deep_agent") step.settings = { ...step.settings, helpers: rename(step.settings.helpers) };
   }
   for (const conn of next.connections) {
     if (conn.from === from) conn.from = to;
@@ -398,13 +442,15 @@ export function pasteSteps(spec: FlowSpec, clip: Clipboard, offset = 40): { spec
   // original agent (a step is the tool of one agent).
   for (const id of Object.values(remap)) {
     const step = next.steps.find((s) => s.id === id)!;
-    if (step.type !== "agent") continue;
+    if (!HAS_TOOLS.has(step.type)) continue;
     const copied = (list: string[] | undefined) => (list ?? []).filter((t) => remap[t]).map((t) => remap[t]);
     step.settings = {
       ...step.settings,
       tools: copied(step.settings.tools),
       addons: { ...(step.settings.addons ?? {}), approve_tools: copied(step.settings.addons?.approve_tools) },
     };
+    // A pasted Deep Agent works with the pasted copies of its Helpers (a Helper has one).
+    if (step.type === "deep_agent") step.settings = { ...step.settings, helpers: copied(step.settings.helpers) };
   }
   return { spec: next, ids: Object.values(remap) };
 }
@@ -416,10 +462,21 @@ export const STEP_TYPES_WITH_OUTPUT: StepType[] = [
   "code",
   "subflow",
   "agent",
+  "deep_agent",
   "knowledge_search",
   "sql_query",
   "mcp_tool",
 ];
+
+/** Add a new Helper to a Deep Agent, placed under it (to the right of its tools). */
+export function addHelperStep(spec: FlowSpec, leadId: string, step: Step): FlowSpec {
+  const at = spec.canvas.steps[leadId] ?? { x: 0, y: 0 };
+  const lead = getStep(spec, leadId);
+  const tools = ((lead?.settings.tools ?? []) as string[]).length;
+  const count = ((lead?.settings.helpers ?? []) as string[]).length;
+  const next = addStep(spec, step, { x: at.x + 140 + (tools + count) * (NODE_WIDTH + 30), y: at.y + 220 });
+  return addHelper(next, leadId, step.id);
+}
 
 /** Add a new step as an Agent's tool, placed under the agent. */
 export function addToolStep(spec: FlowSpec, agentId: string, step: Step): FlowSpec {

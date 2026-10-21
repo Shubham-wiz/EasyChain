@@ -1041,6 +1041,189 @@
       "title": "DecisionStep",
       "type": "object"
     },
+    "DeepAgentSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "default": "openai:gpt-4o-mini",
+          "description": "The model that thinks and picks tools.",
+          "title": "Model",
+          "type": "string"
+        },
+        "instructions": {
+          "default": "You work on longer tasks. Plan the work as a to-do list and keep it up to date, keep notes and drafts in files, hand focused sub-tasks to your helpers, and finish with a clear answer.",
+          "description": "Role and rules (the system prompt). Put Flow Data in with {field}.",
+          "title": "Instructions",
+          "type": "string"
+        },
+        "input": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_]{0,62}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What the agent works on: a text field, or a messages field for a chat. Empty means: what the previous step saved.",
+          "title": "Input"
+        },
+        "tools": {
+          "description": "Steps the agent can use as tools (their ids).",
+          "items": {
+            "pattern": "^[a-z][a-z0-9_]{0,62}$",
+            "type": "string"
+          },
+          "title": "Tools",
+          "type": "array"
+        },
+        "mcp": {
+          "items": {
+            "$ref": "#/$defs/McpTools"
+          },
+          "title": "Mcp",
+          "type": "array"
+        },
+        "save_as": {
+          "default": "answer",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Save As",
+          "type": "string"
+        },
+        "output": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StructuredOutput"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Answer in a fixed shape instead of free text."
+        },
+        "save_messages": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_]{0,62}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Also save the agent's whole conversation (tool calls included) here.",
+          "title": "Save Messages"
+        },
+        "temperature": {
+          "anyOf": [
+            {
+              "maximum": 2,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Temperature"
+        },
+        "max_steps": {
+          "default": 500,
+          "description": "Most rounds the agent and its helpers may take in one run (each model call, tool call and add-on counts).",
+          "maximum": 10000,
+          "minimum": 10,
+          "title": "Max Steps",
+          "type": "integer"
+        },
+        "addons": {
+          "$ref": "#/$defs/AgentAddons"
+        },
+        "helpers": {
+          "description": "Helper steps it can hand sub-tasks to (their ids). It can also hand tasks to a general helper that has its own tools.",
+          "items": {
+            "pattern": "^[a-z][a-z0-9_]{0,62}$",
+            "type": "string"
+          },
+          "title": "Helpers",
+          "type": "array"
+        },
+        "files": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_]{0,62}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "files",
+          "description": "The Flow Data field that keeps its files ({path: text}): they are there when it starts, and saved when it finishes. Empty: files last only while it works.",
+          "title": "Files"
+        },
+        "save_todos": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_]{0,62}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Also save its to-do list here (a list of {content, status}).",
+          "title": "Save Todos"
+        }
+      },
+      "title": "DeepAgentSettings",
+      "type": "object"
+    },
+    "DeepAgentStep": {
+      "additionalProperties": false,
+      "description": "An agent for longer tasks: it plans with a to-do list, keeps files, and hands sub-tasks\nto Helpers (deepagents' create_deep_agent).",
+      "properties": {
+        "id": {
+          "description": "Unique id; also the LangGraph node name.",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "description": "Label shown on the canvas.",
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "run": {
+          "$ref": "#/$defs/RunPolicy"
+        },
+        "type": {
+          "const": "deep_agent",
+          "title": "Type",
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/DeepAgentSettings"
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ],
+      "title": "DeepAgentStep",
+      "type": "object"
+    },
     "ExampleMessage": {
       "additionalProperties": false,
       "properties": {
@@ -1244,6 +1427,105 @@
         "type"
       ],
       "title": "ForEachStep",
+      "type": "object"
+    },
+    "HelperSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The model this helper uses. Empty: its Deep Agent's model.",
+          "title": "Model"
+        },
+        "instructions": {
+          "default": "You are a focused helper. Do the task you are given, using your tools, and reply with what you found or made: briefly, with sources when you used any.",
+          "description": "Its role and rules (the system prompt). Put Flow Data in with {field}.",
+          "title": "Instructions",
+          "type": "string"
+        },
+        "tools": {
+          "description": "Steps this helper can use as tools (their ids).",
+          "items": {
+            "pattern": "^[a-z][a-z0-9_]{0,62}$",
+            "type": "string"
+          },
+          "title": "Tools",
+          "type": "array"
+        },
+        "mcp": {
+          "items": {
+            "$ref": "#/$defs/McpTools"
+          },
+          "title": "Mcp",
+          "type": "array"
+        },
+        "temperature": {
+          "anyOf": [
+            {
+              "maximum": 2,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Temperature"
+        },
+        "addons": {
+          "$ref": "#/$defs/AgentAddons"
+        }
+      },
+      "title": "HelperSettings",
+      "type": "object"
+    },
+    "HelperStep": {
+      "additionalProperties": false,
+      "description": "A specialist a Deep Agent hands sub-tasks to: its own role, tools and model (a\ndeepagents sub-agent). Its description tells the Deep Agent when to use it.",
+      "properties": {
+        "id": {
+          "description": "Unique id; also the LangGraph node name.",
+          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "default": "",
+          "description": "Label shown on the canvas.",
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "run": {
+          "$ref": "#/$defs/RunPolicy"
+        },
+        "type": {
+          "const": "helper",
+          "title": "Type",
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/HelperSettings"
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ],
+      "title": "HelperStep",
       "type": "object"
     },
     "HttpRequestSettings": {
@@ -2478,7 +2760,9 @@
             "ask_human": "#/$defs/AskHumanStep",
             "code": "#/$defs/CodeStep",
             "decision": "#/$defs/DecisionStep",
+            "deep_agent": "#/$defs/DeepAgentStep",
             "for_each": "#/$defs/ForEachStep",
+            "helper": "#/$defs/HelperStep",
             "http_request": "#/$defs/HttpRequestStep",
             "input": "#/$defs/InputStep",
             "instructions": "#/$defs/InstructionsStep",
@@ -2528,6 +2812,12 @@
           },
           {
             "$ref": "#/$defs/AgentStep"
+          },
+          {
+            "$ref": "#/$defs/DeepAgentStep"
+          },
+          {
+            "$ref": "#/$defs/HelperStep"
           },
           {
             "$ref": "#/$defs/KnowledgeSearchStep"

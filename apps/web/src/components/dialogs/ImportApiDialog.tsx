@@ -4,7 +4,7 @@
 import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../../lib/api";
-import { addImportedSteps } from "../../lib/spec";
+import { addImportedSteps, HAS_TOOLS } from "../../lib/spec";
 import type { OpenApiInspection } from "../../lib/types";
 import { useFlow } from "../../state/flow";
 import { useUi } from "../../state/ui";
@@ -42,7 +42,7 @@ export function ImportApiDialog() {
     }
   }, [open]);
 
-  const agents = (spec?.steps ?? []).filter((s) => s.type === "agent");
+  const agents = (spec?.steps ?? []).filter((s) => HAS_TOOLS.has(s.type));
   const inspect = async () => {
     setBusy(true);
     try {

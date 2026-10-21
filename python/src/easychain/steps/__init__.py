@@ -10,6 +10,7 @@ from .actions import CodeHandler, HttpRequestHandler
 from .agent import AgentHandler
 from .ai import AIModelHandler, InstructionsHandler
 from .base import FormField, StepCode, StepHandler
+from .deep_agent import DeepAgentHandler, HelperHandler
 from .flow_control import AskHumanHandler, ForEachHandler, SubflowHandler
 from .io_steps import InputHandler, OutputHandler
 from .knowledge import KnowledgeSearchHandler
@@ -26,6 +27,8 @@ HANDLERS: dict[str, StepHandler] = {
         InstructionsHandler(),
         AIModelHandler(),
         AgentHandler(),
+        DeepAgentHandler(),
+        HelperHandler(),
         KnowledgeSearchHandler(),
         MemoryHandler(),
         HttpRequestHandler(),

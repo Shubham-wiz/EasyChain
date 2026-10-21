@@ -60,7 +60,9 @@ def env_example(specs: list[FlowSpec]) -> str:
     listed = {line.split("=")[0] for line in lines if not line.startswith("#")}
     lines += [f"{name}=" for name in sorted(secret_names - listed)]
     types = {step.type for step in steps}
-    if "mcp_tool" in types or any(step.type == "agent" and step.settings.mcp for step in steps):
+    if "mcp_tool" in types or any(
+        step.type in ("agent", "deep_agent", "helper") and step.settings.mcp for step in steps
+    ):
         lines += [
             "# How to reach each MCP server, as JSON by server id, for example",
             '# {"docs": {"transport": "streamable_http", "url": "https://example.com/mcp"}}',

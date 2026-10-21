@@ -52,6 +52,97 @@ def has_run_policy(step: Any) -> bool:
     return bool(step.run.retries or step.run.timeout)
 
 
+def check_tools(owner: str, tools: list[str], an: Any) -> tuple[list[Issue], set[str]]:
+    """Problems with the steps an agent (or a Helper) uses as tools, and their names."""
+    issues: list[Issue] = []
+    names: set[str] = set()
+    for tool_id in tools:
+        tool = an.steps.get(tool_id)
+        if tool is None or tool_id == owner:
+            issues.append(
+                error(
+                    "agent_tool_missing",
+                    f"The tool “{tool_id}” isn't a step in this flow.",
+                    step=owner,
+                    setting="tools",
+                    fix=Fix(
+                        "remove_from_list",
+                        "Remove it from the tools",
+                        {"setting": "tools", "value": tool_id},
+                    ),
+                )
+            )
+            continue
+        names.add(tool_id)
+        if tool.type not in TOOL_TYPES:
+            issues.append(
+                error(
+                    "agent_tool_type",
+                    f"An agent can't use a {an.handlers[tool_id].label} step as a tool.",
+                    step=tool_id,
+                    hint="Tools can be Web request, Code, Sub-flow, Knowledge Base search, "
+                    "Database query, MCP tool and Memory steps.",
+                )
+            )
+        if an.incoming[tool_id] or an.outgoing[tool_id]:
+            issues.append(
+                error(
+                    "agent_tool_connected",
+                    "A step used as a tool only runs when the agent calls it, so it can't "
+                    "also be connected to other steps.",
+                    step=tool_id,
+                    hint="Remove its connections, or take it off the agent's tools.",
+                )
+            )
+        if tool.run.cache or tool.run.wait_for_all:
+            what = "Reuse results" if tool.run.cache else "Wait for all branches"
+            issues.append(
+                warning(
+                    "tool_run_policy_unused",
+                    f"“{what}” doesn't apply when an agent uses this step as a tool: it runs "
+                    "every time the agent calls it. Its retries and time limit still apply.",
+                    step=tool_id,
+                    setting="run",
+                    hint=f"Switch off “{what}” under When it runs.",
+                )
+            )
+        if not (tool.description or "").strip():
+            issues.append(
+                warning(
+                    "tool_no_description",
+                    "Describe what this tool does: the agent reads it to decide when to use it.",
+                    step=tool_id,
+                    setting="description",
+                    hint="For example: Looks up an order by its number and returns its status.",
+                )
+            )
+    return issues, names
+
+
+def check_approvals(owner: str, s: Any, names: set[str]) -> list[Issue]:
+    """Approvals set for tools the agent (or Helper) doesn't have."""
+    names = names | {t for m in s.mcp for t in m.tools}
+    issues: list[Issue] = []
+    for tool_name in s.addons.approve_tools:
+        if tool_name not in names and not any(not m.tools for m in s.mcp):
+            issues.append(
+                error(
+                    "approve_unknown_tool",
+                    f"Approval is set for “{tool_name}”, which isn't one of this agent's tools.",
+                    step=owner,
+                    setting="addons.approve_tools",
+                )
+            )
+    return issues
+
+
+def _returned(returns: list[str]) -> str:
+    returned = "{" + ", ".join(returns) + "}"
+    if len(returned) > 80:
+        returned = "{\n" + "".join(f"        {r},\n" for r in returns) + "    }"
+    return returned
+
+
 class AgentHandler(StepHandler):
     type = "agent"
     label = "Agent"
@@ -59,6 +150,7 @@ class AgentHandler(StepHandler):
     category = "ai"
     icon = "bot"
     summary = "An AI that decides which tools to use, step by step, until it has an answer."
+    warn_no_tools = True
     form = [
         FormField(
             key="model",
@@ -182,6 +274,10 @@ class AgentHandler(StepHandler):
     def tool_steps(self, step: Any, an: Any) -> list[Any]:
         return [an.steps[t] for t in step.settings.tools if t in an.steps and t != step.id]
 
+    def built_in_tools(self, step: Any, an: Any) -> set[str]:
+        """Tools the agent has without connecting steps (approvals may name them)."""
+        return {"remember", "recall"} if step.settings.addons.memory else set()
+
     def is_async(self, step: Any, an: Any) -> bool:
         if step.settings.mcp:
             return True
@@ -219,80 +315,10 @@ class AgentHandler(StepHandler):
                 )
         if s.output is not None:
             issues += check_schema(step.id, s.output, save_as=s.save_as)
-        names = set()
-        for tool_id in s.tools:
-            tool = an.steps.get(tool_id)
-            if tool is None or tool_id == step.id:
-                issues.append(
-                    error(
-                        "agent_tool_missing",
-                        f"The tool “{tool_id}” isn't a step in this flow.",
-                        step=step.id,
-                        setting="tools",
-                        fix=Fix(
-                            "remove_from_list",
-                            "Remove it from the tools",
-                            {"setting": "tools", "value": tool_id},
-                        ),
-                    )
-                )
-                continue
-            names.add(tool_id)
-            if tool.type not in TOOL_TYPES:
-                issues.append(
-                    error(
-                        "agent_tool_type",
-                        f"An agent can't use a {an.handlers[tool_id].label} step as a tool.",
-                        step=tool_id,
-                        hint="Tools can be Web request, Code, Sub-flow, Knowledge Base search, "
-                        "Database query, MCP tool and Memory steps.",
-                    )
-                )
-            if an.incoming[tool_id] or an.outgoing[tool_id]:
-                issues.append(
-                    error(
-                        "agent_tool_connected",
-                        "A step used as a tool only runs when the agent calls it, so it can't "
-                        "also be connected to other steps.",
-                        step=tool_id,
-                        hint="Remove its connections, or take it off the agent's tools.",
-                    )
-                )
-            if tool.run.cache or tool.run.wait_for_all:
-                what = "Reuse results" if tool.run.cache else "Wait for all branches"
-                issues.append(
-                    warning(
-                        "tool_run_policy_unused",
-                        f"“{what}” doesn't apply when an agent uses this step as a tool: it runs "
-                        "every time the agent calls it. Its retries and time limit still apply.",
-                        step=tool_id,
-                        setting="run",
-                        hint=f"Switch off “{what}” under When it runs.",
-                    )
-                )
-            if not (tool.description or "").strip():
-                issues.append(
-                    warning(
-                        "tool_no_description",
-                        "Describe what this tool does: the agent reads it to decide when to use it.",
-                        step=tool_id,
-                        setting="description",
-                        hint="For example: Looks up an order by its number and returns its status.",
-                    )
-                )
-        if s.mcp:
-            names.update(t for m in s.mcp for t in m.tools)
-        for tool_name in s.addons.approve_tools:
-            if tool_name not in names and not any(not m.tools for m in s.mcp):
-                issues.append(
-                    error(
-                        "approve_unknown_tool",
-                        f"Approval is set for “{tool_name}”, which isn't one of this agent's tools.",
-                        step=step.id,
-                        setting="addons.approve_tools",
-                    )
-                )
-        if not s.tools and not s.mcp and not s.addons.memory:
+        tool_issues, names = check_tools(step.id, s.tools, an)
+        issues += tool_issues
+        issues += check_approvals(step.id, s, names | self.built_in_tools(step, an))
+        if self.warn_no_tools and not s.tools and not s.mcp and not s.addons.memory:
             issues.append(
                 warning(
                     "agent_no_tools",
@@ -327,37 +353,9 @@ class AgentHandler(StepHandler):
         is_async = self.is_async(step, an)
         ctx.imports.add_from("langchain.agents", "create_agent")
         definitions: list[str] = []
-
-        # Role and rules
-        instructions_src = "None"
-        if s.instructions.strip():
-            const = ctx.names.claim(f"{step.id}_instructions".upper())
-            definitions.append(f"{const} = {py_str(s.instructions.strip())}")
-            instructions_src = (
-                f"{ctx.helper('fill')}({const}, data)" if variables(s.instructions) else const
-            )
-
-        # Answer format
-        output_class = None
-        if s.output is not None:
-            output_class = ctx.names.claim(f"{_camel(step.id)}Answer")
-            what = s.output.description.strip() or f"The answer of “{step.name or step.id}”."
-            definitions += emit_schema(s.output, output_class, what, ctx)
-            ctx.imports.add_from("langchain.agents.structured_output", "ToolStrategy")
-
-        # Tools
-        tool_calls: list[str] = []
-        for tool in self.tool_steps(step, an):
-            factory, defs = self._tool_factory(tool, ctx)
-            definitions += defs
-            tool_calls.append(f"{factory}(data)")
-        if s.addons.memory:
-            tool_calls.append(f"*{ctx.helper('memory_tools')}(data)")
-            ctx.module.uses_store = True
-        mcp_line = None
-        if s.mcp:
-            mcp_line = self._mcp_tools(step, ctx)
-            tool_calls.append("*server_tools")
+        instructions_src = self._instructions(step, s.instructions, ctx, definitions)
+        output_class = self._output_class(step, ctx, definitions)
+        tool_calls, mcp_line = self._tools(step, s, ctx, definitions)
 
         middleware = self._middleware(step, ctx)
         model = ctx.model_call(
@@ -383,34 +381,103 @@ class AgentHandler(StepHandler):
         create = create.replace(
             "model=init_chat_model(\n        ", "model=init_chat_model(\n            "
         )
+        field, messages = self._messages(step, ctx)
+        invoke = self._invoke(is_async, f'{{"messages": {messages}}}', s.max_steps)
+        tail, returns = self._answer(step, ctx, output_class)
+        returned = _returned(returns)
 
-        field = self.input_field(step, an) or "question"
+        tool_names = [t.id for t in self.tool_steps(step, an)]
+        if len(tool_names) > 1:
+            uses = f" and the tools {', '.join(tool_names[:-1])} and {tool_names[-1]}"
+        elif tool_names:
+            uses = f" and the tool {tool_names[0]}"
+        else:
+            uses = ""
+        doc = docstring(
+            f"{self.title(step)}\n\nWorks on `{field}` using {s.model}{uses}, and saves its "
+            f"answer as `{s.save_as}`."
+        )
+        body = [create, invoke, *tail, f"    return {returned}"]
+        if mcp_line:
+            body.insert(0, mcp_line)
+        head = "async def" if is_async else "def"
+        code = f"{head} {fn}(data: {ctx.data_class}) -> dict[str, Any]:\n{doc}\n" + "\n".join(body)
+        return StepCode([*definitions, code], node=fn, is_async=is_async)
+
+    # Parts of the code an Agent, a Deep Agent and a Helper share.
+
+    def _instructions(self, step: Any, text: str, ctx: Any, definitions: list[str]) -> str:
+        """The role and rules as a constant (filled with Flow Data when they use it)."""
+        if not text.strip():
+            return "None"
+        const = ctx.names.claim(f"{step.id}_instructions".upper())
+        definitions.append(f"{const} = {py_str(text.strip())}")
+        return f"{ctx.helper('fill')}({const}, data)" if variables(text) else const
+
+    def _output_class(self, step: Any, ctx: Any, definitions: list[str]) -> str | None:
+        s = step.settings
+        if s.output is None:
+            return None
+        output_class = ctx.names.claim(f"{_camel(step.id)}Answer")
+        what = s.output.description.strip() or f"The answer of “{step.name or step.id}”."
+        definitions += emit_schema(s.output, output_class, what, ctx)
+        ctx.imports.add_from("langchain.agents.structured_output", "ToolStrategy")
+        return output_class
+
+    def _tools(
+        self, step: Any, s: Any, ctx: Any, definitions: list[str], prefix: str = ""
+    ) -> tuple[list[str], str | None]:
+        """The tool expressions for ``tools=[...]``, and the line that loads MCP tools."""
+        an = ctx.an
+        tool_calls: list[str] = []
+        for tool_id in s.tools:
+            tool = an.steps.get(tool_id)
+            if tool is None or tool_id == step.id:
+                continue
+            factory, defs = self._tool_factory(tool, ctx)
+            definitions += defs
+            tool_calls.append(f"{factory}(data)")
+        if getattr(s.addons, "memory", False):
+            tool_calls.append(f"*{ctx.helper('memory_tools')}(data)")
+            ctx.module.uses_store = True
+        mcp_line = None
+        if s.mcp:
+            loader = ctx.helper("mcp_tools")
+            servers = {m.server: list(m.tools) for m in s.mcp}
+            mcp_line = f"    {prefix}server_tools = await {loader}({py_literal(servers)})"
+            tool_calls.append(f"*{prefix}server_tools")
+        return tool_calls, mcp_line
+
+    def _messages(self, step: Any, ctx: Any) -> tuple[str, str]:
+        """The field the agent works on, and the messages that start it."""
+        field = self.input_field(step, ctx.an) or "question"
         ftype = ctx.field_type(field)
         if ftype == "messages":
-            messages = f"data.get({py_str(field)}, [])"
-        else:
-            ctx.imports.add_from("langchain_core.messages", "HumanMessage")
-            value = (
-                f"{ctx.helper('as_text')}(data.get({py_str(field)}))"
-                if ftype in ("list", "object")
-                else f'str(data.get({py_str(field)}, ""))'
-            )
-            messages = f"[HumanMessage({value})]"
+            return field, f"data.get({py_str(field)}, [])"
+        ctx.imports.add_from("langchain_core.messages", "HumanMessage")
+        value = (
+            f"{ctx.helper('as_text')}(data.get({py_str(field)}))"
+            if ftype in ("list", "object")
+            else f'str(data.get({py_str(field)}, ""))'
+        )
+        return field, f"[HumanMessage({value})]"
+
+    def _invoke(self, is_async: bool, payload: str, limit: int) -> str:
         call = "await agent.ainvoke" if is_async else "agent.invoke"
-        invoke = (
+        one_line = f'        {payload}, {{"recursion_limit": {limit}}}'
+        if len(one_line) <= 92 and "\n" not in payload:
+            return f"    result = {call}(\n{one_line}\n    )"
+        return (
             f"    result = {call}(\n"
-            f'        {{"messages": {messages}}}, {{"recursion_limit": {s.max_steps}}}\n'
+            f"        {payload},\n"
+            f'        {{"recursion_limit": {limit}}},\n'
             "    )"
         )
-        if len(f'        {{"messages": {messages}}}, {{"recursion_limit": {s.max_steps}}}') > 92:
-            invoke = (
-                f"    result = {call}(\n"
-                f'        {{"messages": {messages}}},\n'
-                f'        {{"recursion_limit": {s.max_steps}}},\n'
-                "    )"
-            )
 
-        out_type = self.writes(step, an)[s.save_as]
+    def _answer(self, step: Any, ctx: Any, output_class: str | None) -> tuple[list[str], list[str]]:
+        """Lines that check the answer, and the Flow Data it returns."""
+        s = step.settings
+        out_type = self.writes(step, ctx.an)[s.save_as]
         returns: list[str] = []
         tail: list[str] = []
         if output_class:
@@ -430,27 +497,7 @@ class AgentHandler(StepHandler):
             returns.append(f'{py_str(s.save_as)}: result["messages"][-1].text')
         if s.save_messages:
             returns.append(f'{py_str(s.save_messages)}: result["messages"]')
-        returned = "{" + ", ".join(returns) + "}"
-        if len(returned) > 80:
-            returned = "{\n" + "".join(f"        {r},\n" for r in returns) + "    }"
-
-        tool_names = [t.id for t in self.tool_steps(step, an)]
-        if len(tool_names) > 1:
-            uses = f" and the tools {', '.join(tool_names[:-1])} and {tool_names[-1]}"
-        elif tool_names:
-            uses = f" and the tool {tool_names[0]}"
-        else:
-            uses = ""
-        doc = docstring(
-            f"{self.title(step)}\n\nWorks on `{field}` using {s.model}{uses}, and saves its "
-            f"answer as `{s.save_as}`."
-        )
-        body = [create, invoke, *tail, f"    return {returned}"]
-        if mcp_line:
-            body.insert(0, mcp_line)
-        head = "async def" if is_async else "def"
-        code = f"{head} {fn}(data: {ctx.data_class}) -> dict[str, Any]:\n{doc}\n" + "\n".join(body)
-        return StepCode([*definitions, code], node=fn, is_async=is_async)
+        return tail, returns
 
     def _tool_factory(self, tool: Any, ctx: Any) -> tuple[str, list[str]]:
         """``<tool>_tool(data)``: the step as a LangChain tool (emitted once per module)."""
@@ -536,12 +583,11 @@ class AgentHandler(StepHandler):
         )
         return factory, [*defs, factory_code]
 
-    def _mcp_tools(self, step: Any, ctx: Any) -> str:
-        loader = ctx.helper("mcp_tools")
-        servers = {m.server: list(m.tools) for m in step.settings.mcp}
-        return f"    server_tools = await {loader}({py_literal(servers)})"
-
-    def _middleware(self, step: Any, ctx: Any) -> list[str]:
+    def _middleware(
+        self, step: Any, ctx: Any, model_name: str | None = None, todo_list: bool = True
+    ) -> list[str]:
+        """Add-ons as middleware. ``model_name`` is the model add-ons that need one use (a
+        Helper's comes from its Deep Agent), and a Deep Agent always has its to-do list."""
         s = step.settings
         a = s.addons
         out: list[str] = []
@@ -550,7 +596,7 @@ class AgentHandler(StepHandler):
             ctx.imports.add_from("langchain.agents.middleware", name)
             return name
 
-        model = ctx.model_call(s.model, {})
+        model = ctx.model_call(model_name or s.model, {})
         if a.pii:
             for kind in a.pii:
                 out.append(
@@ -573,7 +619,7 @@ class AgentHandler(StepHandler):
             out.append(
                 f"{use('LLMToolSelectorMiddleware')}(model={model}, max_tools={a.select_tools})"
             )
-        if a.todo_list:
+        if a.todo_list and todo_list:
             out.append(f"{use('TodoListMiddleware')}()")
         if a.approve_tools:
             rules = {

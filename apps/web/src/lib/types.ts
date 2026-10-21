@@ -16,6 +16,8 @@ export type StepType =
   | "subflow"
   | "jump"
   | "agent"
+  | "deep_agent"
+  | "helper"
   | "knowledge_search"
   | "memory"
   | "sql_query"
@@ -257,6 +259,20 @@ export interface AskRequest {
   allowed?: string[];
 }
 
+/** A Deep Agent's tool events: which Helper made the call (and inside which task), or which
+ * Helper a `task` call hands work to. */
+export interface HelperInfo {
+  helper?: string;
+  within?: string | null;
+  to_helper?: string;
+}
+
+/** One item of a Deep Agent's to-do list. */
+export interface Todo {
+  content: string;
+  status: "pending" | "in_progress" | "completed";
+}
+
 interface EventBase {
   run_id: string;
   ts: number;
@@ -282,8 +298,8 @@ export type RunEvent = EventBase &
         item?: number;
       }
     | { type: "route"; step: string; exit: string }
-    | { type: "tool_started"; step: string; tool: string; args: Record<string, unknown>; call_id?: string | null }
-    | {
+    | ({ type: "tool_started"; step: string; tool: string; args: Record<string, unknown>; call_id?: string | null } & HelperInfo)
+    | ({
         type: "tool_finished";
         step: string;
         tool: string | null;
@@ -291,7 +307,13 @@ export type RunEvent = EventBase &
         result: unknown;
         status: string;
         duration_ms: number;
-      }
+        /** A Deep Agent's task: the Helper's tokens and cost. */
+        usage?: Usage;
+        cost?: number | null;
+        model?: string | null;
+      } & HelperInfo)
+    | ({ type: "todos"; step: string; todos: Todo[] } & HelperInfo)
+    | ({ type: "files"; step: string; files: Record<string, string | null> } & HelperInfo)
     | { type: "progress"; step: string; done: number; total: number }
     | { type: "step_paused"; step: string; interrupt_id: string; request: AskRequest }
     | { type: "save_point"; checkpoint_id: string; next: string[]; step_number: number | null }

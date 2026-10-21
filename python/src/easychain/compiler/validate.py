@@ -22,7 +22,11 @@ def validate(spec: FlowSpec, analysis: FlowAnalysis | None = None) -> list[Issue
     issues += _check_connections(an)
     for sid in an.order:
         step = an.steps[sid]
-        if sid not in an.reachable and step.type != "input" and sid not in an.tool_of:
+        if (
+            sid not in an.reachable
+            and step.type not in ("input", "helper")
+            and sid not in an.tool_of
+        ):
             issues.append(
                 warning(
                     "unreachable",

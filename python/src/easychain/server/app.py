@@ -581,7 +581,7 @@ def create_app(
                 [settings.get("server")]
                 if step.type == "mcp_tool"
                 else [m.get("server") for m in settings.get("mcp") or []]
-                if step.type == "agent"
+                if step.type in ("agent", "deep_agent", "helper")
                 else []
             )
             for server_id in filter(None, used):

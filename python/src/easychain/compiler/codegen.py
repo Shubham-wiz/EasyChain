@@ -361,7 +361,8 @@ def _emit_module(spec: FlowSpec, an: FlowAnalysis, issues: list[Issue]) -> Compi
 
     root = emit_flow(spec, an, module)
     if any(
-        s.type == "ask_human" or (s.type == "agent" and s.settings.addons.approve_tools)
+        s.type == "ask_human"
+        or (s.type in ("agent", "deep_agent", "helper") and s.settings.addons.approve_tools)
         for p in [root, *module.children.values()]
         for s in p.spec.steps
     ):

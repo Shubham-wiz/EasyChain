@@ -1,7 +1,9 @@
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, useReactFlow, type EdgeProps } from "@xyflow/react";
 import { X } from "lucide-react";
 import { memo } from "react";
+import { helperOf } from "../../lib/spec";
 import { cn } from "../../lib/utils";
+import { useFlow } from "../../state/flow";
 import { useRun } from "../../state/run";
 
 export interface FlowEdgeData extends Record<string, unknown> {
@@ -22,8 +24,16 @@ export const FlowEdge = memo(function FlowEdge(props: EdgeProps) {
   const sourceExit = sourceRun?.exit;
   const { deleteElements } = useReactFlow();
   const taken = data?.exit ? sourceExit === data.exit : true;
-  // A tool's line lights up while the agent is calling it.
-  const toolCalling = data?.tool && targetRun?.status === "running" && (targetRun.tools ?? []).some((t) => t.tool === source && t.status === "running");
+  // A Helper's tools are called inside its Deep Agent's step.
+  const lead = useFlow((s) => (data?.tool && s.spec ? helperOf(s.spec, target) : null));
+  const leadRun = useRun((s) => (lead ? s.steps[lead] : undefined));
+  // A tool's (or a Helper's) line lights up while the agent is calling it.
+  const toolCalling =
+    data?.tool &&
+    (lead
+      ? leadRun?.status === "running" && (leadRun.tools ?? []).some((t) => t.tool === source && t.helper === target && t.status === "running")
+      : targetRun?.status === "running" &&
+        (targetRun.tools ?? []).some((t) => (t.tool === source || t.toHelper === source) && t.status === "running"));
   const flowing = (sourceRun?.status === "done" && targetRun?.status === "running" && taken && !data?.tool) || toolCalling;
   const done = sourceRun?.status === "done" && targetRun && targetRun.status !== "running" && taken;
   return (

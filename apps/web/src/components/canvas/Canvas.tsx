@@ -19,8 +19,10 @@ import {
 import { MousePointerClick } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  addHelper,
   addStep,
   addTool,
+  canAddHelper,
   canAddTool,
   canConnect,
   clone,
@@ -28,9 +30,11 @@ import {
   createStep,
   EACH_ITEM,
   getStep,
+  HAS_TOOLS,
   hasExits,
   moveSteps,
   removeConnection,
+  removeHelper,
   removeSteps,
   removeTool,
   NODE_WIDTH,
@@ -105,9 +109,10 @@ function syncEdges(prev: Edge[], spec: FlowSpec): Edge[] {
         selected: selected.has(id),
       };
     });
-  // Agent tools: dashed lines from each tool step up into the agent's Tools handle.
+  // Agent tools: dashed lines from each tool step up into the agent's Tools handle (an
+  // Agent's, a Deep Agent's or a Helper's).
   for (const step of spec.steps) {
-    if (step.type !== "agent") continue;
+    if (!HAS_TOOLS.has(step.type)) continue;
     for (const toolId of (step.settings.tools ?? []) as string[]) {
       if (!getStep(spec, toolId)) continue;
       const id = `tool:${toolId}->${step.id}`;
@@ -120,6 +125,25 @@ function syncEdges(prev: Edge[], spec: FlowSpec): Edge[] {
         type: "flow",
         data: { tool: true, label: "tool" },
         style: { strokeDasharray: "5 4" },
+        selected: selected.has(id),
+      });
+    }
+  }
+  // Helpers: dotted lines from each Helper up into its Deep Agent's Helpers handle.
+  for (const step of spec.steps) {
+    if (step.type !== "deep_agent") continue;
+    for (const helperId of (step.settings.helpers ?? []) as string[]) {
+      if (getStep(spec, helperId)?.type !== "helper") continue;
+      const id = `helper:${helperId}->${step.id}`;
+      edges.push({
+        id,
+        source: helperId,
+        target: step.id,
+        sourceHandle: "as-helper",
+        targetHandle: "helpers",
+        type: "flow",
+        data: { tool: true, label: "helper" },
+        style: { strokeDasharray: "2 4" },
         selected: selected.has(id),
       });
     }
@@ -219,6 +243,10 @@ export function Canvas() {
             next = removeTool(next, e.target, e.source);
             continue;
           }
+          if (e.id.startsWith("helper:")) {
+            next = removeHelper(next, e.target, e.source);
+            continue;
+          }
           const exit = e.sourceHandle?.startsWith("exit:") ? e.sourceHandle.slice(5) : null;
           next = removeConnection(next, { from: e.source, to: e.target, exit });
         }
@@ -239,18 +267,26 @@ export function Canvas() {
   const onConnect = useCallback(
     (c: RFConnection) =>
       apply((s) =>
-        c.targetHandle === "tools" ? addTool(s, c.target, c.source) : connect(s, c.source, c.target, exitOf(c.sourceHandle)),
+        c.targetHandle === "tools"
+          ? addTool(s, c.target, c.source)
+          : c.targetHandle === "helpers"
+            ? addHelper(s, c.target, c.source)
+            : connect(s, c.source, c.target, exitOf(c.sourceHandle)),
       ),
     [apply],
   );
 
   const reasonFor = useCallback(
     (source: string, target: string, sourceHandle: string | null | undefined, targetHandle: string | null | undefined) =>
-      targetHandle === "tools" || sourceHandle === "as-tool"
-        ? targetHandle === "tools"
-          ? canAddTool(spec, source, target)
-          : "Connect a tool to an Agent's Tools handle (at the bottom of the agent)."
-        : canConnect(spec, source, target, exitOf(sourceHandle)),
+      targetHandle === "helpers" || sourceHandle === "as-helper"
+        ? targetHandle === "helpers" && sourceHandle === "as-helper"
+          ? canAddHelper(spec, source, target)
+          : "Connect a Helper's top handle to a Deep Agent's Helpers handle (at the bottom of the Deep Agent)."
+        : targetHandle === "tools" || sourceHandle === "as-tool"
+          ? targetHandle === "tools"
+            ? canAddTool(spec, source, target)
+            : "Connect a tool to an Agent's Tools handle (at the bottom of the agent)."
+          : canConnect(spec, source, target, exitOf(sourceHandle)),
     [spec],
   );
 
@@ -267,7 +303,7 @@ export function Canvas() {
         if (reason) setToast(reason);
         return;
       }
-      if (state.fromHandle?.id === "as-tool" || state.fromHandle?.id === "tools") return;
+      if (["as-tool", "tools", "as-helper", "helpers"].includes(state.fromHandle?.id ?? "")) return;
       // Dropped on empty canvas: offer to add a step there, already connected.
       const point = "changedTouches" in event ? event.changedTouches[0] : event;
       const rect = wrapper.current?.getBoundingClientRect();

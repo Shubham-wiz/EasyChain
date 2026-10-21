@@ -1,7 +1,7 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { AlertTriangle, CheckCircle2, CircleAlert, ExternalLink, Hand, Loader2, Wrench } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CircleAlert, ExternalLink, Hand, Loader2, UserCog, Wrench } from "lucide-react";
 import { memo, useMemo } from "react";
-import { exitLabels, TOOL_TYPES, toolOf } from "../../lib/spec";
+import { exitLabels, HAS_TOOLS, helperOf, TOOL_TYPES, toolOf } from "../../lib/spec";
 import type { Step } from "../../lib/types";
 import { cn, formatCost, formatMs, formatTokens } from "../../lib/utils";
 import { useStepInfo } from "../../state/catalog";
@@ -16,13 +16,30 @@ function useStepView(id: string) {
   const step = useFlow((s) => s.spec?.steps.find((x) => x.id === id));
   const agentId = useFlow((s) => (s.spec ? toolOf(s.spec, id) : null));
   const agentName = useFlow((s) => (agentId ? s.spec?.steps.find((x) => x.id === agentId)?.name || agentId : null));
+  const leadId = useFlow((s) => (s.spec ? helperOf(s.spec, id) : null));
+  const leadName = useFlow((s) => (leadId ? s.spec?.steps.find((x) => x.id === leadId)?.name || leadId : null));
   const info = useStepInfo(step?.type);
   const run = useRun((s) => s.steps[id]);
   const allIssues = useCheck((s) => s.issues);
   const upstream = useCheck((s) => s.analysis?.upstream[id]);
   const mode = useUi((s) => s.mode);
   const issues = useMemo(() => allIssues.filter((i) => i.step === id), [allIssues, id]);
-  return { step, info, run, issues, upstream, mode, agentName };
+  return { step, info, run, issues, upstream, mode, agentName, leadName };
+}
+
+/** A bottom handle that other steps plug into: an agent's Tools, a Deep Agent's Helpers. */
+function BottomHandle({ id, label, title, offset }: { id: string; label: string; title: string; offset: string }) {
+  return (
+    <>
+      <Handle type="target" id={id} position={Position.Bottom} title={title} className={`${id}-handle`} style={{ left: offset }} />
+      <span
+        className="pointer-events-none absolute -bottom-[7px] ml-3 rounded border border-border bg-surface px-1 text-[10px] leading-[13px] font-medium text-faint"
+        style={{ left: offset }}
+      >
+        {label}
+      </span>
+    </>
+  );
 }
 
 /** Open a flow used as a Sub-flow. */
@@ -191,11 +208,13 @@ function SubflowLink({ step }: { step: Step }) {
 }
 
 export const StepNode = memo(function StepNode({ id, selected }: NodeProps) {
-  const { step, info, run, issues, upstream, mode, agentName } = useStepView(id);
+  const { step, info, run, issues, upstream, mode, agentName, leadName } = useStepView(id);
   if (!step) return null;
   const Icon = iconFor(info?.icon);
   const colors = colorsFor(info?.category);
   const hasError = run?.status === "error" || (!run && issues.some((i) => i.level === "error"));
+  // Tools and Helpers run inside their agent, so they aren't connected to the flow.
+  const inFlow = !agentName && step.type !== "helper";
   return (
     <div
       className={cn(
@@ -210,7 +229,7 @@ export const StepNode = memo(function StepNode({ id, selected }: NodeProps) {
       onDoubleClick={() => openSubflow(step)}
     >
       <Breakpoints id={id} />
-      {step.type !== "input" && !agentName && <Handle type="target" position={Position.Left} title="Connect into this step" />}
+      {step.type !== "input" && inFlow && <Handle type="target" position={Position.Left} title="Connect into this step" />}
       <div className="overflow-hidden rounded-[11px]">
         <div className="flex items-start gap-2.5 px-3 pt-2.5 pb-2">
           <div className={cn("mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg", colors.chip)}>
@@ -235,12 +254,17 @@ export const StepNode = memo(function StepNode({ id, selected }: NodeProps) {
                 <Wrench size={11} /> Tool of {agentName}
               </p>
             )}
+            {leadName && (
+              <p className="mt-1 flex items-center gap-1 text-[11px] font-medium text-violet-600 dark:text-violet-400" data-testid={`helper-of-${id}`}>
+                <UserCog size={11} /> Helper of {leadName}
+              </p>
+            )}
             <SubflowLink step={step} />
           </div>
         </div>
         <RunFooter id={id} />
       </div>
-      {step.type !== "output" && !agentName && <Handle type="source" position={Position.Right} title="Drag to connect to the next step" />}
+      {step.type !== "output" && inFlow && <Handle type="source" position={Position.Right} title="Drag to connect to the next step" />}
       {/* After the right handle: React Flow puts an edge without a handle id on the first source handle. */}
       {TOOL_TYPES.has(step.type) && (
         <Handle
@@ -251,19 +275,25 @@ export const StepNode = memo(function StepNode({ id, selected }: NodeProps) {
           className="tool-handle"
         />
       )}
-      {step.type === "agent" && (
-        <>
-          <Handle
-            type="target"
-            id="tools"
-            position={Position.Bottom}
-            title="Tools: drag a Web request, Code, Knowledge Base search or another step here"
-            className="tools-handle"
-          />
-          <span className="pointer-events-none absolute -bottom-[7px] left-1/2 ml-3 rounded border border-border bg-surface px-1 text-[10px] leading-[13px] font-medium text-faint">
-            Tools
-          </span>
-        </>
+      {step.type === "helper" && (
+        <Handle
+          type="source"
+          id="as-helper"
+          position={Position.Top}
+          title="Drag to a Deep Agent's Helpers handle to put this Helper on its team"
+          className="helper-handle"
+        />
+      )}
+      {HAS_TOOLS.has(step.type) && (
+        <BottomHandle
+          id="tools"
+          label="Tools"
+          title="Tools: drag a Web request, Code, Knowledge Base search or another step here"
+          offset={step.type === "deep_agent" ? "30%" : "50%"}
+        />
+      )}
+      {step.type === "deep_agent" && (
+        <BottomHandle id="helpers" label="Helpers" title="Helpers: drag a Helper's top handle here" offset="70%" />
       )}
     </div>
   );
