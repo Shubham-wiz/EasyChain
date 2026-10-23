@@ -14,6 +14,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
+from .. import scoped_env
 from ..runtime.loader import load_graph
 from ..runtime.resources import Resources
 from ..runtime.runner import compile_cached
@@ -80,6 +81,11 @@ class Hub:
         self.resources = resources
         self.flows = flows
         self.vault = vault
+        # Secrets reach runs through os.environ without being exported into it (scoped_env.py);
+        # with no workspace's layer in force, the default workspace's vault applies.
+        scoped_env.install()
+        if vault is not None and hasattr(vault, "mapping"):
+            scoped_env.set_default(lambda: vault.mapping)
         self.bus = EventBus()
         self.accounts = Accounts(db)
 

@@ -2,21 +2,23 @@
 
 Secrets are referenced by name (e.g. OPENAI_API_KEY). Values are encrypted at
 rest with Fernet, never returned by the API, never written to flow files,
-exports or traces. On load they are placed in the server's environment so that
-generated code (which reads ``os.environ``) and LangChain providers find them.
-Phase 5 replaces this with a per-workspace vault (KMS/Vault backed).
+exports or traces. Generated code and LangChain providers read them through
+``os.environ``: scoped_env.py lays the vault of the work in hand over the
+process's environment (``mapping``), without exporting them into it.
 """
 
 from __future__ import annotations
 
 import json
-import os
 import re
 import threading
 from pathlib import Path
+from types import MappingProxyType
 from urllib.parse import unquote, urlsplit, urlunsplit
 
 from cryptography.fernet import Fernet, InvalidToken
+
+from .. import scoped_env
 
 NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
 
@@ -109,7 +111,8 @@ class SecretStore:
         self.path = home / "secrets.enc"
         self._lock = threading.Lock()
         self._values: dict[str, str] = {}
-        self._env_before: dict[str, str | None] = {}
+        # What scoped_env lays over os.environ: always the current values, read-only.
+        self.mapping = MappingProxyType(self._values)
         self._mtime: float | None = None
         # Why the saved secrets can't be read (wrong key, damaged file); None when they can.
         self.problem: str | None = None
@@ -123,7 +126,7 @@ class SecretStore:
         except ValueError:
             where = (
                 "EASYCHAIN_SECRET_KEY"
-                if os.environ.get("EASYCHAIN_SECRET_KEY")
+                if scoped_env.real().get("EASYCHAIN_SECRET_KEY")
                 else str(self.home / "secret.key")
             )
             raise ValueError(
@@ -132,7 +135,7 @@ class SecretStore:
             ) from None
 
     def _key(self) -> bytes:
-        env_key = os.environ.get("EASYCHAIN_SECRET_KEY")
+        env_key = scoped_env.real().get("EASYCHAIN_SECRET_KEY")
         if env_key:
             return env_key.strip().encode()
         key_path = self.home / "secret.key"
@@ -175,10 +178,7 @@ class SecretStore:
         # Secrets deleted by another process go away here too.
         for name in set(self._values) - set(data):
             del self._values[name]
-            self._unexport(name)
-        for name, value in data.items():
-            self._values[name] = value
-            self._export(name, value)
+        self._values.update(data)
 
     def _save(self) -> None:
         if self.problem:
@@ -191,29 +191,17 @@ class SecretStore:
         tmp.replace(self.path)
         self._mtime = self.path.stat().st_mtime
 
-    def _export(self, name: str, value: str) -> None:
-        if name not in self._env_before:
-            self._env_before[name] = os.environ.get(name)
-        os.environ[name] = value
-
-    def _unexport(self, name: str) -> None:
-        previous = self._env_before.pop(name, None)
-        if previous is None:
-            os.environ.pop(name, None)
-        else:
-            os.environ[name] = previous
-
     def names(self) -> list[dict[str, str]]:
         with self._lock:
             return [{"name": n, "source": "vault"} for n in sorted(self._values)]
 
     def has(self, name: str) -> bool:
-        return name in self._values or bool(os.environ.get(name))
+        return name in self._values or bool(scoped_env.real().get(name))
 
     def source(self, name: str) -> str | None:
         if name in self._values:
             return "vault"
-        if os.environ.get(name):
+        if scoped_env.real().get(name):
             return "environment"
         return None
 
@@ -232,7 +220,6 @@ class SecretStore:
             if self.problem:
                 raise VaultLocked(self.problem)
             self._values[name] = value
-            self._export(name, value)
             self._save()
 
     def delete(self, name: str) -> bool:
@@ -242,6 +229,5 @@ class SecretStore:
             if name not in self._values:
                 return False
             del self._values[name]
-            self._unexport(name)
             self._save()
             return True

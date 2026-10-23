@@ -305,10 +305,9 @@ updated in the same commit as the work (decision 5.6). Each phase's report has t
 - [x] ✅ 5.6a Local accounts and sign-in (on by default when the server answers the network); the first Owner with a code from the server's log; keys for scripts; `easychain users` / `keys`; People and Keys pages ([docs](docs/people.md))
 - [x] ✅ 5.6a Roles (Owner, Editor, Runner, Viewer) enforced on every endpoint, with a test that fails for an undeclared one
 - [x] ✅ 5.6b Role-aware web app: a view-only editor for Viewers and Runners, Runners run saved flows and answer the Inbox, Editors see server settings read-only; a Playwright journey per role
-- [ ] ⬜ 5.6d Workspaces (more than the one default workspace)
-- [x] ✅ 5.6e Single sign-on (OpenID Connect, PKCE, ID tokens checked), tested against a local test provider; new people get a role by domain; Settings → Single sign-on; setup for Okta, Google and Entra ([docs](docs/sso.md))
-- [ ] ⬜ Per-workspace secret vaults
 - [x] ✅ 5.6c Audit log: every change with who, when and what (a test fails for a change that isn't recorded); append-only in the database; Settings → Audit log, `GET /api/audit`, `easychain audit` ([docs](docs/audit.md)). Publishing joins it in 5.4
+- [ ] 🚧 5.6d Workspaces and per-workspace vaults. Done so far: secrets reach runs through a per-run layer over `os.environ`, never exported into the process (`scoped_env.py`). Still to do: workspaces themselves (flows, runs, Inbox, triggers, Knowledge Bases, skills, settings and vaults kept apart), switching, and the web app
+- [x] ✅ 5.6e Single sign-on (OpenID Connect, PKCE, ID tokens checked), tested against a local test provider; new people get a role by domain; Settings → Single sign-on; setup for Okta, Google and Entra ([docs](docs/sso.md))
 - [x] ✅ 5.6f Egress allow-list: a shared server reaches public sites, and internal addresses only when allowed (or only an allow-list); Web request steps, Knowledge Base pages, OpenAPI documents and MCP servers; checked again at connect time against DNS rebinding; Settings → Network ([docs](docs/network.md))
 
 **5.1 Test Sets editor and Checks**

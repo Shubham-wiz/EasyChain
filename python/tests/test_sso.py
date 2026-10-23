@@ -191,8 +191,10 @@ def test_a_switched_off_account_cant_sign_in_this_way_either(client: TestClient)
     assert "switched off" in error_of(sso(client, "ed@example.com"))
 
 
-def test_the_wrong_client_secret_is_refused_by_the_provider(client: TestClient, monkeypatch):
-    monkeypatch.setenv("SSO_CORP_CLIENT_SECRET", "not-it")
+def test_the_wrong_client_secret_is_refused_by_the_provider(client: TestClient):
+    assert sign_in(client, "owner@example.com") == 200
+    client.put("/api/secrets/SSO_CORP_CLIENT_SECRET", json={"value": "not-it"})
+    client.cookies.clear()
     assert "refused the sign-in code (invalid_client)" in error_of(sso(client, "ann@example.com"))
 
 

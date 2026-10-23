@@ -387,6 +387,18 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
   encrypted with Fernet in `~/.easychain/secrets.enc` (the key is in `secret.key` with mode 0600,
   or in `EASYCHAIN_SECRET_KEY`). They are never returned by the API, never written to flow files
   or exports, and are redacted from run events.
+  - Since 5.6d they are **not exported into the process's environment**. `scoped_env.py`
+    replaces `os.environ` with a view that lays the vault of the work in hand (a context
+    variable) over the real environment. So generated code and the providers still read
+    `os.environ`, but child processes inherit none of it, and one process can serve several
+    workspaces.
+  - The vault wins over the server's environment for the same name.
+  - Since 5.6d they are **not exported into the process's environment**. `scoped_env.py`
+    replaces `os.environ` with a view that lays the vault of the work in hand (a context
+    variable) over the real environment. So generated code and the providers still read
+    `os.environ`, but child processes inherit none of it, and one process can serve several
+    workspaces.
+  - The vault wins over the server's environment for the same name.
 - **Network exposure.** `easychain dev` binds to 127.0.0.1 by default. The Docker image binds to
   0.0.0.0 inside the container (so sign-in is on), and the compose file publishes it on
   localhost's port 8000.
@@ -468,6 +480,7 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
 | `test_audit.py` | Every route that changes something is recorded or says why not; who did what (sessions, keys, webhooks, the command line, sign-in off); refused and invalid changes and secret values are never recorded; a burst of saves is one entry; failed sign-ins are; filters and pages; only Owners read it; the table refuses UPDATE, DELETE (and TRUNCATE on Postgres); a failure writing the log doesn't undo the change; `easychain audit` |
 | `test_egress.py` | The policy's modes and allow-list (names, endings, addresses, networks; IPv4 written as IPv6); Easy Chain's fetches and their redirects; a name that changes address between the check and the connection is refused, and connections go to the checked address; async clients; on a server with sign-in on, a Web request step, a Knowledge Base page, an OpenAPI document and an MCP server can't reach inside until allowed; who may change it; the environment wins; nothing changes on this computer |
 | `test_sso.py` | Single sign-on against the test identity provider: an existing account signs in and stays linked by the provider's id; new people get the provider's role only for allowed domains, or are told to ask an Owner; a wrong nonce, audience, issuer, signing key, an expired token, an unverified email, a refusal at the provider, the wrong client secret, a sign-in from another browser and a reused state are all refused with a message; a switched-off account can't; Owners set it up, the secret goes to the vault; the environment wins; it's in the audit log |
+| `test_scoped_env.py` | Secrets reach the work in hand through `os.environ` but aren't exported into the process (child processes don't see them); work running at the same time sees only its own layer, threads included; a layer wins over the server's environment, and the server's keys apply everywhere |
 | `test_listen.py` | On Postgres, a run's new events wake a follower in another process at once (median about 2 ms), a queued job wakes a waiting worker, and a listener whose connection is killed reconnects |
 | `test_knowledge_queue.py` | Knowledge Base documents wait for a worker and survive a restart; a worker with its own disk reads uploads from the database; a worker that dies mid-document is replaced without doubling chunks; a removed document leaves nothing; an unexpected problem shows on the document and isn't retried |
 | `apps/web/src/**/*.test.ts` | Editing helpers, undo grouping, SSE parsing, formatting, the copilot's changes and panel |
