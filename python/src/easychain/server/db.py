@@ -241,6 +241,19 @@ api_keys = sa.Table(
     sa.Column("revoked_at", sa.Float, nullable=True),
 )
 
+# Single sign-on (Phase 5.6e, migration 0005): which account a provider's person is. The
+# subject is the provider's own id for them, which stays the same if their email changes.
+user_identities = sa.Table(
+    "user_identities",
+    metadata,
+    sa.Column("provider", sa.String(40), primary_key=True),
+    sa.Column("subject", sa.String(255), primary_key=True),
+    sa.Column("user_id", sa.String(40), index=True),
+    sa.Column("email", sa.String(320)),
+    sa.Column("created_at", sa.Float),
+    sa.Column("last_used_at", sa.Float, nullable=True),
+)
+
 # ── the audit log (Phase 5.6c, migration 0004) ──────────────────────────────
 
 # What people changed, newest last. Append-only: database triggers refuse UPDATE and DELETE
@@ -1071,6 +1084,19 @@ class Database:
         query = query.order_by(audit_log.c.id.desc()).limit(max(1, min(limit, 1000)))
         async with self.reader.connect() as conn:
             return [dict(r._mapping) for r in await conn.execute(query)]
+
+    async def settings_starting(self, prefix: str) -> dict[str, Any]:
+        async with self.reader.connect() as conn:
+            rows = await conn.execute(
+                sa.select(settings.c.key, settings.c.value).where(
+                    settings.c.key.startswith(prefix, autoescape=True)
+                )
+            )
+            return {r.key: r.value for r in rows}
+
+    async def delete_setting(self, key: str) -> None:
+        async with self._tx() as conn:
+            await conn.execute(settings.delete().where(settings.c.key == key))
 
     async def set_setting(self, key: str, value: Any) -> None:
         async with self._tx() as conn:

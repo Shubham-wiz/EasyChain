@@ -69,6 +69,7 @@ from .knowledge_api import CUT_OFF, add_knowledge_routes, use_database
 from .listen import listen
 from .network import add_network_routes
 from .secrets import SecretStore, VaultLocked, masked, unmasked
+from .sso import add_sso_routes
 from .store import FlowNotFound, FlowStore
 from .worker import Worker, sandbox_settings
 from .worker import fire as fire_trigger
@@ -278,6 +279,7 @@ def create_app(
     add_auth_routes(app)
     add_audit_routes(app)
     add_network_routes(app)
+    add_sso_routes(app)
     app.add_middleware(AuditMiddleware)
     add_knowledge_routes(app, home_path)
     origins = os.environ.get(

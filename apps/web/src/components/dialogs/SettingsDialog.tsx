@@ -11,6 +11,7 @@ import { NetworkSection } from "./Network";
 import { NotificationsSection } from "./Notifications";
 import { AuditSection } from "./Audit";
 import { ApiKeysSection, PeopleSection } from "./People";
+import { SsoSection } from "./Sso";
 import { SandboxSection } from "./Sandbox";
 
 function KeyRow({
@@ -258,7 +259,7 @@ export function SettingsDialog() {
   // everyone signed in their own keys for scripts.
   const tabs: SettingsTab[] = [
     ...(editor ? (["keys", "mcp", "notifications", "sandbox", "network"] as const) : []),
-    ...(signIn && owner ? (["people"] as const) : []),
+    ...(signIn && owner ? (["people", "sso"] as const) : []),
     ...(signIn ? (["api-keys"] as const) : []),
     ...(owner ? (["audit"] as const) : []),
   ];
@@ -283,6 +284,7 @@ export function SettingsDialog() {
             </>
           )}
           {signIn && owner && <TabsTrigger value="people">People</TabsTrigger>}
+          {signIn && owner && <TabsTrigger value="sso">Single sign-on</TabsTrigger>}
           {signIn && <TabsTrigger value="api-keys">Keys for scripts</TabsTrigger>}
           {owner && <TabsTrigger value="audit">Audit log</TabsTrigger>}
         </TabsList>
@@ -323,6 +325,9 @@ export function SettingsDialog() {
         </TabsContent>
         <TabsContent value="people" className="pt-4">
           {shown("people") && <PeopleSection />}
+        </TabsContent>
+        <TabsContent value="sso" className="pt-4">
+          {shown("sso") && <SsoSection />}
         </TabsContent>
         <TabsContent value="api-keys" className="pt-4">
           {shown("api-keys") && <ApiKeysSection />}

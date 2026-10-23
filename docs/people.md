@@ -17,6 +17,9 @@ Sign-in is on or off for the whole server.
 Turning sign-in off on a server that answers the network takes `EASYCHAIN_AUTH=off`, said out
 loud. Only do that behind your own access control (a VPN, or a proxy that signs people in).
 
+People can also sign in with your company's identity provider: see
+[single sign-on](sso.md).
+
 ## The first account
 
 A server with sign-in on and no accounts prints a code in its log when it starts:

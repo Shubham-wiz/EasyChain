@@ -62,7 +62,8 @@ only the first check applies.
 
 - calls to AI model providers, whose addresses come from the server's own settings and keys
   (Ollama on `localhost` keeps working);
-- notifications, whose webhook, Slack and email addresses are set by Owners.
+- notifications, whose webhook, Slack and email addresses are set by Owners;
+- [single sign-on](sso.md) providers, which Owners set up.
 
 When something is refused, the run (or the page) says so in words. For example: "Easy Chain
 didn't connect to 10.0.0.5 (billing.internal): it's an internal address, and this server only

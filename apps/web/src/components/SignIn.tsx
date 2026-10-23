@@ -1,4 +1,4 @@
-import { Loader2, LogIn, UserPlus } from "lucide-react";
+import { KeyRound, Loader2, LogIn, UserPlus } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { api } from "../lib/api";
 import { cn } from "../lib/utils";
@@ -78,13 +78,55 @@ function Setup() {
   );
 }
 
+/** Why single sign-on didn't work: the server sends the browser back with ?sso_error=… once. */
+function takeSsoError(): string | null {
+  const params = new URLSearchParams(window.location.search);
+  const message = params.get("sso_error");
+  if (message) {
+    params.delete("sso_error");
+    const rest = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${rest ? `?${rest}` : ""}${window.location.hash}`);
+  }
+  return message;
+}
+
+function SingleSignOn() {
+  const providers = useAuth((s) => s.status?.sso ?? NO_PROVIDERS);
+  if (!providers.length) return null;
+  // Come back to the page that was open (a hash route of this app).
+  const next = window.location.hash.startsWith("#/") ? `/${window.location.hash}` : "/";
+  return (
+    <div className="space-y-2">
+      {providers.map((p) => (
+        <a
+          key={p.id}
+          href={`/api/auth/sso/${encodeURIComponent(p.id)}?next=${encodeURIComponent(next)}`}
+          className="flex h-9 w-full items-center justify-center gap-2 rounded-md border border-border bg-surface text-sm font-medium hover:bg-surface-2"
+        >
+          <KeyRound size={15} /> Sign in with {p.name}
+        </a>
+      ))}
+      <p className="flex items-center gap-2 text-xs text-faint before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border">or with a password</p>
+    </div>
+  );
+}
+
+const NO_PROVIDERS: { id: string; name: string }[] = [];
+
 function SignInForm({ overlay }: { overlay?: boolean }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [ssoError] = useState(takeSsoError);
   const { busy, error, submit } = useSubmit(() => api.signIn(email.trim(), password));
   return (
     <Card title={overlay ? "Sign in again" : "Sign in to Easy Chain"} overlay={overlay}>
       {overlay && <p className="text-sm text-muted">You were signed out. Sign in to carry on where you were.</p>}
+      {ssoError && (
+        <p className="rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-sm text-danger" role="alert" data-testid="sso-error">
+          {ssoError}
+        </p>
+      )}
+      <SingleSignOn />
       <form className="space-y-3" onSubmit={submit}>
         <Field label="Email" htmlFor="signin-email">
           <Input id="signin-email" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} autoFocus />

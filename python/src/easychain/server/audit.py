@@ -72,6 +72,7 @@ AUDITED: dict[tuple[str, str], str] = {
     ("POST", "/api/sandbox/prepare"): "settings.sandbox_prepare",
     ("PUT", "/api/settings/notifications"): "settings.notifications",
     ("PUT", "/api/settings/network"): "settings.network",
+    ("PUT", "/api/settings/sso"): "settings.sso",
     ("POST", "/api/settings/notifications/test"): "settings.notifications_test",
 }
 
@@ -95,6 +96,7 @@ LABELS: dict[str, str] = {
     "auth.sign_in_failed": "failed to sign in as",
     "auth.setup_failed": "gave a wrong first-account code",
     "auth.setup_code": "made a new code for",
+    "auth.sso_failed": "couldn't sign in with single sign-on as",
     "auth.sign_out": "signed out",
     "auth.password": "changed their password",
     "trigger.fired": "started a run with webhook",
@@ -131,6 +133,7 @@ LABELS: dict[str, str] = {
     "settings.sandbox_prepare": "prepared the sandbox",
     "settings.notifications": "changed the notifications",
     "settings.network": "changed which addresses Easy Chain may reach",
+    "settings.sso": "changed single sign-on",
     "settings.notifications_test": "sent test notifications",
 }
 
@@ -178,10 +181,16 @@ def _who(principal: Principal | None) -> dict[str, Any]:
 
 
 async def record(
-    connection: HTTPConnection, action: str, target: str | None = None, **detail: Any
+    connection: HTTPConnection,
+    action: str,
+    target: str | None = None,
+    *,
+    principal: Principal | None = None,
+    **detail: Any,
 ) -> None:
-    """Write one entry now, for what the middleware doesn't see (a failed sign-in)."""
-    principal: Principal | None = getattr(connection.state, "principal", None)
+    """Write one entry now, for what the middleware doesn't see (a failed sign-in, single
+    sign-on). ``principal``: who did it, when the request doesn't say."""
+    principal = principal or getattr(connection.state, "principal", None)
     await connection.app.state.hub.db.add_audit(
         workspace_id=principal.workspace if principal else DEFAULT_WORKSPACE,
         action=action,

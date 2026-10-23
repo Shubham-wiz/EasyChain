@@ -626,6 +626,28 @@ export interface AuthStatus {
   setup_needed: boolean;
   me: Me | null;
   roles: { id: Role; label: string }[];
+  /** Single sign-on providers to offer on the sign-in page. */
+  sso?: { id: string; name: string }[];
+}
+
+/** One single sign-on provider (Settings → Single sign-on, server/sso.py). */
+export interface SsoProvider {
+  id: string;
+  name: string;
+  issuer: string;
+  client_id: string;
+  /** "{secret:NAME}", or a new secret to keep in the vault. */
+  client_secret: string;
+  new_people: "none" | Role;
+  domains: string[];
+  scopes?: string;
+  /** The address to give the provider ("redirect URI"). */
+  callback?: string;
+}
+
+export interface SsoSettings {
+  providers: SsoProvider[];
+  source: "settings" | "environment";
 }
 
 export interface Person {

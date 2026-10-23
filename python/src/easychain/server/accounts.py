@@ -23,7 +23,16 @@ from .auth import (
     token_hash,
     verify_password,
 )
-from .db import Database, api_keys, memberships, new_id, sessions, settings, users
+from .db import (
+    Database,
+    api_keys,
+    memberships,
+    new_id,
+    sessions,
+    settings,
+    user_identities,
+    users,
+)
 
 SETUP_KEY = "auth_setup_code"
 # The first account's code: 12 letters and digits that can't be mistaken for each other
@@ -220,6 +229,9 @@ class Accounts:
                     .where(api_keys.c.user_id == user_id, api_keys.c.revoked_at.is_(None))
                     .values(revoked_at=time.time())
                 )
+                await conn.execute(
+                    user_identities.delete().where(user_identities.c.user_id == user_id)
+                )
                 await conn.execute(users.delete().where(users.c.id == user_id))
 
     async def set_password(
@@ -244,6 +256,45 @@ class Accounts:
         if not ok or person is None or person["disabled"]:
             return None
         return person
+
+    # ── single sign-on ───────────────────────────────────────────────────────
+
+    async def by_identity(self, provider: str, subject: str) -> dict[str, Any] | None:
+        """The account a provider's person was linked to, if any."""
+        async with self.db.reader.connect() as conn:
+            row = (
+                await conn.execute(
+                    sa.select(user_identities.c.user_id).where(
+                        user_identities.c.provider == provider,
+                        user_identities.c.subject == subject,
+                    )
+                )
+            ).first()
+        if row is None:
+            return None
+        async with self.db.reader.connect() as conn:
+            person = (await conn.execute(sa.select(users).where(users.c.id == row[0]))).first()
+        return dict(person._mapping) if person else None
+
+    async def link_identity(self, user_id: str, provider: str, subject: str, email: str) -> None:
+        now = time.time()
+        async with self.db._tx() as conn:
+            found = await conn.execute(
+                user_identities.update()
+                .where(user_identities.c.provider == provider, user_identities.c.subject == subject)
+                .values(user_id=user_id, email=email, last_used_at=now)
+            )
+            if not found.rowcount:
+                await conn.execute(
+                    user_identities.insert().values(
+                        provider=provider,
+                        subject=subject,
+                        user_id=user_id,
+                        email=email,
+                        created_at=now,
+                        last_used_at=now,
+                    )
+                )
 
     # ── sessions ─────────────────────────────────────────────────────────────
 

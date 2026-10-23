@@ -1,5 +1,5 @@
 import type { Proposal, TestCase } from "./copilot";
-import type { ApiKeyInfo, AuditPage, AuthStatus, NetworkSettings, Me, NewApiKey, Person, Role, Catalog, CheckResult, ChunkPreview, CompileResult, DataField, FlowListItem, FlowSpec, FlowVersion, InboxItem, Issue, KnowledgeBase, KnowledgeDocument, KnowledgeHit, McpServer, McpSettings, McpTool, NotificationSettings, OpenApiInspection, RunEvent, RunSummary, SandboxSettings, SandboxStatus, SavePoint, SecretInfo, Skill, SkillSummary, Step, TemplateInfo, ThreadInfo, Trigger, TriggerKind } from "./types";
+import type { ApiKeyInfo, AuditPage, AuthStatus, NetworkSettings, SsoProvider, SsoSettings, Me, NewApiKey, Person, Role, Catalog, CheckResult, ChunkPreview, CompileResult, DataField, FlowListItem, FlowSpec, FlowVersion, InboxItem, Issue, KnowledgeBase, KnowledgeDocument, KnowledgeHit, McpServer, McpSettings, McpTool, NotificationSettings, OpenApiInspection, RunEvent, RunSummary, SandboxSettings, SandboxStatus, SavePoint, SecretInfo, Skill, SkillSummary, Step, TemplateInfo, ThreadInfo, Trigger, TriggerKind } from "./types";
 
 export class ApiError extends Error {
   status: number;
@@ -85,6 +85,8 @@ export const api = {
   apiKeys: () => request<{ keys: ApiKeyInfo[] }>("/api/keys").then((r) => r.keys),
   createApiKey: (body: { name: string; role?: Role }) => request<NewApiKey>("/api/keys", { method: "POST", ...json(body) }),
   revokeApiKey: (id: string) => request<{ revoked: string }>(`/api/keys/${id}`, { method: "DELETE" }),
+  sso: () => request<SsoSettings>("/api/settings/sso"),
+  saveSso: (providers: SsoProvider[]) => request<SsoSettings>("/api/settings/sso", { method: "PUT", ...json({ providers }) }),
   network: () => request<NetworkSettings>("/api/settings/network"),
   saveNetwork: (body: { mode: NetworkSettings["mode"]; allow: string[] }) =>
     request<NetworkSettings>("/api/settings/network", { method: "PUT", ...json(body) }),

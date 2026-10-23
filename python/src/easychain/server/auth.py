@@ -162,6 +162,8 @@ PERMISSIONS: dict[tuple[str, str], str] = {
     ("POST", "/api/auth/setup"): PUBLIC,
     ("POST", "/api/auth/login"): PUBLIC,
     ("POST", "/api/auth/logout"): PUBLIC,
+    ("GET", "/api/auth/sso/{provider_id}"): PUBLIC,
+    ("GET", "/api/auth/sso/{provider_id}/callback"): PUBLIC,
     ("GET", "/api/auth/me"): SIGNED_IN,
     ("POST", "/api/auth/password"): SIGNED_IN,
     # webhooks: their own secret token (in the address) is the check
@@ -251,6 +253,8 @@ PERMISSIONS: dict[tuple[str, str], str] = {
     ("POST", "/api/sandbox/prepare"): "owner",
     ("PUT", "/api/settings/notifications"): "owner",
     ("PUT", "/api/settings/network"): "owner",
+    ("GET", "/api/settings/sso"): "owner",
+    ("PUT", "/api/settings/sso"): "owner",
     ("POST", "/api/settings/notifications/test"): "owner",
 }
 

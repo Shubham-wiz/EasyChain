@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-10-23 (Phase 5: 5.8 is done; 5.6a–c and 5.6f are done: sign-in, people, roles, keys, a role-aware web app, the audit log and the egress allow-list; 5.6e, single sign-on, is next)._
+_Last updated: 2026-10-23 (Phase 5: 5.8 is done; 5.6a–c, 5.6e and 5.6f are done: sign-in, single sign-on, people, roles, keys, a role-aware web app, the audit log and the egress allow-list; 5.6d, workspaces, is next)._
 
 ## In one paragraph
 
@@ -56,11 +56,11 @@ issues under *Fix later* (decision 5.6).
 
 | Suite | Result (2026-10-21, end of Phase 4) |
 |---|---|
-| Python on Linux (`pnpm test`, and CI) | 566 pass (2026-10-23, 5.6f), with SQLite, Postgres (+ pgvector in CI) and Docker (the sandbox escape tests; skipped without Docker); compiler and steps coverage 94% |
+| Python on Linux (`pnpm test`, and CI) | 586 pass (2026-10-23, 5.6e), with SQLite, Postgres (+ pgvector in CI) and Docker (the sandbox escape tests; skipped without Docker); compiler and steps coverage 94% |
 | Python on Windows 11 (CI) | all pass |
 | Web unit (vitest) | 103 passed |
 | Client package (vitest) | 11 passed |
-| Playwright e2e | 41 passed (Linux), two on a second server with sign-in on (sign-in, and each role); the screenshot spec runs only with `SCREENSHOTS=1` |
+| Playwright e2e | 42 passed (Linux), three on a second server with sign-in on (sign-in, each role, single sign-on); the screenshot spec runs only with `SCREENSHOTS=1` |
 | Template Test Sets | all 13 pass (`tests/test_templates.py`), with the stand-in AI and scripted turns; research-assistant 10/10, inbox-triage 10/10 |
 | Lint | ruff check + format clean; tsc clean for web and client |
 
@@ -77,9 +77,10 @@ Compose, and **Windows** (Python suite, CLI and worker, web checks, the app serv
      ~~5.6b, the role-aware web app~~ ([people.md](../people.md)), and ~~5.6c, the audit
      log~~ ([audit.md](../audit.md)).
    - Done: ~~5.6f, the egress allow-list~~ ([network.md](../network.md)).
-   - Next: OIDC single sign-on against a local test provider (5.6e).
-   - Then: workspaces and per-workspace vaults (5.6d). This is last because a per-run view of
-     the secrets is the same piece 5.4's environments need (decision 5.13).
+   - Done: ~~5.6e, single sign-on~~ ([sso.md](../sso.md)), tested against
+     `easychain.testing.oidc_provider`.
+   - Next: workspaces and per-workspace vaults (5.6d). It needs a per-run view of the secrets,
+     which 5.4's environments need too (decision 5.13).
 3. Then 5.1–5.3 (Test Sets, Test Runs, CI gate), 5.4–5.5 (environments, Publish, model gateway)
    and 5.7 (dashboards and tracing).
 
@@ -104,8 +105,8 @@ These are listed in full in the phase reports and review.md. The ones that matte
   server answers the network (Docker), and off for `easychain dev` on this computer. The web app
   shows each role what it can do. The audit log ([audit.md](../audit.md)) records every change.
   On a shared server, flows reach internal addresses only when an Owner allows them
-  ([network.md](../network.md)). There's still only one workspace (5.6d) and no single
-  sign-on (5.6e).
+  ([network.md](../network.md)). People can sign in with an OpenID Connect provider
+  ([sso.md](../sso.md)). There's still only one workspace (5.6d).
 - Knowledge Base documents are read by workers from the job queue (5.8); no OCR yet.
 - Schema migrations are in place (Alembic, 5.8); every schema change needs one
   (`python/src/easychain/server/migrations/`).

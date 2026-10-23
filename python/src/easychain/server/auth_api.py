@@ -84,6 +84,22 @@ def _person(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def set_session_cookie(request: Request, response: Response, token: str) -> None:
+    """The signed-in browser's cookie: HttpOnly, SameSite=Lax, Secure over HTTPS."""
+    secure = request.url.scheme == "https" or (
+        request.headers.get("x-forwarded-proto", "").lower() == "https"
+    )
+    response.set_cookie(
+        SESSION_COOKIE,
+        token,
+        max_age=SESSION_DAYS * 86400,
+        httponly=True,
+        samesite="lax",
+        secure=secure,
+        path="/",
+    )
+
+
 def _as(person: dict[str, Any], role: str) -> Principal:
     """Who signed in, for the audit log (the request had no sign-in yet)."""
     return Principal(
@@ -124,32 +140,23 @@ def add_auth_routes(app: FastAPI) -> None:
             429,
         )
 
-    def _set_cookie(request: Request, response: Response, token: str) -> None:
-        secure = request.url.scheme == "https" or (
-            request.headers.get("x-forwarded-proto", "").lower() == "https"
-        )
-        response.set_cookie(
-            SESSION_COOKIE,
-            token,
-            max_age=SESSION_DAYS * 86400,
-            httponly=True,
-            samesite="lax",
-            secure=secure,
-            path="/",
-        )
-
     @app.get("/api/auth/status")
     async def auth_status(request: Request) -> dict[str, Any]:
         """Whether sign-in is on, whether someone is signed in, and whether the first account is
         still to be made."""
         principal = principal_of(request)
         mode = auth_mode()
+        from .sso import providers
+
+        sso = providers(await app.state.hub.db.get_setting("sso", {}))[0] if mode == "on" else []
         return {
             "mode": mode,
             "signed_in": principal is not None,
             "setup_needed": mode == "on" and await accounts().count() == 0,
             "me": principal.public() if principal else None,
             "roles": [{"id": r, "label": ROLE_LABELS[r]} for r in ROLES],
+            # Single sign-on providers to offer on the sign-in page.
+            "sso": [p.public() for p in sso],
         }
 
     @app.post("/api/auth/setup")
@@ -174,7 +181,7 @@ def add_auth_routes(app: FastAPI) -> None:
         except AccountError as exc:
             raise _bad(str(exc), 409) from exc
         await accounts().forget_setup_code()
-        _set_cookie(request, response, await accounts().start_session(person["id"]))
+        set_session_cookie(request, response, await accounts().start_session(person["id"]))
         note(request, person["email"], actor=_as(person, "owner"))
         return {"me": {**_person(person), "via": "session"}}
 
@@ -191,7 +198,7 @@ def add_auth_routes(app: FastAPI) -> None:
             await record(request, "auth.sign_in_failed", email)
             raise _bad("That email and password don't match an account.", 401)
         failures.pop(f"email:{email}", None)
-        _set_cookie(request, response, await accounts().start_session(person["id"]))
+        set_session_cookie(request, response, await accounts().start_session(person["id"]))
         member = await accounts().member(person["id"])
         note(request, email, actor=_as(person, (member or {}).get("role", "viewer")))
         return {"me": {**_person(member or {}), "via": "session"}}

@@ -235,3 +235,25 @@ test("roles: a Viewer looks, a Runner runs and answers, an Editor sees settings 
   await editor.getByTestId("run-submit").click();
   await expect(editor.getByTestId("run-output")).toContainText("ok");
 });
+
+test("single sign-on: a new person signs in through the company's provider", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Sign in to Easy Chain" })).toBeVisible();
+  await page.getByRole("link", { name: "Sign in with Test IdP" }).click();
+  // The provider's own page.
+  await expect(page.getByRole("heading", { name: "Test identity provider" })).toBeVisible();
+  await page.getByLabel("Email").fill("sam@example.com");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("heading", { name: /Draw your AI app/ })).toBeVisible();
+  await account(page);
+  await expect(page.getByText("Runner", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Sign out" }).click();
+
+  // Someone from another domain is told why, on the sign-in page.
+  await page.getByRole("link", { name: "Sign in with Test IdP" }).click();
+  await page.getByLabel("Email").fill("eve@elsewhere.org");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByTestId("sso-error")).toHaveText("Single sign-on with Test IdP is only for @example.com addresses.");
+  await expect(page).not.toHaveURL(/sso_error/);
+  expect(await serious(page)).toEqual([]);
+});

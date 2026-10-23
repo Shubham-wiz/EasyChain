@@ -9,6 +9,19 @@ const port = Number(process.env.E2E_PORT ?? 8123);
 const fakePort = Number(process.env.E2E_FAKE_PORT ?? 8124);
 const mcpPort = Number(process.env.E2E_MCP_PORT ?? 8125);
 const authPort = Number(process.env.E2E_AUTH_PORT ?? 8126);
+const oidcPort = Number(process.env.E2E_OIDC_PORT ?? 8127);
+// Single sign-on on the sign-in server, through the test identity provider.
+const sso = [
+  {
+    id: "testidp",
+    name: "Test IdP",
+    issuer: `http://127.0.0.1:${oidcPort}`,
+    client_id: "easychain",
+    client_secret: "{secret:E2E_SSO_SECRET}",
+    new_people: "runner",
+    domains: ["example.com"],
+  },
+];
 const home = mkdtempSync(join(tmpdir(), "easychain-e2e-"));
 // The server with sign-in on keeps its accounts here. Set once, in the main process: workers
 // inherit it, so tests can make a setup code for that server (e2e/auth.spec.ts).
@@ -61,6 +74,13 @@ export default defineConfig({
       },
     },
     {
+      // An OpenID Connect provider for single sign-on (easychain.testing.oidc_provider).
+      command: `${python} python -m easychain.testing.oidc_provider --port ${oidcPort} --client-id easychain --client-secret s3cret`,
+      url: `http://127.0.0.1:${oidcPort}/.well-known/openid-configuration`,
+      reuseExistingServer: false,
+      timeout: 120_000,
+    },
+    {
       // The same app with sign-in on, as when it answers the network (Docker).
       command: `${python} easychain dev --port ${authPort}`,
       url: `http://127.0.0.1:${authPort}/api/health`,
@@ -70,6 +90,8 @@ export default defineConfig({
         EASYCHAIN_HOME: process.env.E2E_AUTH_HOME,
         EASYCHAIN_WEB_DIST: join(process.cwd(), "dist"),
         EASYCHAIN_AUTH: "on",
+        EASYCHAIN_SSO: JSON.stringify(sso),
+        E2E_SSO_SECRET: "s3cret",
         OPENAI_API_KEY: "sk-e2e-test-key",
         OPENAI_BASE_URL: `${FAKE_URL}/v1`,
       },
