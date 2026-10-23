@@ -132,7 +132,7 @@ per call (gVisor when Docker has it); the loader swaps each Code step's function
 | `worker.py` | Leases jobs, runs them, heartbeats, takes over jobs from dead workers. |
 | `store.py` | Flow files in the workspace folder. |
 | `secrets.py` | The encrypted local secrets vault. |
-| `knowledge_api.py`, `integrations_api.py` | Knowledge Bases; MCP servers and OpenAPI import. |
+| `knowledge_api.py`, `integrations_api.py` | Knowledge Bases (documents are queued as `ingest` jobs that workers read); MCP servers and OpenAPI import. |
 | `cron.py`, `mail.py`, `notify.py` | Schedules, the email trigger, and notifications (webhook, Slack, email). |
 
 The API at a glance (all under `/api`):

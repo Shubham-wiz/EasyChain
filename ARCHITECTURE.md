@@ -241,8 +241,12 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
   when the extension is available, float32 blobs plus numpy otherwise; full-text search with
   `tsvector` (Postgres) or FTS5 (SQLite); hybrid results merged by reciprocal rank fusion.
   Documents are loaded (pypdf, python-docx, an HTML text extractor, Markdown by headings, CSV),
-  split with `RecursiveCharacterTextSplitter`, embedded with `init_embeddings` and written in the
-  API server's background tasks. The search functions are copied into exported code with
+  split with `RecursiveCharacterTextSplitter`, embedded with `init_embeddings` and written by a
+  **worker**, from the job queue (since Phase 5.8): adding a document queues an `ingest` job
+  whose `run_id` is the document's id and whose thread is `kb:<id>`, so one Knowledge Base's
+  documents are read one at a time. An uploaded file waits in the `uploads` table until it has
+  been read, so a worker needs no disk shared with the API server. A job taken over after a
+  crash replaces the chunks the first try wrote. The search functions are copied into exported code with
   `inspect.getsource`, so the export searches exactly as Easy Chain does.
 - **Memory** uses the LangGraph store (namespace per user); trim and summarise operate on a
   messages field.
@@ -381,6 +385,8 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
 | `test_api_phase2.py` | Inbox answers and notifications (webhook, Slack, SMTP), cancel, continue, Save Points and fork, double texting (queue, reject, interrupt, rollback), triggers (webhook, upload, schedule, after-flow), run limits, versions, `Last-Event-ID`, WebSocket |
 | `test_durability.py` | **The Phase 2 Done-when**, on SQLite and Postgres: a worker killed with SIGKILL mid-run resumes from the last step without repeating finished steps or side effects; a paused approval is answered a day later through a fresh server and worker |
 | `test_db_startup.py` | Several processes starting at once set up the Postgres tables without racing |
+| `test_migrations.py` | The migrations build exactly the tables `db.py` describes (SQLite and Postgres); a database made by 0.4.0 is upgraded in place with its data; a newer one is refused; every migration can be undone and redone; `easychain db` |
+| `test_knowledge_queue.py` | Knowledge Base documents wait for a worker and survive a restart; a worker with its own disk reads uploads from the database; a worker that dies mid-document is replaced without doubling chunks; a removed document leaves nothing; an unexpected problem shows on the document and isn't retried |
 | `apps/web/src/**/*.test.ts` | Editing helpers, undo grouping, SSE parsing, formatting, the copilot's changes and panel |
 | `apps/web/e2e/*.spec.ts` | Playwright: build → run → debug → export (and run the export), templates and chat, fixes, undo, copy/paste, Pro mode, settings, Ask a Human in the run panel and the Inbox, For Each, breakpoints and Save Points, stop and carry on, reload during a run, triggers, the Flow Data panel, Sub-flows, agent tools and live tool calls, tool approval, the reply format builder, Knowledge Bases, cited answers, MCP servers, API import, the copilot (propose, preview, apply as one undo step, discard), the Research assistant (Helpers on the canvas, the trace with nested Helper calls, the to-do list and files), the Skills library, Inbox triage (a supervisor and an Inbox pause), the sandbox settings, axe WCAG 2.2 AA scans, 300-step canvas |
 | `test_standin_tools.py` | The stand-in AI calls tools, fills arguments and JSON schemas, cites sources, reads each web address a request names, and plays scripts |
@@ -436,7 +442,7 @@ extras) and locked in `uv.lock`. Exported
 | Breakpoints | Set per flow in the browser, not saved in the flow file | Breakpoints are a debugging aid for test runs, not part of the flow's behaviour, so they don't belong in reviewed YAML. |
 | Event streaming | The API tails the run's events from the database (poll plus an in-process wake-up), not Postgres LISTEN/NOTIFY | Works the same on SQLite and Postgres and survives API restarts; latency is about 50–250 ms. |
 | Knowledge Base on pgvector (via LangChain's vector stores) | Easy Chain's own three tables, using pgvector directly when present, numpy otherwise, and Postgres/SQLite full-text search | One schema for SQLite and Postgres, hybrid search (LangChain's PGVector store has no full-text side), per-document status and provenance, and search code small enough to copy into exports. The tables are plain SQL, so moving to another store later is a migration, not a rewrite. |
-| Documents ingested by workers | Documents are read and embedded in the API server's background tasks | Ingestion needs the uploaded file, which the API process has; it is not part of a run. A restart marks unfinished documents as failed with a clear message. Moving ingestion onto the job queue is listed for Phase 5. |
+| Documents ingested by workers | Done in Phase 5.8: documents are read by workers from the job queue (until then, in the API server's background tasks) | The file is kept in the database until a worker reads it, so documents survive restarts and the API server stays light. |
 | OCR for scanned PDFs | Not supported; such PDFs fail with a message saying so | OCR needs a heavy system dependency (Tesseract) or a paid API. |
 | Agent = graph of its own | The agent is built and invoked inside the step's node (a subgraph at run time) | One node per canvas box keeps the trace, glow, errors and token counts 1:1 with the canvas, and the agent still checkpoints and pauses with the flow. |
 | Test Sets judge agents | Test Sets check tools called, not called and call counts, and can script the model's turns | Deterministic, key-free tests of a flow's logic. LLM-as-judge and trajectory checks are Phase 5. |

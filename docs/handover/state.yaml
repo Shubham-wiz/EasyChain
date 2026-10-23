@@ -61,7 +61,7 @@ phases:
     done_when: "draft -> staging -> production only when the Test Run passes in CI; a published flow serves an API endpoint and a chat widget with per-key rate limits; roles stop a Viewer editing and an Editor publishing to production; every change and publish is in the audit log"
     order: ["5.8", "5.6", "5.1", "5.2", "5.3", "5.4", "5.5", "5.7"]
     milestones:
-      "5.8 Platform groundwork": in_progress   # migrations done (server/migrations, tests/test_migrations.py); Knowledge Base ingestion on the queue next
+      "5.8 Platform groundwork": in_progress   # migrations and queued Knowledge Base ingestion done (tests/test_migrations.py, tests/test_knowledge_queue.py); LISTEN/NOTIFY next
       "5.6 Users, roles, SSO, audit": pending
       "5.1 Test Sets editor and Checks": pending
       "5.2 Test Runs and baselines": pending
@@ -82,8 +82,8 @@ waiting_for_review: false
 open_questions: []
 
 tests:
-  measured_at: 2026-10-23, after 5.8 migrations
-  python: {passed: 519, skipped: 0, on: "Linux with SQLite, Postgres and Docker (the sandbox tests); Windows and Linux in CI"}
+  measured_at: 2026-10-23, after 5.8 migrations and queued ingestion
+  python: {passed: 523, skipped: 0, on: "Linux with SQLite, Postgres and Docker (the sandbox tests); Windows and Linux in CI"}
   web_unit: {passed: 94}
   client: {passed: 11}
   e2e: {passed: 39, skipped_unless_SCREENSHOTS: 3, on: "Linux (CI)"}

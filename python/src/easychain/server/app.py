@@ -62,7 +62,7 @@ from .db import Database, checkpoint_url
 from .hostguard import HostGuard, allowed_hosts
 from .hub import Busy, Hub, Invalid, NotFound
 from .integrations_api import add_integration_routes
-from .knowledge_api import add_knowledge_routes, use_database
+from .knowledge_api import CUT_OFF, add_knowledge_routes, use_database
 from .secrets import SecretStore, VaultLocked, masked, unmasked
 from .store import FlowNotFound, FlowStore
 from .worker import Worker, sandbox_settings
@@ -212,14 +212,6 @@ def create_app(
     def prepare_samples() -> None:
         """The sample shop database and help-centre Knowledge Base the templates use."""
         try:
-            # Documents are read inside the API server: any it was still reading when it
-            # stopped won't finish, so say so instead of showing them as busy for ever.
-            KnowledgeStore().setup().fail_unfinished(
-                "The server restarted while reading this. Remove it and add it again."
-            )
-        except Exception as exc:
-            log.warning("Couldn't check the Knowledge Base documents: %s", exc)
-        try:
             ensure_samples(home_path)
             ensure_sample_knowledge()
         except Exception as exc:  # samples are a convenience; never block startup
@@ -230,6 +222,15 @@ def create_app(
         use_database(db_url)
         await asyncio.to_thread(prepare_samples)
         db = await Database.connect(db_url)
+        try:
+            # Documents with a reading job are a worker's to finish. Any others still marked
+            # busy were being read by an older Easy Chain inside its API server: say so.
+            keep = await db.ingesting()
+            await asyncio.to_thread(
+                lambda: KnowledgeStore().setup().fail_unfinished(CUT_OFF, keep)
+            )
+        except Exception as exc:
+            log.warning("Couldn't check the Knowledge Base documents: %s", exc)
         resources = await open_resources(checkpoint_url(db_url))
         app.state.hub = Hub(db, resources, flows, vault)
         stop = asyncio.Event()

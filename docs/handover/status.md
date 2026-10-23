@@ -56,7 +56,7 @@ issues under *Fix later* (decision 5.6).
 
 | Suite | Result (2026-10-21, end of Phase 4) |
 |---|---|
-| Python on Linux (`pnpm test`, and CI) | 519 pass (2026-10-23, with the migration tests), with SQLite, Postgres (+ pgvector in CI) and Docker (the sandbox escape tests; skipped without Docker); compiler and steps coverage 94% |
+| Python on Linux (`pnpm test`, and CI) | 523 pass (2026-10-23, after 5.8's migrations and queued Knowledge Base reading), with SQLite, Postgres (+ pgvector in CI) and Docker (the sandbox escape tests; skipped without Docker); compiler and steps coverage 94% |
 | Python on Windows 11 (CI) | all pass |
 | Web unit (vitest) | 94 passed |
 | Client package (vitest) | 11 passed |
@@ -93,7 +93,7 @@ These are listed in full in the phase reports and review.md. The ones that matte
 - The copilot and the agent templates are tested with scripted model turns, not real models.
 - There is no login (Phase 5). The API refuses other sites' pages (Host and Origin checks), but
   anything on this machine can still call it.
-- Knowledge Base documents are ingested in the API server, not on the job queue; no OCR.
+- Knowledge Base documents are read by workers from the job queue (5.8); no OCR yet.
 - Schema migrations are in place (Alembic, 5.8); every schema change needs one
   (`python/src/easychain/server/migrations/`).
 - Event streaming polls the database (50–250 ms between processes).

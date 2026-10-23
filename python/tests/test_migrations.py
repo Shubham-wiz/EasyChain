@@ -18,6 +18,18 @@ from easychain.server.db import Database, meta, metadata
 
 from . import pg
 
+# The tables Easy Chain 0.4.0 made (the baseline, 0001).
+TABLES_040 = {
+    "flow_versions",
+    "runs",
+    "run_events",
+    "jobs",
+    "inbox",
+    "triggers",
+    "settings",
+    "easychain_meta",
+}
+
 
 def _differences(url: str) -> list:
     engine = sa.create_engine(url.replace("postgresql://", "postgresql+psycopg://", 1))
@@ -51,7 +63,7 @@ async def test_a_database_made_before_migrations_is_upgraded_in_place(tmp_path: 
     # Easy Chain 0.4.0 made the tables with create_all and kept a schema number.
     url = f"sqlite:///{tmp_path / 'old.db'}"
     engine = sa.create_engine(url)
-    metadata.create_all(engine)
+    metadata.create_all(engine, tables=[t for t in metadata.sorted_tables if t.name in TABLES_040])
     with engine.begin() as conn:
         conn.execute(meta.insert().values(key="schema", value="1"))
     engine.dispose()
@@ -60,7 +72,8 @@ async def test_a_database_made_before_migrations_is_upgraded_in_place(tmp_path: 
         flow_id="f", flow_name="F", version_id="v", thread_id="t", inputs={"q": 1}, options={}
     )
     await db.close()
-    assert db.migrated == [], "the baseline is stamped, not run again over the old tables"
+    # The baseline is stamped, not run again over the old tables; later migrations run.
+    assert [m.split()[0] for m in db.migrated] == ["0002"]
     again = await Database.connect(url)
     assert (await again.get_run(run_id))["inputs"] == {"q": 1}
     await again.close()

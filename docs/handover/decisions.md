@@ -25,6 +25,7 @@ asked again.
 | 5.5 | Real-model checks before a release | A **manual CI workflow** with a budgeted key stored as a repository secret, so the result is recorded | owner: same |
 | 5.6 | Tracking the build | The README has a **build tracker**: every step of every phase marked done, in progress or not started, and a **Fix later** list of known issues with where each is handled. It is updated in the same commit as the work. | owner: "please make sure u mark every step in readme, so we can go fix things later" |
 | 5.7 | Database migrations | **Alembic**, run by every process when it starts (under the schema lock), so upgrading Easy Chain upgrades the database; `easychain db status` and `upgrade` for operators. Migrations are numbered (`0001`, `0002`, …). A database made by 0.4.0 or earlier is stamped at the baseline (`0001`, the same tables). A database a newer Easy Chain upgraded is refused. | build |
+| 5.8 | Where Knowledge Base documents are read | By **workers, from the job queue**: an `ingest` job per document (its thread is `kb:<id>`, so one Knowledge Base's documents are read one at a time); an uploaded file waits in the `uploads` table (migration 0002) until it has been read, then is deleted; a document whose reading hit an unexpected problem says so and isn't retried. At startup only documents with no job are marked as cut off. | build |
 
 ## Phase 4 (answers to the Phase 3 report's questions)
 
@@ -54,7 +55,7 @@ asked again.
 | 3.7 | Knowledge Base storage | Easy Chain's own tables (`kb_bases`, `kb_documents`, `kb_chunks`) in its database, not a LangChain vector store class. Search is one function, copied into exported code. | build: one design for SQLite and Postgres, hybrid search and citations, and exported code that searches the same data |
 | 3.8 | Test Sets without a key | The stand-in AI answers from cited passages by itself; agent cases may script the model's tool calls (`script:`), while tool results, limits and approvals are real | build: CI has no keys; a real model ignores scripts |
 | 3.9 | SQL safety | Read-only queries run in a read-only transaction (SQLite `query_only`, Postgres `READ ONLY`), plus a statement check | build |
-| 3.10 | Where documents are ingested | In the API server's background tasks, not on the job queue; a restart marks unfinished documents failed with a clear message | build: the upload is in the API process and ingestion isn't a run; moving it to the queue is a Phase 5 item |
+| 3.10 | Where documents are ingested | In the API server's background tasks, not on the job queue; a restart marks unfinished documents failed with a clear message | build: the upload is in the API process and ingestion isn't a run; replaced by 5.8 |
 | 3.11 | Postgres image | Docker Compose and CI use `pgvector/pgvector:pg16` instead of `postgres:16-alpine` | build: Knowledge Bases use pgvector when present; existing Compose volumes should be reindexed after the switch (musl vs glibc collation) |
 | 3.12 | Version | 0.3.0 at the end of Phase 3 (Python package, web app, client, Compose image tags) | build |
 | 3.13 | Phase 4 "Done when" | **Proposed, not decided:** a Research assistant template (Deep Agent + Helpers + to-do list + files) passes a 10-case Test Set, and Code steps can't escape their sandbox (escape tests) | the original brief isn't in the repo; asked in the Phase 3 report |

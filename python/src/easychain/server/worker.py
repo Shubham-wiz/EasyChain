@@ -190,8 +190,46 @@ class Worker:
             if cancel:
                 stop.set()
 
+    async def _ingest(self, job: dict[str, Any], lost: asyncio.Event) -> None:
+        """Read one Knowledge Base document (queued by the API). The job's ``run_id`` is the
+        document's id. Run again after a crash, it replaces what the first try wrote."""
+        from ..knowledge.ingest import read_document
+        from ..knowledge.store import KnowledgeStore
+
+        source = dict(job.get("payload") or {})
+        upload_id = source.get("upload_id")
+        data = None
+        if upload_id:
+            upload = await self.db.get_upload(upload_id)
+            if upload is not None:
+                data = upload["data"]
+                source.update(name=upload["name"], content_type=upload["content_type"])
+        status = await asyncio.to_thread(
+            lambda: read_document(KnowledgeStore().setup(), job["run_id"], source, data)
+        )
+        if lost.is_set():
+            return  # another worker took the job over; it finishes it
+        log.info("Read document %s: %s", job["run_id"], status)
+        await self.db.finish_job(job["id"], self.name, "done")
+        if upload_id:
+            await self.db.delete_upload(upload_id)
+
     async def _failed(self, job: dict[str, Any]) -> None:
         """The job hit an unexpected problem: the run ends with an error, and says so."""
+        if job["action"] == "ingest":
+            # Not taken up again: a problem that repeats would repeat for ever. The document
+            # says what happened.
+            from ..knowledge.store import KnowledgeStore
+
+            message = "Reading this hit an unexpected problem. Remove it and add it again."
+            with contextlib.suppress(Exception):
+                await asyncio.to_thread(
+                    lambda: KnowledgeStore()
+                    .setup()
+                    .set_document(job["run_id"], status="error", error=message)
+                )
+            await self.db.finish_job(job["id"], self.name, "failed")
+            return
         run = await self.db.get_run(job["run_id"])
         if run is None:
             return
@@ -241,6 +279,9 @@ class Worker:
         self.hub.bus.notify(run["id"])
 
     async def _run_job(self, job: dict[str, Any], stop: asyncio.Event, lost: asyncio.Event) -> None:
+        if job["action"] == "ingest":
+            await self._ingest(job, lost)
+            return
         db, hub = self.db, self.hub
         run = await db.get_run(job["run_id"])
         if run is None:

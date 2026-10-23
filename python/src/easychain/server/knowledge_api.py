@@ -1,7 +1,9 @@
 """The Knowledge Base API: bases, documents (files, pages, text), chunk previews and search.
 
-Documents are read, split and embedded in the background; their status goes from
-queued to processing to ready (or error, with a message for people).
+Documents are read, split and embedded by a worker, from the job queue (``ingest`` jobs, one
+Knowledge Base's documents one at a time); their status goes from queued to processing to
+ready (or error, with a message for people). A file waits in the database until it has been
+read, so a worker needs no disk shared with the API server.
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ from typing import Annotated, Any
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
-from ..knowledge.ingest import build_embeddings, ingest
+from ..knowledge.ingest import build_embeddings
 from ..knowledge.loaders import Loaded, LoadError, Section, load_bytes, load_url, split
 from ..knowledge.search import search_knowledge
 from ..knowledge.store import KnowledgeStore
@@ -24,6 +26,10 @@ from ..providers import EMBEDDING_MODELS, default_embedding_model
 from ..runtime.errors import explain
 
 log = logging.getLogger("easychain.knowledge")
+
+# Shown on documents that were being read by the API server itself (Easy Chain 0.4.0 and
+# earlier) when it stopped: nothing will finish them.
+CUT_OFF = "The server restarted while reading this. Remove it and add it again."
 
 _ours: str | None = None
 
@@ -67,7 +73,6 @@ class SearchRequest(BaseModel):
 
 
 def add_knowledge_routes(app: FastAPI, home: Path) -> None:
-    jobs: set[asyncio.Task[Any]] = set()
     files_dir = home / "knowledge"
 
     def store() -> KnowledgeStore:
@@ -83,26 +88,17 @@ def add_knowledge_routes(app: FastAPI, home: Path) -> None:
         info = EMBEDDING_MODELS.get(base["embedding_model"])
         return {**base, "embedding_label": info.label if info else base["embedding_model"]}
 
-    async def _run_ingest(kb_id: str, doc_id: str, load: Any, source: str) -> None:
-        def work() -> None:
-            st = store()
-            try:
-                loaded = load()
-                ingest(st, kb_id, doc_id, loaded, source)
-            except LoadError as exc:
-                st.set_document(doc_id, status="error", error=str(exc))
-            except Exception as exc:  # shown on the document, in words people can act on
-                info = explain(exc)
-                message = info["message"] + (f" {info['hint']}" if info.get("hint") else "")
-                log.warning("couldn't add %s: %s", source, exc)
-                st.set_document(doc_id, status="error", error=message)
-
-        await asyncio.to_thread(work)
-
-    def _start(kb_id: str, doc_id: str, load: Any, source: str) -> None:
-        task = asyncio.create_task(_run_ingest(kb_id, doc_id, load, source))
-        jobs.add(task)
-        task.add_done_callback(jobs.discard)
+    async def _queue(
+        kb_id: str,
+        doc_id: str,
+        source: dict[str, Any],
+        data: bytes | None = None,
+        name: str = "",
+        content_type: str | None = None,
+    ) -> None:
+        hub = app.state.hub
+        await hub.db.enqueue_ingest(kb_id, doc_id, source, data, name, content_type)
+        hub.bus.job_added()
 
     @app.get("/api/knowledge")
     async def list_knowledge() -> list[dict[str, Any]]:
@@ -163,13 +159,8 @@ def add_knowledge_routes(app: FastAPI, home: Path) -> None:
             folder = files_dir / kb_id
             folder.mkdir(parents=True, exist_ok=True)
             safe = re.sub(r"[^A-Za-z0-9._-]+", "_", name)
-            (folder / f"{doc['id']}-{safe}").write_bytes(data)
-            _start(
-                kb_id,
-                doc["id"],
-                lambda name=name, data=data, ct=content_type: load_bytes(name, data, ct),
-                name,
-            )
+            (folder / f"{doc['id']}-{safe}").write_bytes(data)  # a copy of the original
+            await _queue(kb_id, doc["id"], {"kind": "file"}, data, name, content_type)
             added.append(doc)
         return added
 
@@ -182,7 +173,7 @@ def add_knowledge_routes(app: FastAPI, home: Path) -> None:
             doc = await asyncio.to_thread(
                 lambda url=url: store().add_document(kb_id, url, url, "url")
             )
-            _start(kb_id, doc["id"], lambda url=url: load_url(url), url)
+            await _queue(kb_id, doc["id"], {"kind": "url", "url": url})
             added.append(doc)
         return added
 
@@ -192,8 +183,7 @@ def add_knowledge_routes(app: FastAPI, home: Path) -> None:
         doc = await asyncio.to_thread(
             lambda: store().add_document(kb_id, req.title, req.title, "text")
         )
-        loaded = Loaded("text", req.title, [Section(req.text)])
-        _start(kb_id, doc["id"], lambda: loaded, req.title)
+        await _queue(kb_id, doc["id"], {"kind": "text", "title": req.title, "text": req.text})
         return doc
 
     @app.get("/api/knowledge/{kb_id}/documents/{doc_id}/chunks")

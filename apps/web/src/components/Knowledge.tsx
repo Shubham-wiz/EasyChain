@@ -168,6 +168,10 @@ function KnowledgeList() {
 
 // ── one Knowledge Base ───────────────────────────────────────────────────────
 
+// Documents are read by a worker from the job queue; after this many seconds still queued, say
+// what it is waiting for.
+const WAITING_HINT_AFTER = 20;
+
 const STATUS_TONE: Record<KnowledgeDocument["status"], "neutral" | "accent" | "ok" | "danger"> = {
   queued: "neutral",
   processing: "accent",
@@ -456,6 +460,12 @@ function DocumentRow({ kb, doc, onChange }: { kb: KnowledgeBase; doc: KnowledgeD
         </Button>
       </div>
       {doc.status === "error" && doc.error && <p className="mt-1 pl-5 text-xs text-danger">{doc.error}</p>}
+      {doc.status === "queued" && Date.now() / 1000 - doc.created_at > WAITING_HINT_AFTER && (
+        <p className="mt-1 pl-5 text-xs text-muted" data-testid="kb-waiting">
+          Waiting for a worker to read it. If it stays here, check that a worker is running (<code>easychain worker</code>, or{" "}
+          <code>easychain dev</code> without <code>--no-worker</code>).
+        </p>
+      )}
       {open && (
         <ol className="mt-2 max-h-72 space-y-1 overflow-y-auto pl-5">
           {(chunks ?? []).map((c, i) => (

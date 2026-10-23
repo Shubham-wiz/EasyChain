@@ -266,7 +266,7 @@ updated in the same commit as the work (decision 5.6). Each phase's report has t
 - [x] ✅ Structured replies (field builder, validation, retry, spread into Flow Data)
 - [x] ⚠️ MCP client and MCP tool step: tools only (no prompts or resources), no OAuth, reconnects each run
 - [x] ⚠️ Import an API (OpenAPI): optional query parameters aren't sent
-- [x] ⚠️ Knowledge Bases: no OCR; one vector store; ingestion runs in the API server (Phase 5.8)
+- [x] ⚠️ Knowledge Bases: no OCR; one vector store (documents are read by workers since 5.8)
 - [x] ✅ Knowledge Base search step, hybrid search, re-ranking, citations
 - [x] ✅ Memory step; Database query step (read-only by default)
 - [x] ⚠️ 14 model providers: prices known for listed models only
@@ -293,7 +293,7 @@ updated in the same commit as the work (decision 5.6). Each phase's report has t
 **5.8 Platform groundwork** 🚧 (first)
 
 - [x] ✅ Database migrations (Alembic): a baseline for today's schema, existing databases upgraded in place, safe when several processes start at once, `easychain db status` / `upgrade`
-- [ ] ⬜ Knowledge Base ingestion on the job queue (survives restarts, runs on workers)
+- [x] ✅ Knowledge Base ingestion on the job queue: workers read documents, which survive restarts; files wait in the database, so workers need no shared disk
 - [ ] ⬜ Postgres LISTEN/NOTIFY for run events (optional)
 
 **5.6 Users, roles, SSO, audit**
@@ -368,7 +368,7 @@ yet.
 | F2 | No egress allow-list for fetches the server makes (pages, OpenAPI documents, Web request tools) | Review | 5.6 |
 | F3 | Real models are never called in CI; agent templates need a real-model check before a release | Phase 1 | 5.2 (manual CI workflow) |
 | F4 | ~~No database migrations (`create_all` plus a version number)~~ | Phase 2 | ✅ Fixed in 5.8 (Alembic) |
-| F5 | Knowledge Base ingestion runs in the API server; a restart fails documents mid-way | Phase 3 | 5.8 |
+| F5 | ~~Knowledge Base ingestion runs in the API server; a restart fails documents mid-way~~ | Phase 3 | ✅ Fixed in 5.8 (workers, from the job queue) |
 | F6 | Live events between processes poll the database (50–250 ms) | Phase 2 | 5.8 (optional) |
 | F7 | Stopping a run lets a Code step that's mid-way finish in the background (its result is dropped) | Phase 2 | backlog (the sandbox can kill containers: wire Stop to it) |
 | F8 | "At most once" relies on the receiving service honouring `Idempotency-Key` when a worker dies after sending | Phase 2 | backlog (by design; documented) |

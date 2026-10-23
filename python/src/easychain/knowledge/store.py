@@ -344,18 +344,26 @@ class KnowledgeStore:
                 {**allowed, "now": _now(), "id": doc_id},
             )
 
-    def fail_unfinished(self, message: str) -> int:
-        """Mark documents that were still being read as failed (the server that read them
-        stopped). Returns how many there were."""
+    def fail_unfinished(self, message: str, keep: set[str] | frozenset[str] = frozenset()) -> int:
+        """Mark documents that were still being read, and that no job will finish, as failed
+        (``keep``: the documents that have a job waiting or running). Returns how many."""
         with self.engine.begin() as conn:
-            result = conn.execute(
-                text(
-                    "UPDATE kb_documents SET status = 'error', error = :message, updated_at = :now"
-                    " WHERE status IN ('queued', 'processing')"
-                ),
-                {"message": message, "now": _now()},
-            )
-            return result.rowcount or 0
+            ids = [
+                row[0]
+                for row in conn.execute(
+                    text("SELECT id FROM kb_documents WHERE status IN ('queued', 'processing')")
+                )
+                if row[0] not in keep
+            ]
+            for doc_id in ids:
+                conn.execute(
+                    text(
+                        "UPDATE kb_documents SET status = 'error', error = :message,"
+                        " updated_at = :now WHERE id = :id"
+                    ),
+                    {"message": message, "now": _now(), "id": doc_id},
+                )
+            return len(ids)
 
     def list_documents(self, kb_id: str) -> list[dict[str, Any]]:
         with self.engine.connect() as conn:

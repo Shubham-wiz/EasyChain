@@ -141,7 +141,7 @@ These are scheduled inside the phases above, or kept here until they are.
 | Code steps unsandboxed | Done in 4.1 (Docker sandbox; exported code still runs Code in-process) |
 | No login, roles or audit | 5.6 |
 | Schema migrations (`create_all` only) | Done in 5.8 (Alembic) |
-| Knowledge Base ingestion runs in the API process | 5.8 |
+| Knowledge Base ingestion runs in the API process | Done in 5.8 (workers, from the job queue) |
 | Event streaming polls the database | 5.8 (optional) |
 | No OCR for scanned PDFs | backlog: optional OCR backend (Tesseract or a provider) |
 | One vector store (Easy Chain's tables) | backlog: Qdrant / Chroma / Pinecone adapters if needed |

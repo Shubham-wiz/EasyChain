@@ -25,9 +25,13 @@ Open **Knowledge** in the top bar, then **New Knowledge Base**:
   over 50 MB are not read.
 - **Text**: paste it with a title.
 
-Each document is read in the background: *queued*, *processing*, then *ready* with its number of
-passages, or *error* with a reason you can act on ("manual.pdf has no text to read (it may be scanned
-images)"). If the server restarts while reading a document, the document says so; add it again. Open a document to see its passages. Where a passage came from is kept with it: the
+Each document is read by a **worker**, from the same queue as runs: *queued*, *processing*, then
+*ready* with its number of passages, or *error* with a reason you can act on ("manual.pdf has no
+text to read (it may be scanned images)"). A Knowledge Base's documents are read one at a time.
+They wait for a worker, so they survive a restart; if a worker stops mid-document, another one
+reads it again. `easychain dev` has a worker inside; with `--no-worker` (or
+`EASYCHAIN_WORKER=off`), start one with `easychain worker`. A file waits in the database until
+it has been read, so workers on other machines can read it. Open a document to see its passages. Where a passage came from is kept with it: the
 document, the PDF **page**, and the Markdown or Word **heading** it sits under.
 
 **Chunk preview** (on a Knowledge Base's page) splits a file or page with a chunk size and

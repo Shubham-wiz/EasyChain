@@ -346,7 +346,9 @@ def client(tmp_path, monkeypatch, fake_server):
         home=tmp_path / "home",
         static_dir=tmp_path / "web",
         database_url=f"sqlite:///{tmp_path / 'app.db'}",
-        worker=False,
+        # Documents are read by a worker (from the job queue): the one inside the app here.
+        worker=True,
+        worker_options={"poll": 0.05, "schedules": False},
     )
     with TestClient(app) as test_client:
         yield test_client

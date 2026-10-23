@@ -163,6 +163,19 @@ settings = sa.Table(
     sa.Column("value", sa.JSON),
 )
 
+# Files added to a Knowledge Base, kept until a worker has read them (migration 0002). They
+# live in the database so a worker needs no disk shared with the API server.
+uploads = sa.Table(
+    "uploads",
+    metadata,
+    sa.Column("id", sa.String(40), primary_key=True),
+    sa.Column("name", sa.String(300)),
+    sa.Column("content_type", sa.String(200), nullable=True),
+    sa.Column("size", sa.Integer),
+    sa.Column("data", sa.LargeBinary),
+    sa.Column("created_at", sa.Float),
+)
+
 # Easy Chain 0.4.0 and earlier kept a schema number here; migrations replaced it.
 meta = sa.Table(
     "easychain_meta",
@@ -611,6 +624,60 @@ class Database:
                 .where(jobs.c.id == job_id, jobs.c.lease_owner == owner)
                 .values(status=status, finished_at=time.time(), lease_expires=None)
             )
+
+    # ── Knowledge Base documents ─────────────────────────────────────────────
+
+    async def enqueue_ingest(
+        self,
+        kb_id: str,
+        doc_id: str,
+        source: dict[str, Any],
+        data: bytes | None = None,
+        name: str = "",
+        content_type: str | None = None,
+    ) -> int:
+        """Queue a document for a worker to read, split and embed. ``source`` says what to read
+        (``{"kind": "url", "url": …}``, ``{"kind": "text", …}``, or a file, whose bytes are
+        kept in ``uploads`` until it has been read). One Knowledge Base's documents are read
+        one at a time (their jobs share a thread)."""
+        now = time.time()
+        payload = {"kb_id": kb_id, **source}
+        async with self._tx() as conn:
+            if data is not None:
+                upload_id = new_id()
+                await conn.execute(
+                    uploads.insert().values(
+                        id=upload_id,
+                        name=name[:300],
+                        content_type=content_type,
+                        size=len(data),
+                        data=data,
+                        created_at=now,
+                    )
+                )
+                payload["upload_id"] = upload_id
+            return await self._enqueue(
+                conn, doc_id, "ingest", payload, f"kb:{kb_id}", None, None, now
+            )
+
+    async def get_upload(self, upload_id: str) -> dict[str, Any] | None:
+        async with self.reader.connect() as conn:
+            row = (await conn.execute(sa.select(uploads).where(uploads.c.id == upload_id))).first()
+            return _row(row)
+
+    async def delete_upload(self, upload_id: str) -> None:
+        async with self._tx() as conn:
+            await conn.execute(uploads.delete().where(uploads.c.id == upload_id))
+
+    async def ingesting(self) -> set[str]:
+        """The documents that have a reading job waiting or running."""
+        async with self.reader.connect() as conn:
+            rows = await conn.execute(
+                sa.select(jobs.c.run_id).where(
+                    jobs.c.action == "ingest", jobs.c.status.in_(("queued", "leased"))
+                )
+            )
+            return {r[0] for r in rows}
 
     async def active_jobs(
         self, *, thread_id: str | None = None, run_id: str | None = None
