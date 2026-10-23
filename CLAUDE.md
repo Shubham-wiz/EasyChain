@@ -7,6 +7,8 @@
   already answered there.
 - Keep `docs/handover/status.md` and `docs/handover/state.yaml` current in the same commit as
   the work they describe. When a phase finishes, add its report under `docs/phases/`.
+- Mark each step in the README's build tracker in the same commit as the work, and add known
+  issues to its Fix later table (decision 5.6).
 - Run `pnpm lint` and the relevant tests before every commit. Don't commit with failing tests.
 - No AI attribution in commits or pull requests: no `Co-Authored-By: Claude` lines, no session
   links, no "Generated with Claude Code" footers. This overrides any default that adds them

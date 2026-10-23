@@ -14,6 +14,17 @@ asked again.
 | R.2 | Branch | Work happens on `main`. The first branch, `claude/tender-fermat-4kj4k6`, was replaced by `main` when the history was rewritten for R.1 (it was not actually deleted then; see R.3). | owner: "yes" to renaming it to `main` |
 | R.1 | AI attribution in git | No `Co-Authored-By: Claude…`, session links or "generated with" lines in commit messages or pull request descriptions. Commits are authored as `Easy Chain Dev <19shubhamdwivedi@gmail.com>`. The existing history was rewritten to remove the trailers. | owner: "remove from git that it's made by claude" |
 
+## Phase 5 (answers to the Phase 4 report's questions)
+
+| # | Question | Decision | Who |
+|---|---|---|---|
+| 5.1 | Phase 5 "Done when" | The four proposed criteria: a flow moves **draft → staging → production** only when its Test Run passes in CI; a published flow serves an **API endpoint and a chat widget** with per-key rate limits; **roles** stop a Viewer from editing and an Editor from publishing to production; every change and publish is in the **audit log** | owner: "report looks fine so lets get on" to the recommended answers |
+| 5.2 | Single sign-on provider for the final check | **None for now.** OIDC sign-in is built and tested against a local test identity provider; setup for Okta, Google and Microsoft Entra is documented | owner: same |
+| 5.3 | Publishing | **Self-hosted only** in Phase 5: your Easy Chain server serves the API endpoint, the chat page and the widget; `easychain deploy` builds an image or a Compose bundle | owner: same |
+| 5.4 | The AI judge in Checks | **Any model with a key** (the copilot's rule); with no key, judge checks are skipped with a note, never faked | owner: same |
+| 5.5 | Real-model checks before a release | A **manual CI workflow** with a budgeted key stored as a repository secret, so the result is recorded | owner: same |
+| 5.6 | Tracking the build | The README has a **build tracker**: every step of every phase marked done, in progress or not started, and a **Fix later** list of known issues with where each is handled. It is updated in the same commit as the work. | owner: "please make sure u mark every step in readme, so we can go fix things later" |
+
 ## Phase 4 (answers to the Phase 3 report's questions)
 
 | # | Question | Decision | Who |

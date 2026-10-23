@@ -107,3 +107,15 @@ report's questions being taken (decisions 4.1–4.3).
 Phase 4 was built to its "Done when": the Code sandbox, the Deep Agent and Helpers, Skills, the
 agent team patterns, the describe-it copilot, and the Research assistant and Inbox triage
 templates. The [Phase 4 report](../phases/phase-4.md) ends with questions about Phase 5.
+
+---
+
+**8. After the all-phases report:**
+
+> Give me a report file with all phases
+
+> report looks fine so lets get on , please make sure u mark every step in readme, so we can go fix things later
+
+These led to [report.md](../report.md) (and its PDF), the owner's answers to the Phase 4
+report's questions (decisions 5.1–5.5, the recommended options), the README's build tracker
+(decision 5.6), and the start of Phase 5.

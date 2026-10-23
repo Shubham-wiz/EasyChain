@@ -10,14 +10,12 @@ with no Easy Chain runtime required.
 
 ![The Easy Chain editor running a flow with a Decision](docs/images/editor-run.png)
 
-> **Status: Phase 4 (Autopilot and teams) of the build plan** ([Phase 4 report](docs/phases/phase-4.md),
-> [Phase 3](docs/phases/phase-3.md), [Phase 2](docs/phases/phase-2.md),
-> [Phases 0 and 1](docs/phases/phase-0-1.md)). Deep Agents plan, keep files and hand work to
-> Helpers that follow your Skills; agent teams are made of ordinary steps; Code runs in a
-> sandbox; and a copilot drafts flows from a description. Agents use your steps, APIs, databases
-> and MCP servers as tools, Knowledge Bases answer with citations, and runs are durable and can
-> wait for people as long as it takes. Evaluation and one-click publishing come next (see the
-> [roadmap](#roadmap)).
+> **Status: Phase 5 (Platform) in progress.** Phases 0 to 4 are done
+> ([all phases in one report](docs/report.md)). Every step is marked in the
+> [build tracker](#build-tracker), with known issues under [Fix later](#fix-later). Deep Agents
+> plan, keep files and hand work to Helpers that follow your Skills; agent teams are made of
+> ordinary steps; Code runs in a sandbox; a copilot drafts flows from a description. Phase 5 adds
+> logins and roles, evaluation and publishing.
 
 ## Quick start
 
@@ -214,8 +212,181 @@ The detailed plan, milestone by milestone, is in [docs/ROADMAP.md](docs/ROADMAP.
 | 2. Real runtime | Flow Data panel and update rules, loops with guards, parallel branches, For Each, Sub-flows, Postgres Save Points, crash recovery, Ask a Human and Inbox, time travel, background runs, triggers | ✅ Done |
 | 3. Agents and knowledge | Agent step and add-ons, MCP, OpenAPI import, structured output, Knowledge Base, memory, all providers | ✅ Done |
 | 4. Autopilot and teams | Deep Agents, Helpers, Skills, sandboxes, multi-agent patterns, describe-it copilot | ✅ Done |
-| 5. Platform | Test Sets and Checks, Test Runs, CI gate, dashboards, model gateway, Publish, environments, roles, SSO | Next |
+| 5. Platform | Test Sets and Checks, Test Runs, CI gate, dashboards, model gateway, Publish, environments, roles, SSO | 🚧 In progress |
 | 6. Ecosystem | LangGraph.js export, custom module registry, import, collaboration, prompt optimisation, Helm | |
+
+## Build tracker
+
+Every step of the build, marked as it lands, so anything can be found and fixed later. It is
+updated in the same commit as the work (decision 5.6). Each phase's report has the details.
+
+✅ done · 🚧 in progress · ⬜ not started · ⚠️ done, with a known issue (see [Fix later](#fix-later))
+
+### Phase 0: Foundations ✅ ([report](docs/phases/phase-0-1.md))
+
+- [x] ✅ Monorepo (Python + web app), CI, Dockerfile, Docker Compose, Apache 2.0 licence
+- [x] ✅ Flow spec v1: Pydantic models, YAML in and out, published JSON Schema
+- [x] ✅ Compiler: analysis, checks before a run, LangGraph code generation, golden files
+- [x] ✅ Runtime (in-memory Save Points at first) and the `easychain` command line
+- [x] ✅ ARCHITECTURE.md
+
+### Phase 1: Visual MVP ✅ ([report](docs/phases/phase-0-1.md))
+
+- [x] ✅ Canvas: drag and drop, checked connections, quick-add, Decision exits, sticky notes, auto-layout, minimap, undo/redo, copy/paste, shortcuts
+- [x] ✅ Steps: Input, Output, AI Model, Instructions, Web request, Code, Decision
+- [x] ✅ Providers OpenAI, Anthropic, Ollama; the stand-in AI
+- [x] ✅ Inspector forms, More options, Pro mode, per-step Code tab
+- [x] ✅ Run panel: form or chat, live glow and tokens, time/token/cost badges, trace, plain errors with fixes, Run Replay
+- [x] ✅ Export (zip with module, requirements, langgraph.json, .env.example, README)
+- [x] ⚠️ Home, templates gallery, Settings, themes: phone and tablet layouts of the editor aren't tuned
+- [x] ✅ Templates: Summarise a URL, Chat assistant, Reply to feedback, Smart summary (Test Sets 10–12 cases)
+- [x] ⚠️ "A new user builds a flow in under 5 minutes": shown by a scripted test, not by real users
+
+### Phase 2: Real runtime ✅ ([report](docs/phases/phase-2.md))
+
+- [x] ✅ Flow Data panel and update rules (replace, add to the list, add up, merge, custom)
+- [x] ✅ Loops with round limits; parallel branches that wait for all
+- [x] ✅ For Each with a concurrency limit; Sub-flows; Jump
+- [x] ✅ Ask a Human (approve, edit, answer, choose)
+- [x] ✅ Run policy: retries, time limits, cache
+- [x] ⚠️ Side effects at most once (Idempotency-Key): relies on the receiving service honouring the key in one crash case
+- [x] ✅ Save Points in SQLite or Postgres; run database; table job queue with leases; `easychain worker`
+- [x] ⚠️ Resume, continue, fork, breakpoints, stop: stopping a Code step mid-way lets it finish in the background
+- [x] ⚠️ Events over SSE and WebSocket: other processes see them by polling the database (50–250 ms)
+- [x] ✅ Inbox with notifications (webhook, Slack, email)
+- [x] ⚠️ Triggers (webhook, schedule, upload, email, after another flow): no queue triggers (SQS, Kafka); email polls IMAP
+- [x] ✅ Double texting rules for chat
+- [x] ✅ Compose with Postgres and workers; `@easychain/client` and its React hook
+- [x] ✅ Templates: Approval workflow, Summarise several pages
+
+### Phase 3: Agents and knowledge ✅ ([report](docs/phases/phase-3.md))
+
+- [x] ✅ Agent step, steps as tools, live tool calls
+- [x] ✅ Add-ons (approvals, limits, retries, fallbacks, summarising, PII filters, to-do list, memory)
+- [x] ✅ Structured replies (field builder, validation, retry, spread into Flow Data)
+- [x] ⚠️ MCP client and MCP tool step: tools only (no prompts or resources), no OAuth, reconnects each run
+- [x] ⚠️ Import an API (OpenAPI): optional query parameters aren't sent
+- [x] ⚠️ Knowledge Bases: no OCR; one vector store; ingestion runs in the API server (Phase 5.8)
+- [x] ✅ Knowledge Base search step, hybrid search, re-ranking, citations
+- [x] ✅ Memory step; Database query step (read-only by default)
+- [x] ⚠️ 14 model providers: prices known for listed models only
+- [x] ✅ Templates: Support bot over docs, SQL analyst
+
+### Code review and Windows ✅ ([review](docs/handover/review.md))
+
+- [x] ✅ 13 "fix first" findings fixed, each with a test
+- [x] ✅ Windows support, tested in CI on every push
+- [x] ⚠️ Two items left on purpose: the egress allow-list (5.6) and real-model checks before a release (5.2)
+
+### Phase 4: Autopilot and teams ✅ ([report](docs/phases/phase-4.md))
+
+- [x] ⚠️ 4.1 Code sandbox (Docker, gVisor when installed), escape tests: needs Docker; the Compose overlay gives the worker the Docker socket; exports run Code in-process
+- [x] ⚠️ 4.2 Deep Agent step: very large files make every Save Point bigger
+- [x] ✅ 4.3 Helpers (nested trace, tokens and cost per Helper, approvals in the Inbox)
+- [x] ⚠️ 4.4 Skills library: scripts inside a skill aren't run (no shell)
+- [x] ✅ 4.5 Agent team patterns: supervisor, handoffs, plan-and-execute
+- [x] ⚠️ 4.6 Describe-it copilot: sends the whole flow each time; only checked with scripted replies in CI
+- [x] ⚠️ 4.7 Templates Research assistant and Inbox triage: no web search tool; triage's customer lookup and ticket are stand-ins
+
+### Phase 5: Platform 🚧 ([plan](docs/ROADMAP.md#phase-5-platform))
+
+**5.8 Platform groundwork** (first)
+
+- [ ] ⬜ Database migrations (Alembic): a baseline for today's schema, existing databases upgraded in place, safe when several processes start at once, `easychain db` commands
+- [ ] ⬜ Knowledge Base ingestion on the job queue (survives restarts, runs on workers)
+- [ ] ⬜ Postgres LISTEN/NOTIFY for run events (optional)
+
+**5.6 Users, roles, SSO, audit**
+
+- [ ] ⬜ Local accounts and sign-in; API keys for scripts
+- [ ] ⬜ Workspaces and roles (Owner, Editor, Runner, Viewer), enforced on every endpoint
+- [ ] ⬜ OIDC single sign-on, tested against a local test provider; setup docs for Okta, Google, Entra
+- [ ] ⬜ Per-workspace secret vaults
+- [ ] ⬜ Audit log of edits, publishes, secret changes and approvals
+- [ ] ⬜ Egress allow-list for fetches made by the server
+
+**5.1 Test Sets editor and Checks**
+
+- [ ] ⬜ Edit Test Set cases in the app (inputs, scripted answers, expected values)
+- [ ] ⬜ Checks: equals, contains, JSON schema, tool calls, route, cost and time budgets
+- [ ] ⬜ AI judge with a rubric (any model with a key; skipped without one)
+- [ ] ⬜ Trajectory checks (the order of tool calls)
+
+**5.2 Test Runs and baselines**
+
+- [ ] ⬜ Run a Test Set against a flow version and keep the results
+- [ ] ⬜ Compare with a baseline: better, same or worse per case; cost and time changes
+- [ ] ⬜ Repeat runs to measure flakiness with real models
+- [ ] ⬜ Manual CI workflow for real-model checks before a release (decision 5.5)
+
+**5.3 CI gate**
+
+- [ ] ⬜ `easychain eval` fails on a regression against the baseline
+- [ ] ⬜ GitHub Action and a guide for other CI systems; results posted as a summary
+
+**5.4 Environments and Publish**
+
+- [ ] ⬜ Environments (dev, staging, prod) with their own secrets, models and Knowledge Bases
+- [ ] ⬜ Promotion draft → staging → production only when the Test Run passes
+- [ ] ⬜ Publish: a stable API endpoint, a hosted chat page and an embeddable widget
+- [ ] ⬜ API keys and rate limits per key
+- [ ] ⬜ `easychain deploy`: a Docker image or Compose bundle (self-hosted, decision 5.3)
+
+**5.5 Model gateway**
+
+- [ ] ⬜ Budgets and alerts per environment
+- [ ] ⬜ Response caching, provider fallbacks and retries, rate-limit smoothing
+- [ ] ⬜ Cost per flow, run and user
+
+**5.7 Dashboards and tracing**
+
+- [ ] ⬜ Runs, errors, latency, tokens and cost over time, per flow and environment
+- [ ] ⬜ OpenTelemetry export (a span per step and per model or tool call)
+- [ ] ⬜ LangSmith tracing (with your key)
+
+**End of phase**
+
+- [ ] ⬜ The four "Done when" checks (decision 5.1), the Phase 5 report, the handover update
+
+### Phase 6: Ecosystem ⬜ ([plan](docs/ROADMAP.md#phase-6-ecosystem))
+
+- [ ] ⬜ 6.1 LangGraph.js export
+- [ ] ⬜ 6.2 Custom step registry
+- [ ] ⬜ 6.3 Import (LangGraph code, other builders)
+- [ ] ⬜ 6.4 Real-time collaboration
+- [ ] ⬜ 6.5 Prompt optimisation from Test Sets
+- [ ] ⬜ 6.6 Helm chart
+
+### Fix later
+
+Known issues, newest last. Each says where it will be handled; "backlog" means no phase has it
+yet.
+
+| # | Issue | Where it came from | Where it's handled |
+|---|---|---|---|
+| F1 | No login, roles or audit log: keep the server on localhost or behind your own access control | Phase 1 | 5.6 |
+| F2 | No egress allow-list for fetches the server makes (pages, OpenAPI documents, Web request tools) | Review | 5.6 |
+| F3 | Real models are never called in CI; agent templates need a real-model check before a release | Phase 1 | 5.2 (manual CI workflow) |
+| F4 | No database migrations (`create_all` plus a version number) | Phase 2 | 5.8 |
+| F5 | Knowledge Base ingestion runs in the API server; a restart fails documents mid-way | Phase 3 | 5.8 |
+| F6 | Live events between processes poll the database (50–250 ms) | Phase 2 | 5.8 (optional) |
+| F7 | Stopping a run lets a Code step that's mid-way finish in the background (its result is dropped) | Phase 2 | backlog (the sandbox can kill containers: wire Stop to it) |
+| F8 | "At most once" relies on the receiving service honouring `Idempotency-Key` when a worker dies after sending | Phase 2 | backlog (by design; documented) |
+| F9 | No queue triggers (SQS, Kafka, Redis Streams); email triggers poll IMAP once a minute | Phase 2 | backlog |
+| F10 | MCP: tools only, no OAuth, servers reconnected each run | Phase 3 | backlog |
+| F11 | OpenAPI import doesn't send optional query parameters | Phase 3 | backlog |
+| F12 | No OCR for scanned PDFs; one vector store (no Qdrant, Chroma, Pinecone) | Phase 3 | backlog |
+| F13 | Model prices known for listed models only | Phase 1 | 5.5 (model gateway cost tracking) |
+| F14 | The Code sandbox needs Docker; the Compose overlay gives the worker the Docker socket; a container per call adds start-up time | Phase 4 | backlog (warm pool, sidecar sandbox service, hosted sandboxes) |
+| F15 | Exported code runs Code steps in its own process (no sandbox) | Phase 4 | backlog (documented in the export) |
+| F16 | Deep Agent files live in the run's state: very large files make Save Points bigger | Phase 4 | backlog (store-backed `/memories/`) |
+| F17 | Skills can't run their scripts (no shell in Deep Agents) | Phase 4 | backlog |
+| F18 | The copilot sends the whole flow each time (long prompts for big flows) | Phase 4 | backlog |
+| F19 | Research assistant has no web search tool; Inbox triage's customer lookup and ticket are stand-ins | Phase 4 | backlog (add a search API or MCP tool; connect real APIs) |
+| F20 | Editor layouts for phones and tablets aren't tuned (the Inbox is) | Phase 1 | backlog |
+| F21 | "Under 5 minutes for a new user" is shown by a scripted test, not real users | Phase 1 | backlog (a usability test with 3–5 people) |
+| F22 | No labelled frames, version history view or visual diff on the canvas | Phase 1 | backlog (collaboration in 6.4) |
+| F23 | Server logs show a harmless Pydantic serialisation warning from `langchain-openai` structured replies | Phase 4 | backlog (upstream) |
 
 ## Licence
 

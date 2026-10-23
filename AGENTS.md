@@ -27,6 +27,9 @@ phase has a **"Done when"**. Its scope is summarised in
 4. Keep [docs/handover/status.md](docs/handover/status.md) and
    [docs/handover/state.yaml](docs/handover/state.yaml) current as work lands. They are the
    project's memory for the next person or agent.
+5. Keep the README's **build tracker** current in the same commit as the work: mark each step
+   ✅, 🚧 or ⬜ (⚠️ when it is done with a known issue), and add every known issue to its
+   **Fix later** table with where it will be handled (owner's decision 5.6).
 
 ## Repo map
 

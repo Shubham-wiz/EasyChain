@@ -3,7 +3,7 @@ project: Easy Chain
 repo: Shubham-wiz/EasyChain
 branch: main
 version: 0.4.0
-updated: 2026-10-21
+updated: 2026-10-23
 platforms: [linux, windows, macos]   # decision R.4; CI tests linux and windows
 
 push:
@@ -57,7 +57,19 @@ phases:
     copilot_model: "any model the user has a key for (decision 4.3)"
   - id: 5
     name: Platform
-    state: next   # after the owner answers the Phase 4 report's questions
+    state: in_progress   # owner accepted the recommended answers (decisions 5.1-5.5)
+    done_when: "draft -> staging -> production only when the Test Run passes in CI; a published flow serves an API endpoint and a chat widget with per-key rate limits; roles stop a Viewer editing and an Editor publishing to production; every change and publish is in the audit log"
+    order: ["5.8", "5.6", "5.1", "5.2", "5.3", "5.4", "5.5", "5.7"]
+    milestones:
+      "5.8 Platform groundwork": in_progress
+      "5.6 Users, roles, SSO, audit": pending
+      "5.1 Test Sets editor and Checks": pending
+      "5.2 Test Runs and baselines": pending
+      "5.3 CI gate": pending
+      "5.4 Environments and Publish": pending
+      "5.5 Model gateway": pending
+      "5.7 Dashboards and tracing": pending
+    tracker: "README.md#build-tracker (decision 5.6)"
     plan: docs/ROADMAP.md#phase-5-platform
   - id: 6
     name: Ecosystem
@@ -66,13 +78,8 @@ phases:
 decisions: docs/handover/decisions.md
 roadmap: docs/ROADMAP.md
 docs_index: docs/README.md
-waiting_for_review: true   # Phase 4 report, docs/phases/phase-4.md#questions-for-you
-open_questions:
-  - "Phase 5 Done when: the four proposed criteria (draft -> staging -> production gated by a Test Run; published API and chat widget with rate limits; roles; audit log)"
-  - "Single sign-on: which real provider for the final check (Okta, Google, Entra, or none for now)"
-  - "Publish: self-hosted only, or also a managed cloud"
-  - "LLM-as-judge checks: which model judges (recommended: any model with a key; skipped without one)"
-  - "Real-model checks before a release: by hand, or a manual CI workflow with a budgeted key"
+waiting_for_review: false
+open_questions: []
 
 tests:
   measured_at: 2026-10-21, end of Phase 4

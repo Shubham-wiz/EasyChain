@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-10-21 (Phase 4 is done and reported; waiting for the owner's review before Phase 5)._
+_Last updated: 2026-10-23 (Phase 5 started: the owner accepted the recommended answers; 5.8, the platform groundwork, is first)._
 
 ## In one paragraph
 
@@ -16,8 +16,10 @@ as well as Linux** (decisions R.4, R.5). **Phase 4 (Autopilot and teams)** added
 - the **describe-it copilot**;
 - the **Research assistant** and **Inbox triage** templates, each passing a 10-case Test Set.
 
-The [Phase 4 report](../phases/phase-4.md) ends with five questions about Phase 5. All phases are summarised in one place in [report.md](../report.md). **Work stops
-here until the owner answers them.**
+All phases are summarised in [report.md](../report.md). **Phase 5 (Platform) has started**: the
+owner accepted the recommended answers to the Phase 4 report's questions (decisions 5.1–5.5).
+Every step is marked in the README's [build tracker](../../README.md#build-tracker), with known
+issues under *Fix later* (decision 5.6).
 
 ## Pick up here
 
@@ -28,11 +30,9 @@ here until the owner answers them.**
    they are readable without admin rights:
    `curl -s https://api.github.com/repos/Shubham-wiz/EasyChain/check-runs/<job id>/annotations`
    (job ids: `…/actions/runs/<run id>/jobs`).
-3. **Waiting for the owner:** the Phase 4 report's
-   [questions](../phases/phase-4.md#questions-for-you) on Phase 5's "Done when", single
-   sign-on, publishing, LLM-as-judge checks and real-model checks. Record the answers in
-   [decisions.md](decisions.md) as 5.x, then start Phase 5 with migrations (5.8), as
-   [ROADMAP.md](../ROADMAP.md#phase-5-platform) orders it.
+3. **Phase 5** follows [ROADMAP.md](../ROADMAP.md#phase-5-platform) in this order: 5.8 (migrations,
+   Knowledge Base ingestion on the queue, optional LISTEN/NOTIFY), then 5.6, 5.1, 5.2, 5.3, 5.4,
+   5.5 and 5.7. The README's build tracker shows which steps are done.
 4. **Two review items are left on purpose** ([review.md](review.md)). The address filter for
    server-side fetches comes with the egress allow-list in Phase 5. Before a release, run the
    agent templates' Test Sets with a real model (`--real-model`).
@@ -47,7 +47,7 @@ here until the owner answers them.**
 | 3. Agents and knowledge | Agent step + add-ons, MCP, OpenAPI import, structured output, Knowledge Base, memory, all providers | Done | [phase-3.md](../phases/phase-3.md) |
 | Review fixes | Windows support; the findings of the 2026-10-04 review | Done (two items scheduled elsewhere, see review.md) | [review.md](review.md) |
 | 4. Autopilot and teams | Deep Agents, Helpers, Skills, sandboxes, multi-agent patterns, describe-it copilot | Done | [phase-4.md](../phases/phase-4.md) |
-| 5. Platform | Test Sets and Checks, Test Runs, CI gate, dashboards, model gateway, Publish, environments, roles, SSO | Next, after the owner's review | plan in [ROADMAP.md](../ROADMAP.md#phase-5-platform) |
+| 5. Platform | Test Sets and Checks, Test Runs, CI gate, dashboards, model gateway, Publish, environments, roles, SSO | **In progress** (see the README's build tracker) | plan in [ROADMAP.md](../ROADMAP.md#phase-5-platform) |
 | 6. Ecosystem | LangGraph.js export, custom module registry, import, collaboration, prompt optimisation, Helm | Not started | |
 
 `git log --oneline` lists every commit.
@@ -69,11 +69,10 @@ Compose, and **Windows** (Python suite, CLI and worker, web checks, the app serv
 
 ## Next
 
-1. The owner answers the [Phase 4 report's questions](../phases/phase-4.md#questions-for-you).
-2. **Phase 5 (Platform)**, in the order in [ROADMAP.md](../ROADMAP.md#phase-5-platform):
-   migrations, then users, roles, SSO and the audit log (with the egress allow-list), then Test
-   Sets, Test Runs and the CI gate, then environments, Publish and the model gateway, then
-   dashboards and tracing.
+1. **5.8 Platform groundwork:** database migrations with Alembic, Knowledge Base ingestion on the
+   job queue, and (optionally) LISTEN/NOTIFY for run events.
+2. Then 5.6 (users, roles, SSO, audit, egress allow-list), 5.1–5.3 (Test Sets, Test Runs, CI
+   gate), 5.4–5.5 (environments, Publish, model gateway) and 5.7 (dashboards and tracing).
 
 ## GitHub
 
