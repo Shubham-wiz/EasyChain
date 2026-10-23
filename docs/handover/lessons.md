@@ -77,6 +77,7 @@ whenever something takes more than a few minutes to understand.
 | A test flow that ran in the API test went to `error` from a webhook | Input straight to Output is a check error ("nothing would happen"); a background run only says so when it finishes | Put a step between them, and wait for the run in the test |
 | An e2e test needed something only the second web server knew (its home folder) | `playwright.config.ts` is loaded again in each worker, so a `mkdtemp` there gives each process a different folder | Set it once in `process.env` when unset (`E2E_AUTH_HOME`); workers inherit the environment |
 | An axe check failed with "target-size" (a link 22 px from an input) after wrapping a form in a `<fieldset>` | Tailwind's `space-y-*` puts its margin on the children; a `display: contents` fieldset drops it, and `m-0` overrides it (the utility has zero specificity) | `Locked` in `ui.tsx`: a block fieldset with `mx-0 min-w-0 border-0 p-0` |
+| An egress test passed here and failed in CI ("Connection refused" to `localhost`) | The runner resolves `localhost` to `::1` first; the connect-time guard connected only to the first address, and the test server listens on 127.0.0.1 | `GuardedBackend` tries each checked address in turn, as a plain connection does (`egress._candidates`); a test resolves a name to `::1` then `127.0.0.1` |
 
 ## Windows
 

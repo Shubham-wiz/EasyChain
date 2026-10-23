@@ -165,6 +165,23 @@ def test_a_name_that_changes_address_after_the_check_is_caught(
         client.get(f"http://rebind.test:{site}/ok")
 
 
+def test_a_name_with_several_addresses_tries_each_like_a_plain_connection(
+    site: int, monkeypatch: pytest.MonkeyPatch
+):
+    """``localhost`` is often ::1 first; the server here only answers on 127.0.0.1."""
+    monkeypatch.setattr(egress, "resolve", lambda host, port: [ip("::1"), ip("127.0.0.1")])
+    policy = EgressPolicy("allow-list", ("several.test",))
+    with egress.client(policy, trust_env=False) as client:
+        assert client.get(f"http://several.test:{site}/ok").status_code == 200
+    # Not listed by name: every address it has is checked, and one internal one refuses.
+    monkeypatch.setattr(egress, "resolve", lambda host, port: [ip("93.184.216.34"), ip("10.0.0.1")])
+    with (
+        egress.client(EgressPolicy("public"), trust_env=False) as client,
+        pytest.raises(EgressBlocked, match=r"10\.0\.0\.1"),
+    ):
+        client.get(f"http://mixed.test:{site}/ok")
+
+
 def test_connections_go_to_the_address_that_was_checked(site: int, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(egress, "resolve", lambda host, port: [ip("127.0.0.1")])
     policy = EgressPolicy("allow-list", ("pinned.test",))

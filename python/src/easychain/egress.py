@@ -214,13 +214,21 @@ def check_url(url: str | httpx.URL, policy: EgressPolicy | None = None) -> None:
 
 
 class GuardedBackend(httpcore.NetworkBackend):
-    """Checks the address actually connected to, and connects to exactly that address."""
+    """Checks the addresses a name resolves to as it connects, and connects to exactly those
+    (each in turn, as a plain connection would)."""
 
     def __init__(self, inner: httpcore.NetworkBackend, policy: EgressPolicy):
         self.inner, self.policy = inner, policy
 
     def connect_tcp(self, host: str, port: int, *args: Any, **kwargs: Any) -> Any:
-        return self.inner.connect_tcp(_pinned(self.policy, host, port), port, *args, **kwargs)
+        failure: Exception | None = None
+        for address in _candidates(self.policy, host, port):
+            try:
+                return self.inner.connect_tcp(address, port, *args, **kwargs)
+            except httpcore.ConnectError as exc:
+                failure = exc
+        assert failure is not None
+        raise failure
 
     def connect_unix_socket(self, *args: Any, **kwargs: Any) -> Any:
         return self.inner.connect_unix_socket(*args, **kwargs)
@@ -236,8 +244,14 @@ class AsyncGuardedBackend(httpcore.AsyncNetworkBackend):
     async def connect_tcp(self, host: str, port: int, *args: Any, **kwargs: Any) -> Any:
         import anyio
 
-        address = await anyio.to_thread.run_sync(_pinned, self.policy, host, port)
-        return await self.inner.connect_tcp(address, port, *args, **kwargs)
+        failure: Exception | None = None
+        for address in await anyio.to_thread.run_sync(_candidates, self.policy, host, port):
+            try:
+                return await self.inner.connect_tcp(address, port, *args, **kwargs)
+            except httpcore.ConnectError as exc:
+                failure = exc
+        assert failure is not None
+        raise failure
 
     async def connect_unix_socket(self, *args: Any, **kwargs: Any) -> Any:
         return await self.inner.connect_unix_socket(*args, **kwargs)
@@ -246,19 +260,19 @@ class AsyncGuardedBackend(httpcore.AsyncNetworkBackend):
         await self.inner.sleep(seconds)
 
 
-def _pinned(policy: EgressPolicy, host: str, port: int) -> str:
-    """The address to connect to for ``host``: checked, so it can't change in between."""
+def _candidates(policy: EgressPolicy, host: str, port: int) -> list[str]:
+    """The addresses to connect to for ``host``, checked now, so they can't change before
+    connecting. Like the URL check, one address that isn't allowed is enough to refuse."""
     if policy.mode == "open":
-        return host
+        return [host]
     addresses = resolve(host, port)
     if not addresses:
-        return host
-    if policy.name_allowed(host):
-        return str(addresses[0])
-    for address in addresses:
-        if policy.address_allowed(address):
-            return str(address)
-    raise EgressBlocked(policy._why(host, addresses[0]))
+        return [host]  # the connection fails on its own, with the usual message
+    if not policy.name_allowed(host):
+        for address in addresses:
+            if not policy.address_allowed(address):
+                raise EgressBlocked(policy._why(host, address))
+    return [str(a) for a in addresses]
 
 
 def _request_hook(policy: EgressPolicy) -> Any:
