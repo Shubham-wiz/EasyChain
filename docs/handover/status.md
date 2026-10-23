@@ -16,7 +16,7 @@ as well as Linux** (decisions R.4, R.5). **Phase 4 (Autopilot and teams)** added
 - the **describe-it copilot**;
 - the **Research assistant** and **Inbox triage** templates, each passing a 10-case Test Set.
 
-The [Phase 4 report](../phases/phase-4.md) ends with five questions about Phase 5. **Work stops
+The [Phase 4 report](../phases/phase-4.md) ends with five questions about Phase 5. All phases are summarised in one place in [report.md](../report.md). **Work stops
 here until the owner answers them.**
 
 ## Pick up here

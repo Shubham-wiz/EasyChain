@@ -46,6 +46,7 @@ Start with the [project README](../README.md). This page lists every document.
 
 | Document | What it covers |
 |---|---|
+| [report.md](report.md) ([PDF](easy-chain-report.pdf)) | **All phases in one report**: what each phase delivered and its evidence, the plan for Phases 5 and 6, quality over time, decisions, risks, and the open questions |
 | [phases/phase-0-1.md](phases/phase-0-1.md) | Phases 0 and 1 report: foundations and the visual editor |
 | [phases/phase-2.md](phases/phase-2.md) | Phase 2 report: the durable runtime |
 | [phases/phase-3.md](phases/phase-3.md) | Phase 3 report: agents and knowledge |
