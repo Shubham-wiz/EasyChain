@@ -226,9 +226,7 @@ def create_app(
             # Documents with a reading job are a worker's to finish. Any others still marked
             # busy were being read by an older Easy Chain inside its API server: say so.
             keep = await db.ingesting()
-            await asyncio.to_thread(
-                lambda: KnowledgeStore().setup().fail_unfinished(CUT_OFF, keep)
-            )
+            await asyncio.to_thread(lambda: KnowledgeStore().setup().fail_unfinished(CUT_OFF, keep))
         except Exception as exc:
             log.warning("Couldn't check the Knowledge Base documents: %s", exc)
         resources = await open_resources(checkpoint_url(db_url))

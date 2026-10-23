@@ -224,9 +224,11 @@ class Worker:
             message = "Reading this hit an unexpected problem. Remove it and add it again."
             with contextlib.suppress(Exception):
                 await asyncio.to_thread(
-                    lambda: KnowledgeStore()
-                    .setup()
-                    .set_document(job["run_id"], status="error", error=message)
+                    lambda: (
+                        KnowledgeStore()
+                        .setup()
+                        .set_document(job["run_id"], status="error", error=message)
+                    )
                 )
             await self.db.finish_job(job["id"], self.name, "failed")
             return

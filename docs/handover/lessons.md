@@ -97,5 +97,6 @@ whenever something takes more than a few minutes to understand.
 |---|---|---|
 | `docker compose up` failed pulling `postgres:16-alpine` | Docker Hub rate limit (HTTP 429) in the build sandbox, with the ECR mirror blocked | Test the image with `--network host` against a host Postgres. CI runs the full stack. |
 | `git push` returned HTTP 403 | The Claude GitHub App has no access to the repository | The owner connects GitHub and installs the app (see [status.md](status.md#github) and "GitHub access" above) |
+| A commit went in with unformatted code | The lint check was piped through `tail` (which hid its exit code), and the commit didn't depend on lint passing | Chain the commit on lint: `pnpm lint && git commit …`; never pipe a check whose exit code matters |
 | The 13 sandbox tests were skipped after the build container restarted | Its Docker daemon wasn't running (`Cannot connect to the Docker daemon`) | Start it (`dockerd &`) and run `tests/test_sandbox.py` again; CI's Linux runners have Docker |
 | The e2e job failed at "playwright install" (`Playwright does not support chromium on ubuntu26.04-x64`) | GitHub moved `ubuntu-latest` to Ubuntu 26.04; Playwright 1.56 has no browser build for it | The e2e job runs on `ubuntu-24.04`. Move it back once the pinned Playwright supports the newer image |
