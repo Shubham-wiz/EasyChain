@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import time
 import uuid
 from pathlib import Path
@@ -25,9 +26,13 @@ import sqlalchemy as sa
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-SCHEMA_VERSION = 1
+log = logging.getLogger("easychain.db")
+
 # Advisory lock ids (Postgres) that keep processes starting together from racing.
 SCHEMA_LOCK = 0x45415359  # "EASY"
+
+# The tables, as the latest migration (server/migrations/versions) leaves them. A change here
+# needs a migration; tests/test_migrations.py checks that the two agree.
 
 metadata = sa.MetaData()
 
@@ -158,6 +163,7 @@ settings = sa.Table(
     sa.Column("value", sa.JSON),
 )
 
+# Easy Chain 0.4.0 and earlier kept a schema number here; migrations replaced it.
 meta = sa.Table(
     "easychain_meta",
     metadata,
@@ -216,6 +222,8 @@ class Database:
         self.reader = engine.execution_options(easychain_read=True)
         # SQLite has one writer at a time; this keeps this process's writers in line.
         self._write_lock = asyncio.Lock() if self.dialect == "sqlite" else None
+        # The migrations that ran when it connected.
+        self.migrated: list[str] = []
 
     # ── setup ────────────────────────────────────────────────────────────────
 
@@ -229,26 +237,23 @@ class Database:
         if engine.dialect.name == "sqlite":
             _sqlite_setup(engine)
         db = cls(url, engine)
-        await db.create()
+        db.migrated = await db.create()
         return db
 
-    async def create(self) -> None:
+    async def create(self) -> list[str]:
+        """Make or upgrade the tables (server/migrations). Processes that start together take
+        turns: the first upgrades, the others find nothing left to do."""
+        from . import migrations
+
         async with self.engine.begin() as conn:
             if self.dialect == "postgresql":
-                # Several processes (the API and workers) may start at once; one creates the tables.
                 await conn.execute(
                     sa.text("SELECT pg_advisory_xact_lock(:key)"), {"key": SCHEMA_LOCK}
                 )
-            await conn.run_sync(metadata.create_all)
-            found = (
-                await conn.execute(sa.select(meta.c.value).where(meta.c.key == "schema"))
-            ).scalar()
-            if found is None:
-                await conn.execute(meta.insert().values(key="schema", value=str(SCHEMA_VERSION)))
-            elif int(found) > SCHEMA_VERSION:
-                raise RuntimeError(
-                    f"The database was made by a newer Easy Chain (schema {found}); upgrade Easy Chain."
-                )
+            ran = await conn.run_sync(migrations.upgrade)
+        if ran:
+            log.info("Upgraded the database: %s", "; ".join(ran))
+        return ran
 
     async def close(self) -> None:
         await self.engine.dispose()

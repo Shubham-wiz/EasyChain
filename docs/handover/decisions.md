@@ -24,6 +24,7 @@ asked again.
 | 5.4 | The AI judge in Checks | **Any model with a key** (the copilot's rule); with no key, judge checks are skipped with a note, never faked | owner: same |
 | 5.5 | Real-model checks before a release | A **manual CI workflow** with a budgeted key stored as a repository secret, so the result is recorded | owner: same |
 | 5.6 | Tracking the build | The README has a **build tracker**: every step of every phase marked done, in progress or not started, and a **Fix later** list of known issues with where each is handled. It is updated in the same commit as the work. | owner: "please make sure u mark every step in readme, so we can go fix things later" |
+| 5.7 | Database migrations | **Alembic**, run by every process when it starts (under the schema lock), so upgrading Easy Chain upgrades the database; `easychain db status` and `upgrade` for operators. Migrations are numbered (`0001`, `0002`, …). A database made by 0.4.0 or earlier is stamped at the baseline (`0001`, the same tables). A database a newer Easy Chain upgraded is refused. | build |
 
 ## Phase 4 (answers to the Phase 3 report's questions)
 
@@ -70,7 +71,7 @@ asked again.
 | 2.6 | For Each body | One step per item; several steps per item go in a Sub-flow | build: maps to one `Send` target, so the canvas shows what runs per item |
 | 2.7 | Event streaming | The API tails run events from the database (polling plus an in-process wake-up), not LISTEN/NOTIFY | build: the same on SQLite and Postgres, and survives API restarts |
 | 2.8 | Side effects | POST/PUT/PATCH/DELETE requests and Code steps marked "at most once" record their result in the LangGraph store under a stable key, and send it as `Idempotency-Key` | build: needed for the "no duplicate side effects" Done-when |
-| 2.9 | Schema migrations | `create_all` plus a schema version check; Alembic arrives with the first schema change | build |
+| 2.9 | Schema migrations | `create_all` plus a schema version check; Alembic arrives with the first schema change | build; replaced by 5.7 |
 | 2.10 | Ask a Human default `save_as` | `human_answer` (not `review`, which collided with a common step id) | build |
 
 ## Phases 0 and 1

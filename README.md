@@ -290,9 +290,9 @@ updated in the same commit as the work (decision 5.6). Each phase's report has t
 
 ### Phase 5: Platform 🚧 ([plan](docs/ROADMAP.md#phase-5-platform))
 
-**5.8 Platform groundwork** (first)
+**5.8 Platform groundwork** 🚧 (first)
 
-- [ ] ⬜ Database migrations (Alembic): a baseline for today's schema, existing databases upgraded in place, safe when several processes start at once, `easychain db` commands
+- [x] ✅ Database migrations (Alembic): a baseline for today's schema, existing databases upgraded in place, safe when several processes start at once, `easychain db status` / `upgrade`
 - [ ] ⬜ Knowledge Base ingestion on the job queue (survives restarts, runs on workers)
 - [ ] ⬜ Postgres LISTEN/NOTIFY for run events (optional)
 
@@ -367,7 +367,7 @@ yet.
 | F1 | No login, roles or audit log: keep the server on localhost or behind your own access control | Phase 1 | 5.6 |
 | F2 | No egress allow-list for fetches the server makes (pages, OpenAPI documents, Web request tools) | Review | 5.6 |
 | F3 | Real models are never called in CI; agent templates need a real-model check before a release | Phase 1 | 5.2 (manual CI workflow) |
-| F4 | No database migrations (`create_all` plus a version number) | Phase 2 | 5.8 |
+| F4 | ~~No database migrations (`create_all` plus a version number)~~ | Phase 2 | ✅ Fixed in 5.8 (Alembic) |
 | F5 | Knowledge Base ingestion runs in the API server; a restart fails documents mid-way | Phase 3 | 5.8 |
 | F6 | Live events between processes poll the database (50–250 ms) | Phase 2 | 5.8 (optional) |
 | F7 | Stopping a run lets a Code step that's mid-way finish in the background (its result is dropped) | Phase 2 | backlog (the sandbox can kill containers: wire Stop to it) |

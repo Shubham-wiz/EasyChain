@@ -370,6 +370,64 @@ def cmd_worker(args: argparse.Namespace) -> int:
     return _platform.run(go())
 
 
+def cmd_db(args: argparse.Namespace) -> int:
+    """Look at or upgrade the run database (Easy Chain also upgrades it when it starts)."""
+    import sqlalchemy as sa
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from .server import migrations
+    from .server.app import default_database_url
+    from .server.db import Database, async_url
+
+    home = Path(args.home or os.environ.get("EASYCHAIN_HOME") or Path.home() / ".easychain")
+    url = args.database_url or default_database_url(home)
+    shown = sa.engine.make_url(url).render_as_string(hide_password=True)
+    print(f"Database: {shown}")
+    if args.action == "status" and url.startswith("sqlite") and ":///" in url:
+        path = url.split(":///", 1)[1]
+        if path != ":memory:" and not Path(path).exists():
+            print("There is no database here yet. Easy Chain makes it when it first starts.")
+            return 0
+
+    async def status() -> int:
+        engine = create_async_engine(async_url(url))
+        try:
+            async with engine.connect() as conn:
+                at = await conn.run_sync(migrations.current)
+                todo = await conn.run_sync(migrations.pending)
+        except migrations.NewerDatabase as exc:
+            print(exc)
+            return 1
+        finally:
+            await engine.dispose()
+        print(f"At migration: {at or 'none (made before migrations, or empty)'}")
+        print(f"Latest migration: {migrations.head()}")
+        if not todo:
+            print("Up to date.")
+        else:
+            print(f"{len(todo)} migration(s) to run (`easychain db upgrade`, or start Easy Chain):")
+            for step in todo:
+                print(f"  {step}")
+        return 0
+
+    async def upgrade() -> int:
+        try:
+            db = await Database.connect(url)
+        except migrations.NewerDatabase as exc:
+            print(exc)
+            return 1
+        await db.close()
+        if db.migrated:
+            print("Upgraded:")
+            for step in db.migrated:
+                print(f"  {step}")
+        else:
+            print("Already up to date.")
+        return 0
+
+    return _platform.run(status() if args.action == "status" else upgrade())
+
+
 def cmd_test(args: argparse.Namespace) -> int:
     from .testsets import run_test_set
 
@@ -518,6 +576,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--reload", action="store_true")
     p.add_argument("--verbose", action="store_true")
     p.set_defaults(func=cmd_dev)
+
+    p = sub.add_parser("db", help="look at or upgrade the run database (migrations)")
+    p.add_argument("action", choices=["status", "upgrade"])
+    p.add_argument("--home", help="folder for secrets and uploads (~/.easychain)")
+    p.add_argument("--database-url", help="sqlite:///path.db or postgresql://… (as the API uses)")
+    p.set_defaults(func=cmd_db)
 
     p = sub.add_parser("worker", help="run queued flow runs (scale out with more workers)")
     p.add_argument("--home", help="folder for secrets and uploads (~/.easychain)")
