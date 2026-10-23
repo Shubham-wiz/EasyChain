@@ -139,7 +139,7 @@ These are scheduled inside the phases above, or kept here until they are.
 | Gap | Where it's handled |
 |---|---|
 | Code steps unsandboxed | Done in 4.1 (Docker sandbox; exported code still runs Code in-process) |
-| No login, roles or audit | Sign-in and roles done in 5.6a; the audit log in 5.6c |
+| No login, roles or audit | Done in 5.6a–c (sign-in, roles, the audit log) |
 | Schema migrations (`create_all` only) | Done in 5.8 (Alembic) |
 | Knowledge Base ingestion runs in the API process | Done in 5.8 (workers, from the job queue) |
 | Event streaming polls the database | Done in 5.8 for Postgres (LISTEN/NOTIFY); SQLite polls |

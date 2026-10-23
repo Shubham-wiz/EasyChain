@@ -167,7 +167,8 @@ PERMISSIONS: dict[tuple[str, str], str] = {
     # webhooks: their own secret token (in the address) is the check
     ("POST", "/api/hooks/{trigger_id}"): PUBLIC,
     ("POST", "/api/hooks/{trigger_id}/upload"): PUBLIC,
-    # people and keys
+    # people and keys, and what everyone did
+    ("GET", "/api/audit"): "owner",
     ("GET", "/api/people"): "owner",
     ("POST", "/api/people"): "owner",
     ("PATCH", "/api/people/{user_id}"): "owner",

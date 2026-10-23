@@ -241,6 +241,32 @@ api_keys = sa.Table(
     sa.Column("revoked_at", sa.Float, nullable=True),
 )
 
+# ── the audit log (Phase 5.6c, migration 0004) ──────────────────────────────
+
+# What people changed, newest last. Append-only: database triggers refuse UPDATE and DELETE
+# (server/audit.py records it; docs/audit.md).
+audit_log = sa.Table(
+    "audit_log",
+    metadata,
+    sa.Column(
+        "id",
+        sa.BigInteger().with_variant(sa.Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    ),
+    sa.Column("at", sa.Float, index=True),
+    sa.Column("workspace_id", sa.String(40)),
+    sa.Column("actor_id", sa.String(40), nullable=True, index=True),
+    # how the person shows (name or email), kept as it was then
+    sa.Column("actor", sa.String(320)),
+    # session, key, local (sign-in off), trigger (a webhook), cli
+    sa.Column("via", sa.String(20)),
+    sa.Column("action", sa.String(60), index=True),
+    sa.Column("target", sa.String(320), nullable=True, index=True),
+    sa.Column("detail", sa.JSON),
+    sa.Column("address", sa.String(100), nullable=True),
+)
+
 # Easy Chain 0.4.0 and earlier kept a schema number here; migrations replaced it.
 meta = sa.Table(
     "easychain_meta",
@@ -1006,6 +1032,45 @@ class Database:
                 await conn.execute(sa.select(settings.c.value).where(settings.c.key == key))
             ).scalar()
         return default if value is None else value
+
+    # ── the audit log ───────────────────────────────────────────────────────
+
+    async def add_audit(self, **entry: Any) -> int:
+        async with self._tx() as conn:
+            done = await conn.execute(
+                audit_log.insert().values(at=entry.pop("at", None) or time.time(), **entry)
+            )
+            return int(done.inserted_primary_key[0])
+
+    async def list_audit(
+        self,
+        *,
+        actor_id: str | None = None,
+        action: str | None = None,
+        target: str | None = None,
+        since: float | None = None,
+        before: int | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Newest first. ``action`` may end in "." for a kind (``flow.``); ``before`` is an id."""
+        query = sa.select(audit_log)
+        if actor_id:
+            query = query.where(audit_log.c.actor_id == actor_id)
+        if action:
+            query = query.where(
+                audit_log.c.action.startswith(action, autoescape=True)
+                if action.endswith(".")
+                else audit_log.c.action == action
+            )
+        if target:
+            query = query.where(audit_log.c.target == target)
+        if since is not None:
+            query = query.where(audit_log.c.at >= since)
+        if before is not None:
+            query = query.where(audit_log.c.id < before)
+        query = query.order_by(audit_log.c.id.desc()).limit(max(1, min(limit, 1000)))
+        async with self.reader.connect() as conn:
+            return [dict(r._mapping) for r in await conn.execute(query)]
 
     async def set_setting(self, key: str, value: Any) -> None:
         async with self._tx() as conn:

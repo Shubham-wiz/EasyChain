@@ -9,6 +9,7 @@ Start with the [project README](../README.md). This page lists every document.
 | [flow-spec.md](flow-spec.md) | The flow file format (YAML): settings, Flow Data, steps, connections, placeholders |
 | [runs.md](runs.md) | How runs work: workers, Save Points, Ask a Human and the Inbox, triggers, notifications, the runs API and events |
 | [agents.md](agents.md) | Agents and tools: steps as tools, Add-ons, MCP servers, Import an API, structured answers, testing agents; Deep Agents and Helpers |
+| [audit.md](audit.md) | The audit log: what is recorded and what never is, append-only, reading it in the app, the CLI and the API |
 | [people.md](people.md) | People and sign-in: when it's on, the first account, roles, adding people, keys for scripts, the API |
 | [knowledge.md](knowledge.md) | Knowledge Bases: adding documents, search modes, citations, storage, the API |
 | [patterns.md](patterns.md) | Agent team patterns: supervisor, handoffs and plan-and-execute, made of ordinary steps |

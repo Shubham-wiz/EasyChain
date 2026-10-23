@@ -649,6 +649,28 @@ export interface ApiKeyInfo {
   mine: boolean;
 }
 
+/** One entry of the audit log (server/audit.py): who changed what, and when. */
+export interface AuditEntry {
+  id: number;
+  at: number;
+  actor: string;
+  actor_id: string | null;
+  via: "session" | "key" | "local" | "trigger" | "cli" | "none";
+  action: string;
+  target: string | null;
+  detail: Record<string, unknown>;
+  address: string | null;
+  /** "Ann saved flow support-bot" */
+  text: string;
+}
+
+export interface AuditPage {
+  entries: AuditEntry[];
+  /** Pass as `before` for older entries; null when there are none. */
+  next: number | null;
+  kinds: { id: string; label: string }[];
+}
+
 /** A key just made: `key` is shown this once. */
 export interface NewApiKey {
   id: string;

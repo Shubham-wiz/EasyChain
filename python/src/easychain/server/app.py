@@ -56,6 +56,7 @@ from ..templates import list_templates, load_template
 from ..templates.samples import ensure_sample_knowledge, ensure_samples
 from ..testsets import add_cases
 from . import notify
+from .audit import WEBHOOK, AuditMiddleware, add_audit_routes, note
 from .auth import auth_mode, authorize, principal_of, require
 from .auth_api import add_auth_routes
 from .cron import CronError, next_fire
@@ -274,6 +275,8 @@ def create_app(
     )
     app.state.flows, app.state.vault = flows, vault
     add_auth_routes(app)
+    add_audit_routes(app)
+    app.add_middleware(AuditMiddleware)
     add_knowledge_routes(app, home_path)
     origins = os.environ.get(
         "EASYCHAIN_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
@@ -386,7 +389,7 @@ def create_app(
         return flows.list()
 
     @app.post("/api/flows", status_code=201)
-    def create_flow(req: CreateFlowRequest) -> dict[str, Any]:
+    def create_flow(req: CreateFlowRequest, request: Request) -> dict[str, Any]:
         if req.template:
             try:
                 spec = load_template(req.template)
@@ -409,6 +412,7 @@ def create_app(
         else:
             spec = blank_flow(req.name or "My flow")
         flow_id = flows.create(spec)
+        note(request, flow_id, name=spec.name)
         return {"id": flow_id, "spec": spec_json(spec)}
 
     def resolve_flow(flow_id: str) -> FlowSpec | None:
@@ -780,6 +784,7 @@ def create_app(
             )
         except (Busy, NotFound, Invalid) as exc:
             raise hub_errors(exc) from exc
+        note(request, req.flow_id or f"a flow given in full ({spec.name})", run=run_id)
         if req.background:
             run = await hub().db.get_run(run_id)
             return JSONResponse({"run_id": run_id, "thread_id": run["thread_id"]}, status_code=202)
@@ -949,6 +954,7 @@ def create_app(
             item = await hub().answer(item_id, answer, _answered_by(request, req.by))
         except (Busy, NotFound, Invalid) as exc:
             raise hub_errors(exc) from exc
+        note(request, run=item["run_id"], answer=req.action)
         return {"answered": True, "run_id": item["run_id"]}
 
     # ── triggers ────────────────────────────────────────────────────────────
@@ -1001,9 +1007,10 @@ def create_app(
         return [trigger_view(t) for t in await hub().db.list_triggers(flow_id)]
 
     @app.post("/api/triggers", status_code=201)
-    async def create_trigger(req: TriggerRequest) -> dict[str, Any]:
+    async def create_trigger(req: TriggerRequest, request: Request) -> dict[str, Any]:
         cfg, next_at = await _validated_trigger(req, req.flow_id)
         trig = await hub().db.create_trigger(req.flow_id, req.kind, cfg, req.name or "", next_at)
+        note(request, req.flow_id, trigger=trig["id"], kind=req.kind)
         return trigger_view(trig)
 
     @app.patch("/api/triggers/{trigger_id}")
@@ -1064,6 +1071,7 @@ def create_app(
             run_id = await fire_trigger(hub(), trig, data)
         except (Busy, NotFound, Invalid) as exc:
             raise hub_errors(exc) from exc
+        note(request, actor=WEBHOOK, flow=trig["flow_id"], run=run_id)
         return {"run_id": run_id}
 
     @app.post("/api/hooks/{trigger_id}/upload", status_code=202)
@@ -1081,6 +1089,7 @@ def create_app(
         run_id = await fire_trigger(
             hub(), {**trig, "config": {**cfg, "inputs": cfg.get("inputs")}}, data
         )
+        note(request, actor=WEBHOOK, flow=trig["flow_id"], run=run_id, file=safe)
         return {"run_id": run_id, "file": str(target)}
 
     # ── the describe-it copilot ─────────────────────────────────────────────

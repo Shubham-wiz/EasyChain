@@ -454,6 +454,20 @@ def _with_accounts(args: argparse.Namespace, work: Any) -> int:
     return _platform.run(go())
 
 
+async def _cli_audit(accounts: Any, action: str, target: str, **detail: Any) -> None:
+    """Changes made on the command line are in the audit log too (by "the command line")."""
+    await accounts.db.add_audit(
+        workspace_id="default",
+        actor_id=None,
+        actor="the command line",
+        via="cli",
+        action=action,
+        target=target,
+        detail=detail,
+        address=None,
+    )
+
+
 def _new_password(args: argparse.Namespace) -> str | None:
     """From stdin (--password-stdin), or asked for twice; None (and a message) if unusable."""
     from .server.auth import password_problem
@@ -500,21 +514,27 @@ def cmd_users(args: argparse.Namespace) -> int:
                 print("There are accounts already: sign in, or ask an Owner.", file=sys.stderr)
                 return 1
             # Replaces the code the server printed when it started.
+            await _cli_audit(accounts, "auth.setup_code", "the first account")
             print(code)
             return 0
         if args.action == "add":
             password = _new_password(args)
             if password is None:
                 return 1
-            await accounts.create(args.email, args.name or "", password, args.role)
+            made = await accounts.create(args.email, args.name or "", password, args.role)
+            await _cli_audit(accounts, "person.add", made["email"], role=args.role)
             print(f"Added {args.email.strip().lower()} as {ROLE_LABELS[args.role]}.")
             return 0
         person = await find(accounts)
         if args.action == "role":
             await accounts.update(person["id"], role=args.role)
+            await _cli_audit(accounts, "person.change", person["email"], role=args.role)
             print(f"{person['email']} is now {ROLE_LABELS[args.role]}.")
         elif args.action in ("disable", "enable"):
             await accounts.update(person["id"], disabled=args.action == "disable")
+            await _cli_audit(
+                accounts, "person.change", person["email"], disabled=args.action == "disable"
+            )
             state = "switched off and signed out" if args.action == "disable" else "switched on"
             print(f"{person['email']} is {state}.")
         elif args.action == "password":
@@ -522,9 +542,11 @@ def cmd_users(args: argparse.Namespace) -> int:
             if password is None:
                 return 1
             await accounts.set_password(person["id"], password)
+            await _cli_audit(accounts, "person.change", person["email"], password="set")
             print(f"New password set for {person['email']}; their browsers are signed out.")
         elif args.action == "remove":
             await accounts.remove(person["id"])
+            await _cli_audit(accounts, "person.remove", person["email"])
             print(f"Removed {person['email']}; their keys no longer work.")
         return 0
 
@@ -547,6 +569,7 @@ def cmd_keys(args: argparse.Namespace) -> int:
         if args.action == "revoke":
             if not await accounts.revoke_key(args.target):
                 raise AccountError(f"There's no key {args.target} (or it's already revoked).")
+            await _cli_audit(accounts, "key.revoke", args.target)
             print(f"Revoked key {args.target}.")
             return 0
         person = await accounts.by_email(args.target) if args.target else None
@@ -566,6 +589,14 @@ def cmd_keys(args: argparse.Namespace) -> int:
         made = await accounts.create_key(
             person["id"], args.name, args.role or (member or {}).get("role", "viewer")
         )
+        await _cli_audit(
+            accounts,
+            "key.create",
+            made["name"],
+            key=made["id"],
+            role=made["role"],
+            person=person["email"],
+        )
         # Only the key on stdout, so a script can capture it; it isn't shown again.
         print(made["key"])
         print(
@@ -578,6 +609,46 @@ def cmd_keys(args: argparse.Namespace) -> int:
         what = "EMAIL" if args.action == "create" else "KEY_ID"
         print(f"easychain keys {args.action} {what}", file=sys.stderr)
         return 2
+    return _with_accounts(args, work)
+
+
+def cmd_audit(args: argparse.Namespace) -> int:
+    """What people changed, newest first (the audit log: docs/audit.md)."""
+    import datetime as dt
+
+    from .server.audit import describe
+
+    def when(text: str) -> float:
+        try:
+            moment = dt.datetime.fromisoformat(text)
+        except ValueError:
+            raise SystemExit(
+                f"--since takes a date or time, like 2026-10-01 or 2026-10-01T09:00 ({text!r})"
+            ) from None
+        return (moment if moment.tzinfo else moment.astimezone()).timestamp()
+
+    async def work(accounts: Any) -> int:
+        person = await accounts.by_email(args.person) if args.person else None
+        if args.person and person is None:
+            print(f"There's no account for {args.person}.", file=sys.stderr)
+            return 1
+        entries = await accounts.db.list_audit(
+            actor_id=person["id"] if person else None,
+            action=args.kind,
+            target=args.target,
+            since=when(args.since) if args.since else None,
+            limit=args.limit,
+        )
+        for entry in reversed(entries):
+            if args.json:
+                print(json.dumps(entry, ensure_ascii=False, default=str))
+            else:
+                at = dt.datetime.fromtimestamp(entry["at"]).isoformat(sep=" ", timespec="seconds")
+                print(f"{at}  {describe(entry)}")
+        if not entries and not args.json:
+            print("Nothing in the audit log matches.")
+        return 0
+
     return _with_accounts(args, work)
 
 
@@ -764,6 +835,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--home", help="folder for secrets and uploads (~/.easychain)")
     p.add_argument("--database-url", help="sqlite:///path.db or postgresql://… (as the API uses)")
     p.set_defaults(func=cmd_keys)
+
+    p = sub.add_parser("audit", help="what people changed, newest last (the audit log)")
+    p.add_argument("--person", help="only what this email did")
+    p.add_argument("--kind", help="an action, or its start: flow. run. person. secret. …")
+    p.add_argument("--target", help="only entries about this flow, person, secret, …")
+    p.add_argument("--since", help="a date or time, like 2026-10-01 or 2026-10-01T09:00")
+    p.add_argument("--limit", type=int, default=100, help="at most this many (default 100)")
+    p.add_argument("--json", action="store_true", help="one JSON object a line, to keep or search")
+    p.add_argument("--home", help="folder for secrets and uploads (~/.easychain)")
+    p.add_argument("--database-url", help="sqlite:///path.db or postgresql://… (as the API uses)")
+    p.set_defaults(func=cmd_audit)
 
     p = sub.add_parser("worker", help="run queued flow runs (scale out with more workers)")
     p.add_argument("--home", help="folder for secrets and uploads (~/.easychain)")

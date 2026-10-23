@@ -15,7 +15,7 @@ import re
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
 from ..knowledge.ingest import build_embeddings
@@ -24,6 +24,7 @@ from ..knowledge.search import search_knowledge
 from ..knowledge.store import KnowledgeStore
 from ..providers import EMBEDDING_MODELS, default_embedding_model
 from ..runtime.errors import explain
+from .audit import note
 
 log = logging.getLogger("easychain.knowledge")
 
@@ -105,7 +106,7 @@ def add_knowledge_routes(app: FastAPI, home: Path) -> None:
         return [_with_label(b) for b in await asyncio.to_thread(lambda: store().list_bases())]
 
     @app.post("/api/knowledge", status_code=201)
-    async def create_knowledge(req: KnowledgeBaseRequest) -> dict[str, Any]:
+    async def create_knowledge(req: KnowledgeBaseRequest, request: Request) -> dict[str, Any]:
         model = req.embedding_model or default_embedding_model()
         if model != "keywords" and ":" not in model:
             raise HTTPException(
@@ -121,6 +122,7 @@ def add_knowledge_routes(app: FastAPI, home: Path) -> None:
                 chunk_overlap=req.chunk_overlap,
             )
         )
+        note(request, base["id"], name=base["name"])
         return {**_with_label(base), "documents": []}
 
     @app.get("/api/knowledge/{kb_id}")

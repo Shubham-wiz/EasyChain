@@ -359,6 +359,18 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
   - The tables (`users`, `workspaces`, `memberships`, `sessions`, `api_keys`) come in migration
     0003. Everyone is in the one workspace, `default`, until 5.6d.
   - With sign-in off, every request is the Owner (`via: "local"`), as in Phases 0–4.
+- **The audit log** (Phase 5.6c, `server/audit.py`, [docs/audit.md](docs/audit.md)).
+  - `AuditMiddleware` writes one row to `audit_log` (migration 0004) when the response to a
+    change starts with a success status. The row holds who (the principal `authorize` found),
+    the action (from `AUDITED`, keyed by the matched route), the target (the first path
+    parameter, or what the route `note`s) and the address.
+  - Request bodies are never recorded, so secret values can't leak into the log.
+  - Failed sign-ins are recorded by the sign-in routes themselves.
+  - Flow saves are recorded at most every 5 minutes per person and flow.
+  - Database triggers make the table append-only on SQLite and Postgres.
+  - `tests/test_audit.py` fails if a route that changes something is in neither `AUDITED` nor
+    `NOT_AUDITED`.
+  - The command line's account changes are recorded too.
 
 - **Secrets** are referenced by name (`{secret:NAME}`, provider `*_API_KEY`). Values are stored
   encrypted with Fernet in `~/.easychain/secrets.enc` (the key is in `secret.key` with mode 0600,
@@ -422,10 +434,11 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
 | `test_db_startup.py` | Several processes starting at once set up the Postgres tables without racing |
 | `test_migrations.py` | The migrations build exactly the tables `db.py` describes (SQLite and Postgres); a database made by 0.4.0 is upgraded in place with its data; a newer one is refused; every migration can be undone and redone; `easychain db` |
 | `test_auth.py` | Every route declares who may use it (a new one fails the test); sign-in off by default only on this computer; the first Owner needs the code from the log, and guessing it is stopped; each role gets what it should and no more (through keys); the last Owner can't be demoted, switched off or removed; switching someone off signs them out and stops their keys; a new password signs out other browsers; wrong passwords lock sign-in; keys are capped, shown once and revocable; live run streams need sign-in, webhooks need only their token; the Inbox records who answered; `easychain users` / `keys` |
+| `test_audit.py` | Every route that changes something is recorded or says why not; who did what (sessions, keys, webhooks, the command line, sign-in off); refused and invalid changes and secret values are never recorded; a burst of saves is one entry; failed sign-ins are; filters and pages; only Owners read it; the table refuses UPDATE, DELETE (and TRUNCATE on Postgres); a failure writing the log doesn't undo the change; `easychain audit` |
 | `test_listen.py` | On Postgres, a run's new events wake a follower in another process at once (median about 2 ms), a queued job wakes a waiting worker, and a listener whose connection is killed reconnects |
 | `test_knowledge_queue.py` | Knowledge Base documents wait for a worker and survive a restart; a worker with its own disk reads uploads from the database; a worker that dies mid-document is replaced without doubling chunks; a removed document leaves nothing; an unexpected problem shows on the document and isn't retried |
 | `apps/web/src/**/*.test.ts` | Editing helpers, undo grouping, SSE parsing, formatting, the copilot's changes and panel |
-| `apps/web/e2e/*.spec.ts` | Playwright: build → run → debug → export (and run the export), templates and chat, fixes, undo, copy/paste, Pro mode, settings, Ask a Human in the run panel and the Inbox, For Each, breakpoints and Save Points, stop and carry on, reload during a run, triggers, the Flow Data panel, Sub-flows, agent tools and live tool calls, tool approval, the reply format builder, Knowledge Bases, cited answers, MCP servers, API import, the copilot (propose, preview, apply as one undo step, discard), the Research assistant (Helpers on the canvas, the trace with nested Helper calls, the to-do list and files), the Skills library, Inbox triage (a supervisor and an Inbox pause), the sandbox settings, sign-in on a second server with it on (the first Owner with the code, adding a Runner, keys for scripts, signing out and in, signing in again over the page; a Viewer's view-only editor and Inbox, a Runner running a saved flow and answering it, an Editor's read-only server settings), axe WCAG 2.2 AA scans, 300-step canvas |
+| `apps/web/e2e/*.spec.ts` | Playwright: build → run → debug → export (and run the export), templates and chat, fixes, undo, copy/paste, Pro mode, settings, Ask a Human in the run panel and the Inbox, For Each, breakpoints and Save Points, stop and carry on, reload during a run, triggers, the Flow Data panel, Sub-flows, agent tools and live tool calls, tool approval, the reply format builder, Knowledge Bases, cited answers, MCP servers, API import, the copilot (propose, preview, apply as one undo step, discard), the Research assistant (Helpers on the canvas, the trace with nested Helper calls, the to-do list and files), the Skills library, Inbox triage (a supervisor and an Inbox pause), the sandbox settings, sign-in on a second server with it on (the first Owner with the code, adding a Runner, keys for scripts, signing out and in, signing in again over the page; a Viewer's view-only editor and Inbox, a Runner running a saved flow and answering it, an Editor's read-only server settings, the Audit log), axe WCAG 2.2 AA scans, 300-step canvas |
 | `test_standin_tools.py` | The stand-in AI calls tools, fills arguments and JSON schemas, cites sources, reads each web address a request names, and plays scripts |
 | `test_agent.py` | Agent tool calls and their events, approvals (approve, edit, reject) through the Inbox shape, structured answers, add-ons, limits, MCP tools |
 | `test_knowledge.py` | Every file format, chunk provenance, hybrid search and citations on SQLite and on Postgres with pgvector, the API, an agent searching with its own queries, documents cut off by a restart, exported code searching on its own |

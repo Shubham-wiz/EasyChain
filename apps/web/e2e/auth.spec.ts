@@ -78,6 +78,16 @@ test("sign-in: the first Owner, people, keys, and signing in again", async ({ pa
   const made = await page.request.post("/api/flows", { headers, data: { template: "hello" } });
   expect(made.status()).toBe(403);
   expect((await made.json()).message).toContain("needs Editor or above");
+
+  // The audit log has all of it: who did what, and the refused change isn't there.
+  await page.getByRole("tab", { name: "Audit log" }).click();
+  const log = page.getByTestId("audit-entries");
+  await expect(log).toContainText("Olive made the first account olive@example.com");
+  await expect(log).toContainText("Olive added rita@example.com");
+  await expect(log).toContainText("Olive made a key for scripts Support site");
+  await expect(log).not.toContainText("made flow");
+  await page.getByLabel("What changed").selectOption({ label: "People" });
+  await expect(log.locator("li")).toHaveCount(1);
   await page.keyboard.press("Escape");
 
   // Signing out starts afresh at the sign-in page.

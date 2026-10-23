@@ -8,6 +8,7 @@ import { useUi, type SettingsTab } from "../../state/ui";
 import { Badge, Button, Dialog, Input, Locked, Tabs, TabsContent, TabsList, TabsTrigger } from "../ui";
 import { McpSection } from "./McpServers";
 import { NotificationsSection } from "./Notifications";
+import { AuditSection } from "./Audit";
 import { ApiKeysSection, PeopleSection } from "./People";
 import { SandboxSection } from "./Sandbox";
 
@@ -258,6 +259,7 @@ export function SettingsDialog() {
     ...(editor ? (["keys", "mcp", "notifications", "sandbox"] as const) : []),
     ...(signIn && owner ? (["people"] as const) : []),
     ...(signIn ? (["api-keys"] as const) : []),
+    ...(owner ? (["audit"] as const) : []),
   ];
   const first = tabs[0] ?? "keys";
   const [tab, setTab] = useState<SettingsTab>(first);
@@ -269,7 +271,7 @@ export function SettingsDialog() {
   return (
     <Dialog open={settings.open} onOpenChange={(o) => !o && close()} title="Settings" description="Keys and secrets are encrypted on this machine and never saved in flows or exports.">
       <Tabs value={tab} onValueChange={(v) => setTab(v as SettingsTab)}>
-        <TabsList>
+        <TabsList className="flex-wrap">
           {editor && (
             <>
               <TabsTrigger value="keys">Keys and providers</TabsTrigger>
@@ -280,6 +282,7 @@ export function SettingsDialog() {
           )}
           {signIn && owner && <TabsTrigger value="people">People</TabsTrigger>}
           {signIn && <TabsTrigger value="api-keys">Keys for scripts</TabsTrigger>}
+          {owner && <TabsTrigger value="audit">Audit log</TabsTrigger>}
         </TabsList>
         <TabsContent value="keys" className="pt-4">
           {shown("keys") && (
@@ -314,6 +317,9 @@ export function SettingsDialog() {
         </TabsContent>
         <TabsContent value="api-keys" className="pt-4">
           {shown("api-keys") && <ApiKeysSection />}
+        </TabsContent>
+        <TabsContent value="audit" className="pt-4">
+          {shown("audit") && <AuditSection />}
         </TabsContent>
       </Tabs>
     </Dialog>

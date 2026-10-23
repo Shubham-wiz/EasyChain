@@ -10,11 +10,13 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from .accounts import AccountError
+from .audit import note, record
 from .auth import (
     ROLE_LABELS,
     ROLES,
     SESSION_COOKIE,
     SESSION_DAYS,
+    Principal,
     auth_mode,
     password_problem,
     principal_of,
@@ -80,6 +82,13 @@ def _person(row: dict[str, Any]) -> dict[str, Any]:
         "created_at": row["created_at"],
         "last_login_at": row.get("last_login_at"),
     }
+
+
+def _as(person: dict[str, Any], role: str) -> Principal:
+    """Who signed in, for the audit log (the request had no sign-in yet)."""
+    return Principal(
+        role=role, user_id=person["id"], email=person["email"], name=person["name"], via="session"
+    )
 
 
 def add_auth_routes(app: FastAPI) -> None:
@@ -152,6 +161,7 @@ def add_auth_routes(app: FastAPI) -> None:
             raise _too_many()
         if not await accounts().check_setup_code(req.code):
             _failed(_address(request))
+            await record(request, "auth.setup_failed", req.email.strip().lower())
             raise _bad(
                 "That code doesn't match. The server prints it in its log when it starts "
                 '("enter the code …"); restarting it prints a new one.',
@@ -165,6 +175,7 @@ def add_auth_routes(app: FastAPI) -> None:
             raise _bad(str(exc), 409) from exc
         await accounts().forget_setup_code()
         _set_cookie(request, response, await accounts().start_session(person["id"]))
+        note(request, person["email"], actor=_as(person, "owner"))
         return {"me": {**_person(person), "via": "session"}}
 
     @app.post("/api/auth/login")
@@ -177,10 +188,12 @@ def add_auth_routes(app: FastAPI) -> None:
         person = await accounts().check_password(email, req.password)
         if person is None:
             _failed(f"email:{email}", _address(request))
+            await record(request, "auth.sign_in_failed", email)
             raise _bad("That email and password don't match an account.", 401)
         failures.pop(f"email:{email}", None)
         _set_cookie(request, response, await accounts().start_session(person["id"]))
         member = await accounts().member(person["id"])
+        note(request, email, actor=_as(person, (member or {}).get("role", "viewer")))
         return {"me": {**_person(member or {}), "via": "session"}}
 
     @app.post("/api/auth/logout")
@@ -188,6 +201,7 @@ def add_auth_routes(app: FastAPI) -> None:
         token = request.cookies.get(SESSION_COOKIE)
         if token:
             await accounts().end_session(token)
+        note(request, skip=principal_of(request) is None or principal_of(request).via != "session")
         response.delete_cookie(SESSION_COOKIE, path="/")
         return {"signed_in": False}
 
@@ -218,7 +232,7 @@ def add_auth_routes(app: FastAPI) -> None:
         return {"people": [_person(p) for p in await accounts().members()]}
 
     @app.post("/api/people", status_code=201)
-    async def add_person(req: PersonRequest) -> dict[str, Any]:
+    async def add_person(req: PersonRequest, request: Request) -> dict[str, Any]:
         """Add someone with a first password (they change it after signing in)."""
         if problem := password_problem(req.password):
             raise _bad(problem)
@@ -226,10 +240,11 @@ def add_auth_routes(app: FastAPI) -> None:
             person = await accounts().create(req.email, req.name, req.password, req.role)
         except AccountError as exc:
             raise _bad(str(exc), 409) from exc
+        note(request, person["email"], role=person["role"])
         return _person(person)
 
     @app.patch("/api/people/{user_id}")
-    async def update_person(user_id: str, req: PersonUpdate) -> dict[str, Any]:
+    async def update_person(user_id: str, req: PersonUpdate, request: Request) -> dict[str, Any]:
         try:
             person = await accounts().update(
                 user_id, role=req.role, disabled=req.disabled, name=req.name
@@ -240,14 +255,18 @@ def add_auth_routes(app: FastAPI) -> None:
                 await accounts().set_password(user_id, req.password)
         except AccountError as exc:
             raise _bad(str(exc), 409) from exc
+        changed = {k: v for k, v in req.model_dump(exclude={"password"}).items() if v is not None}
+        note(request, person["email"], **changed, **({"password": "set"} if req.password else {}))
         return _person(person)
 
     @app.delete("/api/people/{user_id}")
-    async def remove_person(user_id: str) -> dict[str, Any]:
+    async def remove_person(user_id: str, request: Request) -> dict[str, Any]:
+        gone = await accounts().member(user_id)
         try:
             await accounts().remove(user_id)
         except AccountError as exc:
             raise _bad(str(exc), 409) from exc
+        note(request, gone["email"] if gone else user_id)
         return {"removed": user_id}
 
     # ── API keys ─────────────────────────────────────────────────────────────
@@ -274,9 +293,11 @@ def add_auth_routes(app: FastAPI) -> None:
         if rank(role) > rank(principal.role):
             raise _bad("A key can't have a higher role than yours.", 403)
         try:
-            return await accounts().create_key(principal.user_id, req.name, role)
+            made = await accounts().create_key(principal.user_id, req.name, role)
         except AccountError as exc:
             raise _bad(str(exc)) from exc
+        note(request, made["name"], key=made["id"], role=role)
+        return made
 
     @app.delete("/api/keys/{key_id}")
     async def revoke_key(key_id: str, request: Request) -> dict[str, Any]:

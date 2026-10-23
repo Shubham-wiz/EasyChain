@@ -308,7 +308,7 @@ updated in the same commit as the work (decision 5.6). Each phase's report has t
 - [ ] ⬜ 5.6d Workspaces (more than the one default workspace)
 - [ ] ⬜ OIDC single sign-on, tested against a local test provider; setup docs for Okta, Google, Entra
 - [ ] ⬜ Per-workspace secret vaults
-- [ ] ⬜ Audit log of edits, publishes, secret changes and approvals
+- [x] ✅ 5.6c Audit log: every change with who, when and what (a test fails for a change that isn't recorded); append-only in the database; Settings → Audit log, `GET /api/audit`, `easychain audit` ([docs](docs/audit.md)). Publishing joins it in 5.4
 - [ ] ⬜ Egress allow-list for fetches made by the server
 
 **5.1 Test Sets editor and Checks**
@@ -370,7 +370,7 @@ yet.
 
 | # | Issue | Where it came from | Where it's handled |
 |---|---|---|---|
-| F1 | ~~No login or roles~~; no audit log yet | Phase 1 | ✅ Sign-in and roles in 5.6a; the audit log in 5.6c |
+| F1 | ~~No login, roles or audit log~~ | Phase 1 | ✅ Fixed in 5.6a–c (sign-in, roles, the audit log) |
 | F2 | No egress allow-list for fetches the server makes (pages, OpenAPI documents, Web request tools) | Review | 5.6 |
 | F3 | Real models are never called in CI; agent templates need a real-model check before a release | Phase 1 | 5.2 (manual CI workflow) |
 | F4 | ~~No database migrations (`create_all` plus a version number)~~ | Phase 2 | ✅ Fixed in 5.8 (Alembic) |
@@ -396,6 +396,7 @@ yet.
 | F24 | A live-run WebSocket closed by the client mid-run can leave a database connection for the garbage collector (a warning in tests) | 5.6a | backlog |
 | F25 | Wrong-password counts live in each API process's memory: with several API servers, each counts on its own, and a restart forgets them | 5.6a | backlog (count in the database) |
 | F26 | ~~The web app shows every button to every role~~ | 5.6a | ✅ Fixed in 5.6b |
+| F27 | The audit log is protected by database triggers: someone with direct database access could drop them; nothing removes old entries | 5.6c | backlog (a hash chain, or shipping entries to a log service) |
 
 ## Licence
 
