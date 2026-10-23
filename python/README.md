@@ -128,6 +128,7 @@ per call (gVisor when Docker has it); the loader swaps each Code step's function
 | `app.py` | The FastAPI app: flows, catalog, checks, compile, export, runs (SSE and WebSocket), Inbox, secrets, settings, templates, triggers, the Skills library (`/api/skills`), the copilot (`/api/copilot`). Serves the web app. |
 | `db.py` | The run database (SQLite or Postgres): runs, events, jobs, Inbox, triggers, flow versions, settings. |
 | `migrations/` | Alembic migrations for the run database. They run when Easy Chain starts; a database made before them is stamped at the baseline. A schema change in `db.py` needs a migration (`tests/test_migrations.py` checks they agree). |
+| `listen.py` | On Postgres, one LISTEN connection per process that wakes it when another process writes run events or queues a job. |
 | `hub.py` | Starting, resuming and watching runs; shared by the API, the worker and triggers. |
 | `worker.py` | Leases jobs, runs them, heartbeats, takes over jobs from dead workers. |
 | `store.py` | Flow files in the workspace folder. |

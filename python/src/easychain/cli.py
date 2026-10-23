@@ -328,6 +328,7 @@ def cmd_worker(args: argparse.Namespace) -> int:
     from .server.app import default_database_url
     from .server.db import Database, checkpoint_url
     from .server.hub import Hub
+    from .server.listen import listen
     from .server.secrets import SecretStore
     from .server.store import FlowStore
     from .server.worker import Worker
@@ -350,6 +351,7 @@ def cmd_worker(args: argparse.Namespace) -> int:
         db = await Database.connect(url)
         resources = await open_resources(checkpoint_url(url))
         hub = Hub(db, resources, FlowStore(workspace), SecretStore(home))
+        listener = listen(url, hub.bus)
         worker = Worker(
             hub,
             concurrency=args.concurrency,
@@ -363,6 +365,8 @@ def cmd_worker(args: argparse.Namespace) -> int:
         try:
             await worker.run(stop)
         finally:
+            if listener is not None:
+                await listener.aclose()
             await resources.aclose()
             await db.close()
         return 0

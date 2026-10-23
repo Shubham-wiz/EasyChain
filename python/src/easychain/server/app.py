@@ -63,6 +63,7 @@ from .hostguard import HostGuard, allowed_hosts
 from .hub import Busy, Hub, Invalid, NotFound
 from .integrations_api import add_integration_routes
 from .knowledge_api import CUT_OFF, add_knowledge_routes, use_database
+from .listen import listen
 from .secrets import SecretStore, VaultLocked, masked, unmasked
 from .store import FlowNotFound, FlowStore
 from .worker import Worker, sandbox_settings
@@ -231,6 +232,7 @@ def create_app(
             log.warning("Couldn't check the Knowledge Base documents: %s", exc)
         resources = await open_resources(checkpoint_url(db_url))
         app.state.hub = Hub(db, resources, flows, vault)
+        listener = app.state.listener = listen(db_url, app.state.hub.bus)
         stop = asyncio.Event()
         task = None
         if inline_worker:
@@ -244,6 +246,8 @@ def create_app(
             if task is not None:
                 with contextlib.suppress(Exception):
                     await asyncio.wait_for(task, 15)
+            if listener is not None:
+                await listener.aclose()
             await resources.aclose()
             await db.close()
 

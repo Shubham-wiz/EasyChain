@@ -26,6 +26,7 @@ asked again.
 | 5.6 | Tracking the build | The README has a **build tracker**: every step of every phase marked done, in progress or not started, and a **Fix later** list of known issues with where each is handled. It is updated in the same commit as the work. | owner: "please make sure u mark every step in readme, so we can go fix things later" |
 | 5.7 | Database migrations | **Alembic**, run by every process when it starts (under the schema lock), so upgrading Easy Chain upgrades the database; `easychain db status` and `upgrade` for operators. Migrations are numbered (`0001`, `0002`, …). A database made by 0.4.0 or earlier is stamped at the baseline (`0001`, the same tables). A database a newer Easy Chain upgraded is refused. | build |
 | 5.8 | Where Knowledge Base documents are read | By **workers, from the job queue**: an `ingest` job per document (its thread is `kb:<id>`, so one Knowledge Base's documents are read one at a time); an uploaded file waits in the `uploads` table (migration 0002) until it has been read, then is deleted; a document whose reading hit an unexpected problem says so and isn't retried. At startup only documents with no job are marked as cut off. | build |
+| 5.9 | Waking other processes | On Postgres, **LISTEN/NOTIFY**: writing run events, queueing and finishing jobs send a NOTIFY on commit; each API server and worker keeps one listening connection that wakes its EventBus, and reconnects when it drops. Polling stays as the fallback and for SQLite. | build: the step was optional; it cuts the wait between processes from up to 250 ms to about 2 ms |
 
 ## Phase 4 (answers to the Phase 3 report's questions)
 
@@ -70,7 +71,7 @@ asked again.
 | 2.4 | Licence | Apache 2.0 | owner: same answer (suggested by the build prompt) |
 | 2.5 | Breakpoints | Stored per flow in the browser, not in the flow file | build: they are a debugging aid, not flow behaviour |
 | 2.6 | For Each body | One step per item; several steps per item go in a Sub-flow | build: maps to one `Send` target, so the canvas shows what runs per item |
-| 2.7 | Event streaming | The API tails run events from the database (polling plus an in-process wake-up), not LISTEN/NOTIFY | build: the same on SQLite and Postgres, and survives API restarts |
+| 2.7 | Event streaming | The API tails run events from the database (polling plus an in-process wake-up), not LISTEN/NOTIFY | build: the same on SQLite and Postgres, and survives API restarts; Postgres wake-ups added in 5.9 |
 | 2.8 | Side effects | POST/PUT/PATCH/DELETE requests and Code steps marked "at most once" record their result in the LangGraph store under a stable key, and send it as `Idempotency-Key` | build: needed for the "no duplicate side effects" Done-when |
 | 2.9 | Schema migrations | `create_all` plus a schema version check; Alembic arrives with the first schema change | build; replaced by 5.7 |
 | 2.10 | Ask a Human default `save_as` | `human_answer` (not `review`, which collided with a common step id) | build |

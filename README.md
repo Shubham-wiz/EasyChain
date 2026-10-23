@@ -252,7 +252,7 @@ updated in the same commit as the work (decision 5.6). Each phase's report has t
 - [x] ⚠️ Side effects at most once (Idempotency-Key): relies on the receiving service honouring the key in one crash case
 - [x] ✅ Save Points in SQLite or Postgres; run database; table job queue with leases; `easychain worker`
 - [x] ⚠️ Resume, continue, fork, breakpoints, stop: stopping a Code step mid-way lets it finish in the background
-- [x] ⚠️ Events over SSE and WebSocket: other processes see them by polling the database (50–250 ms)
+- [x] ✅ Events over SSE and WebSocket (between processes: about 2 ms on Postgres since 5.8; SQLite polls)
 - [x] ✅ Inbox with notifications (webhook, Slack, email)
 - [x] ⚠️ Triggers (webhook, schedule, upload, email, after another flow): no queue triggers (SQS, Kafka); email polls IMAP
 - [x] ✅ Double texting rules for chat
@@ -290,11 +290,11 @@ updated in the same commit as the work (decision 5.6). Each phase's report has t
 
 ### Phase 5: Platform 🚧 ([plan](docs/ROADMAP.md#phase-5-platform))
 
-**5.8 Platform groundwork** 🚧 (first)
+**5.8 Platform groundwork** ✅
 
 - [x] ✅ Database migrations (Alembic): a baseline for today's schema, existing databases upgraded in place, safe when several processes start at once, `easychain db status` / `upgrade`
 - [x] ✅ Knowledge Base ingestion on the job queue: workers read documents, which survive restarts; files wait in the database, so workers need no shared disk
-- [ ] ⬜ Postgres LISTEN/NOTIFY for run events (optional)
+- [x] ✅ Postgres LISTEN/NOTIFY: events and jobs wake other processes in about 2 ms instead of up to 250 ms; polling stays as the fallback
 
 **5.6 Users, roles, SSO, audit**
 
@@ -369,7 +369,7 @@ yet.
 | F3 | Real models are never called in CI; agent templates need a real-model check before a release | Phase 1 | 5.2 (manual CI workflow) |
 | F4 | ~~No database migrations (`create_all` plus a version number)~~ | Phase 2 | ✅ Fixed in 5.8 (Alembic) |
 | F5 | ~~Knowledge Base ingestion runs in the API server; a restart fails documents mid-way~~ | Phase 3 | ✅ Fixed in 5.8 (workers, from the job queue) |
-| F6 | Live events between processes poll the database (50–250 ms) | Phase 2 | 5.8 (optional) |
+| F6 | ~~Live events between processes poll the database (50–250 ms)~~ | Phase 2 | ✅ Fixed in 5.8 on Postgres (LISTEN/NOTIFY); SQLite still polls |
 | F7 | Stopping a run lets a Code step that's mid-way finish in the background (its result is dropped) | Phase 2 | backlog (the sandbox can kill containers: wire Stop to it) |
 | F8 | "At most once" relies on the receiving service honouring `Idempotency-Key` when a worker dies after sending | Phase 2 | backlog (by design; documented) |
 | F9 | No queue triggers (SQS, Kafka, Redis Streams); email triggers poll IMAP once a minute | Phase 2 | backlog |

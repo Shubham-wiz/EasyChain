@@ -142,7 +142,7 @@ These are scheduled inside the phases above, or kept here until they are.
 | No login, roles or audit | 5.6 |
 | Schema migrations (`create_all` only) | Done in 5.8 (Alembic) |
 | Knowledge Base ingestion runs in the API process | Done in 5.8 (workers, from the job queue) |
-| Event streaming polls the database | 5.8 (optional) |
+| Event streaming polls the database | Done in 5.8 for Postgres (LISTEN/NOTIFY); SQLite polls |
 | No OCR for scanned PDFs | backlog: optional OCR backend (Tesseract or a provider) |
 | One vector store (Easy Chain's tables) | backlog: Qdrant / Chroma / Pinecone adapters if needed |
 | MCP: tools only, no OAuth, reconnect per run | backlog: MCP prompts and resources, OAuth, connection pooling |

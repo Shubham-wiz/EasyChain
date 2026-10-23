@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-10-23 (Phase 5 started: the owner accepted the recommended answers; 5.8, the platform groundwork, is first)._
+_Last updated: 2026-10-23 (Phase 5: 5.8, the platform groundwork, is done; 5.6, users, roles, SSO and the audit log, is next)._
 
 ## In one paragraph
 
@@ -56,7 +56,7 @@ issues under *Fix later* (decision 5.6).
 
 | Suite | Result (2026-10-21, end of Phase 4) |
 |---|---|
-| Python on Linux (`pnpm test`, and CI) | 523 pass (2026-10-23, after 5.8's migrations and queued Knowledge Base reading), with SQLite, Postgres (+ pgvector in CI) and Docker (the sandbox escape tests; skipped without Docker); compiler and steps coverage 94% |
+| Python on Linux (`pnpm test`, and CI) | 527 pass (2026-10-23, end of 5.8), with SQLite, Postgres (+ pgvector in CI) and Docker (the sandbox escape tests; skipped without Docker); compiler and steps coverage 94% |
 | Python on Windows 11 (CI) | all pass |
 | Web unit (vitest) | 94 passed |
 | Client package (vitest) | 11 passed |
@@ -69,10 +69,14 @@ Compose, and **Windows** (Python suite, CLI and worker, web checks, the app serv
 
 ## Next
 
-1. **5.8 Platform groundwork:** database migrations with Alembic, Knowledge Base ingestion on the
-   job queue, and (optionally) LISTEN/NOTIFY for run events.
-2. Then 5.6 (users, roles, SSO, audit, egress allow-list), 5.1–5.3 (Test Sets, Test Runs, CI
-   gate), 5.4–5.5 (environments, Publish, model gateway) and 5.7 (dashboards and tracing).
+1. ~~**5.8 Platform groundwork**~~ (done): database migrations (Alembic, `server/migrations/`),
+   Knowledge Base documents read by workers from the job queue, and Postgres LISTEN/NOTIFY
+   (`server/listen.py`).
+2. **5.6 Users, roles, SSO, audit:** local accounts and API keys, workspaces and roles enforced on
+   every endpoint, OIDC single sign-on against a local test provider, per-workspace vaults, the
+   audit log, and the egress allow-list.
+3. Then 5.1–5.3 (Test Sets, Test Runs, CI gate), 5.4–5.5 (environments, Publish, model gateway)
+   and 5.7 (dashboards and tracing).
 
 ## GitHub
 
@@ -96,6 +100,6 @@ These are listed in full in the phase reports and review.md. The ones that matte
 - Knowledge Base documents are read by workers from the job queue (5.8); no OCR yet.
 - Schema migrations are in place (Alembic, 5.8); every schema change needs one
   (`python/src/easychain/server/migrations/`).
-- Event streaming polls the database (50–250 ms between processes).
+- Between processes, events and jobs wake each other at once on Postgres (LISTEN/NOTIFY, 5.8); SQLite polls (up to 0.25 s).
 - Real models are never called in CI. The template Test Sets run with the stand-in AI and
   scripted turns, so agent behaviour with real models must be checked by hand before a release.

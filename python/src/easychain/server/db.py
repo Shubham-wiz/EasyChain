@@ -30,6 +30,10 @@ log = logging.getLogger("easychain.db")
 
 # Advisory lock ids (Postgres) that keep processes starting together from racing.
 SCHEMA_LOCK = 0x45415359  # "EASY"
+# Postgres NOTIFY channels: a run has new events (the payload is its id); a job was queued or
+# finished. server/listen.py wakes the other processes with them.
+EVENTS_CHANNEL = "easychain_events"
+JOBS_CHANNEL = "easychain_jobs"
 
 # The tables, as the latest migration (server/migrations/versions) leaves them. A change here
 # needs a migration; tests/test_migrations.py checks that the two agree.
@@ -274,6 +278,16 @@ class Database:
     def _tx(self) -> Any:
         return _Tx(self)
 
+    async def _wake(self, conn: Any, channel: str, payload: str = "") -> None:
+        """On Postgres, wake the other processes when this transaction commits (NOTIFY is
+        delivered on commit, so they find what was written). SQLite has no such thing: there,
+        other processes notice on their next poll."""
+        if self.dialect == "postgresql":
+            await conn.execute(
+                sa.text("SELECT pg_notify(:channel, :payload)"),
+                {"channel": channel, "payload": payload},
+            )
+
     # ── flow versions ────────────────────────────────────────────────────────
 
     async def save_version(
@@ -446,6 +460,8 @@ class Database:
             )
             .returning(jobs.c.id)
         )
+        await self._wake(conn, JOBS_CHANNEL)
+        await self._wake(conn, EVENTS_CHANNEL, run_id)
         return int(result.scalar_one())
 
     async def get_run(self, run_id: str) -> dict[str, Any] | None:
@@ -496,6 +512,7 @@ class Database:
         rows = [{"run_id": run_id, "type": e.get("type", ""), "data": e, "ts": now} for e in events]
         async with self._tx() as conn:
             await conn.execute(run_events.insert(), rows)
+            await self._wake(conn, EVENTS_CHANNEL, run_id)
 
     async def events_after(
         self, run_id: str, after: int = 0, limit: int = 1000, include_tokens: bool = True
@@ -624,6 +641,8 @@ class Database:
                 .where(jobs.c.id == job_id, jobs.c.lease_owner == owner)
                 .values(status=status, finished_at=time.time(), lease_expires=None)
             )
+            # The conversation's next job may run now.
+            await self._wake(conn, JOBS_CHANNEL)
 
     # ── Knowledge Base documents ─────────────────────────────────────────────
 
@@ -751,6 +770,7 @@ class Database:
                     ts=now,
                 )
             )
+            await self._wake(conn, EVENTS_CHANNEL, run_id)
             return "cancelled"
 
     # ── the Inbox ────────────────────────────────────────────────────────────
