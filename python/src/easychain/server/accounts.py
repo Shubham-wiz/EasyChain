@@ -15,6 +15,7 @@ from .auth import (
     ROLES,
     SESSION_DAYS,
     Principal,
+    WorkspaceRefused,
     hash_password,
     new_api_key,
     new_session_token,
@@ -32,6 +33,7 @@ from .db import (
     settings,
     user_identities,
     users,
+    workspaces,
 )
 
 SETUP_KEY = "auth_setup_code"
@@ -97,6 +99,32 @@ class Accounts:
                 )
             )
         return await self.member(user_id, workspace) or {}
+
+    async def add_member(
+        self, user_id: str, role: str, workspace: str = DEFAULT_WORKSPACE
+    ) -> dict[str, Any]:
+        """Put someone who already has an account into a workspace too."""
+        if role not in ROLES:
+            raise AccountError(f"The role must be one of: {', '.join(ROLES)}.")
+        if await self.member(user_id, workspace) is not None:
+            raise AccountError("That person is already in this workspace.")
+        async with self.db._tx() as conn:
+            await conn.execute(
+                memberships.insert().values(
+                    workspace_id=workspace, user_id=user_id, role=role, created_at=time.time()
+                )
+            )
+        return await self.member(user_id, workspace) or {}
+
+    async def roles_of(self, user_id: str) -> dict[str, str]:
+        """{workspace id: role} for each workspace the person is in, oldest first."""
+        query = (
+            sa.select(memberships.c.workspace_id, memberships.c.role)
+            .where(memberships.c.user_id == user_id)
+            .order_by(memberships.c.created_at)
+        )
+        async with self.db.reader.connect() as conn:
+            return {r[0]: r[1] for r in await conn.execute(query)}
 
     async def member(
         self, user_id: str, workspace: str = DEFAULT_WORKSPACE
@@ -296,6 +324,66 @@ class Accounts:
                     )
                 )
 
+    # ── workspaces ───────────────────────────────────────────────────────────
+
+    async def workspace(self, workspace_id: str) -> dict[str, Any] | None:
+        async with self.db.reader.connect() as conn:
+            row = (
+                await conn.execute(sa.select(workspaces).where(workspaces.c.id == workspace_id))
+            ).first()
+        return dict(row._mapping) if row else None
+
+    async def workspaces(self) -> list[dict[str, Any]]:
+        """Every workspace, with how many people are in each; the default one first."""
+        people = (
+            sa.select(sa.func.count())
+            .where(memberships.c.workspace_id == workspaces.c.id)
+            .scalar_subquery()
+            .label("people")
+        )
+        query = sa.select(workspaces, people).order_by(
+            (workspaces.c.id != DEFAULT_WORKSPACE), workspaces.c.created_at
+        )
+        async with self.db.reader.connect() as conn:
+            return [dict(r._mapping) for r in await conn.execute(query)]
+
+    async def create_workspace(
+        self, workspace_id: str, name: str, owner_id: str | None = None
+    ) -> dict[str, Any]:
+        """A new workspace; ``owner_id`` (the person making it) is its first Owner."""
+        now = time.time()
+        async with self.db._tx() as conn:
+            taken = await conn.execute(
+                sa.select(workspaces.c.id).where(workspaces.c.id == workspace_id)
+            )
+            if taken.first():
+                raise AccountError(f"There's already a workspace called {workspace_id}.")
+            await conn.execute(
+                workspaces.insert().values(
+                    id=workspace_id, name=name.strip()[:200] or workspace_id, created_at=now
+                )
+            )
+            if owner_id is not None:
+                await conn.execute(
+                    memberships.insert().values(
+                        workspace_id=workspace_id, user_id=owner_id, role="owner", created_at=now
+                    )
+                )
+        return await self.workspace(workspace_id) or {}
+
+    async def rename_workspace(self, workspace_id: str, name: str) -> dict[str, Any]:
+        if not name.strip():
+            raise AccountError("Give the workspace a name.")
+        async with self.db._tx() as conn:
+            done = await conn.execute(
+                workspaces.update()
+                .where(workspaces.c.id == workspace_id)
+                .values(name=name.strip()[:200])
+            )
+        if not done.rowcount:
+            raise AccountError("There's no such workspace.")
+        return await self.workspace(workspace_id) or {}
+
     # ── sessions ─────────────────────────────────────────────────────────────
 
     async def start_session(self, user_id: str) -> str:
@@ -322,24 +410,51 @@ class Accounts:
             await conn.execute(sessions.delete().where(sessions.c.id == token_hash(token)))
 
     async def _principal(
-        self, user_id: str, via: str, role_cap: str | None = None, key_id: str | None = None
+        self,
+        user_id: str,
+        via: str,
+        workspace: str | None,
+        role_cap: str | None = None,
+        key_id: str | None = None,
     ) -> Principal | None:
-        member = await self.member(user_id)
-        if member is None or member["disabled"]:
+        """The person, in ``workspace`` (None: the default one, or the first they're in), with
+        their role there. Raises WorkspaceRefused if they aren't in it."""
+        async with self.db.reader.connect() as conn:
+            person = (await conn.execute(sa.select(users).where(users.c.id == user_id))).first()
+        if person is None or person.disabled:
             return None
-        role = member["role"]
+        roles = await self.roles_of(user_id)
+        if workspace is None:
+            workspace = DEFAULT_WORKSPACE if DEFAULT_WORKSPACE in roles else next(iter(roles), None)
+            if workspace is None:
+                return None  # in no workspace any more
+        role = roles.get(workspace)
+        if role is None:
+            raise WorkspaceRefused(workspace)
         if role_cap is not None and rank(role_cap) < rank(role):
             role = role_cap
+        if key_id is not None:
+            server_owner = workspace == DEFAULT_WORKSPACE and role == "owner"
+        else:
+            server_owner = roles.get(DEFAULT_WORKSPACE) == "owner"
         return Principal(
             role=role,
             user_id=user_id,
-            email=member["email"],
-            name=member["name"],
+            email=person.email,
+            name=person.name,
             via=via,
             key_id=key_id,
+            workspace=workspace,
+            server_owner=server_owner,
         )
 
-    async def principal_for_session(self, token: str) -> Principal | None:
+    async def signed_in_as(self, user_id: str) -> Principal | None:
+        """Who someone is once they sign in (in the default workspace, or the first they're in)."""
+        return await self._principal(user_id, "session", None)
+
+    async def principal_for_session(
+        self, token: str, workspace: str | None = None
+    ) -> Principal | None:
         now = time.time()
         async with self.db.reader.connect() as conn:
             row = (
@@ -352,7 +467,7 @@ class Accounts:
                 await conn.execute(
                     sessions.update().where(sessions.c.id == row.id).values(last_seen_at=now)
                 )
-        return await self._principal(row.user_id, "session")
+        return await self._principal(row.user_id, "session", workspace)
 
     # ── API keys ─────────────────────────────────────────────────────────────
 
@@ -382,15 +497,21 @@ class Accounts:
             )
         return {"id": key_id, "name": name, "role": role, "key": key, "created_at": now}
 
-    async def keys(self, user_id: str | None = None) -> list[dict[str, Any]]:
+    async def keys(
+        self, user_id: str | None = None, workspace: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Keys not revoked: someone's, or (``workspace``) every key made in a workspace."""
         query = sa.select(
             api_keys.c.id,
             api_keys.c.user_id,
+            api_keys.c.workspace_id,
             api_keys.c.name,
             api_keys.c.role,
             api_keys.c.created_at,
             api_keys.c.last_used_at,
         ).where(api_keys.c.revoked_at.is_(None))
+        if workspace is not None:
+            query = query.where(api_keys.c.workspace_id == workspace)
         if user_id is not None:
             query = query.where(api_keys.c.user_id == user_id)
         async with self.db.reader.connect() as conn:
@@ -398,15 +519,21 @@ class Accounts:
                 dict(r._mapping) for r in await conn.execute(query.order_by(api_keys.c.created_at))
             ]
 
-    async def revoke_key(self, key_id: str, user_id: str | None = None) -> bool:
+    async def revoke_key(
+        self, key_id: str, user_id: str | None = None, workspace: str | None = None
+    ) -> bool:
+        """Revoke a key: someone's own, or (``workspace``) any key made in that workspace."""
         query = api_keys.update().where(api_keys.c.id == key_id, api_keys.c.revoked_at.is_(None))
         if user_id is not None:
             query = query.where(api_keys.c.user_id == user_id)
+        if workspace is not None:
+            query = query.where(api_keys.c.workspace_id == workspace)
         async with self.db._tx() as conn:
             done = await conn.execute(query.values(revoked_at=time.time()))
         return bool(done.rowcount)
 
-    async def principal_for_key(self, key: str) -> Principal | None:
+    async def principal_for_key(self, key: str, workspace: str | None = None) -> Principal | None:
+        """The key's person, in the key's workspace (asking for another is refused)."""
         parts = split_api_key(key)
         if parts is None:
             return None
@@ -423,7 +550,11 @@ class Accounts:
                 await conn.execute(
                     api_keys.update().where(api_keys.c.id == key_id).values(last_used_at=now)
                 )
-        return await self._principal(row.user_id, "key", role_cap=row.role, key_id=key_id)
+        if workspace is not None and workspace != row.workspace_id:
+            raise WorkspaceRefused(workspace)
+        return await self._principal(
+            row.user_id, "key", row.workspace_id, role_cap=row.role, key_id=key_id
+        )
 
     # ── the first account ────────────────────────────────────────────────────
 

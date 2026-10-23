@@ -1,12 +1,12 @@
 import { create } from "zustand";
-import { api, whenSignedOut } from "../lib/api";
+import { api, chooseWorkspace, whenSignedOut, whenWorkspaceGone } from "../lib/api";
 import type { AuthStatus, Me, Role } from "../lib/types";
 
 const RANK: Record<Role, number> = { viewer: 0, runner: 1, editor: 2, owner: 3 };
 const LABEL: Record<Role, string> = { viewer: "Viewer", runner: "Runner", editor: "Editor", owner: "Owner" };
 
 /** Before the server has said (and with sign-in off), the app acts as the Owner; the server decides. */
-const LOCAL_OWNER: Me = { id: null, email: null, name: "", role: "owner", role_label: "Owner", via: "local", workspace: "default" };
+const LOCAL_OWNER: Me = { id: null, email: null, name: "", role: "owner", role_label: "Owner", via: "local", workspace: "default", server_owner: true };
 
 interface AuthState {
   status: AuthStatus | null;
@@ -34,6 +34,12 @@ export const useAuth = create<AuthState>()((set, get) => ({
 
 whenSignedOut(() => useAuth.getState().signedOut());
 
+// This tab's workspace isn't yours any more (you were taken out of it): start again in yours.
+whenWorkspaceGone(() => {
+  chooseWorkspace(null);
+  window.location.assign("/");
+});
+
 export function useMe(): Me | null {
   return useAuth((s) => s.status?.me ?? null);
 }
@@ -49,6 +55,14 @@ export function useCan(role: Role): boolean {
 
 export function can(role: Role): boolean {
   return atLeast(current(useAuth.getState().status), role);
+}
+
+/** An Owner of the default workspace: changes what every workspace shares (always, with sign-in off). */
+export function useServerOwner(): boolean {
+  return useAuth((s) => {
+    const me = current(s.status);
+    return !!me && me.role === "owner" && me.server_owner !== false;
+  });
 }
 
 /** "Your role (Viewer) can't …; it needs Editor or above. An Owner can change your role." */

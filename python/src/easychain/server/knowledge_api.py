@@ -4,6 +4,9 @@ Documents are read, split and embedded by a worker, from the job queue (``ingest
 Knowledge Base's documents one at a time); their status goes from queued to processing to
 ready (or error, with a message for people). A file waits in the database until it has been
 read, so a worker needs no disk shared with the API server.
+
+Each workspace sees its own Knowledge Bases, and the shared sample one, which only the default
+workspace may change.
 """
 
 from __future__ import annotations
@@ -18,11 +21,11 @@ from typing import Annotated, Any
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
-from .. import egress
+from .. import current_workspace, egress
 from ..knowledge.ingest import build_embeddings
 from ..knowledge.loaders import Loaded, LoadError, Section, load_bytes, load_url, split
 from ..knowledge.search import search_knowledge
-from ..knowledge.store import KnowledgeStore
+from ..knowledge.store import SHARED, KnowledgeStore
 from ..providers import EMBEDDING_MODELS, default_embedding_model
 from ..runtime.errors import explain
 from .audit import note
@@ -81,11 +84,35 @@ def add_knowledge_routes(app: FastAPI, home: Path) -> None:
     def store() -> KnowledgeStore:
         return KnowledgeStore().setup()
 
-    def _base_or_404(kb_id: str) -> dict[str, Any]:
-        base = store().get_base(kb_id)
+    def _base_or_404(kb_id: str, workspace: str) -> dict[str, Any]:
+        """The Knowledge Base, if this workspace can use it."""
+        base = store().get_base(kb_id, workspace)
         if base is None:
             raise HTTPException(404, detail={"message": "That Knowledge Base doesn't exist."})
         return base
+
+    async def _found(kb_id: str) -> dict[str, Any]:
+        return await asyncio.to_thread(_base_or_404, kb_id, current_workspace.current())
+
+    async def _changeable(kb_id: str) -> dict[str, Any]:
+        """The Knowledge Base, if this workspace can change it (the sample is shared)."""
+        base = await _found(kb_id)
+        here = current_workspace.current()
+        if base["workspace_id"] == SHARED and here != current_workspace.DEFAULT:
+            raise HTTPException(
+                403,
+                detail={
+                    "message": "This sample Knowledge Base is shared by every workspace, so it "
+                    "can't be changed here. Make your own on the Knowledge page."
+                },
+            )
+        return base
+
+    async def _document(kb_id: str, doc_id: str) -> dict[str, Any]:
+        doc = await asyncio.to_thread(lambda: store().get_document(doc_id))
+        if doc is None or doc["kb_id"] != kb_id:
+            raise HTTPException(404, detail={"message": "That document doesn't exist."})
+        return doc
 
     def _with_label(base: dict[str, Any]) -> dict[str, Any]:
         info = EMBEDDING_MODELS.get(base["embedding_model"])
@@ -105,7 +132,9 @@ def add_knowledge_routes(app: FastAPI, home: Path) -> None:
 
     @app.get("/api/knowledge")
     async def list_knowledge() -> list[dict[str, Any]]:
-        return [_with_label(b) for b in await asyncio.to_thread(lambda: store().list_bases())]
+        workspace = current_workspace.current()
+        bases = await asyncio.to_thread(lambda: store().list_bases(workspace))
+        return [_with_label(b) for b in bases]
 
     @app.post("/api/knowledge", status_code=201)
     async def create_knowledge(req: KnowledgeBaseRequest, request: Request) -> dict[str, Any]:
@@ -122,6 +151,7 @@ def add_knowledge_routes(app: FastAPI, home: Path) -> None:
                 description=req.description,
                 chunk_size=req.chunk_size,
                 chunk_overlap=req.chunk_overlap,
+                workspace=current_workspace.current(),
             )
         )
         note(request, base["id"], name=base["name"])
@@ -129,13 +159,13 @@ def add_knowledge_routes(app: FastAPI, home: Path) -> None:
 
     @app.get("/api/knowledge/{kb_id}")
     async def get_knowledge(kb_id: str) -> dict[str, Any]:
-        base = await asyncio.to_thread(_base_or_404, kb_id)
+        base = await _found(kb_id)
         docs = await asyncio.to_thread(lambda: store().list_documents(kb_id))
         return {**_with_label(base), "documents": docs}
 
     @app.patch("/api/knowledge/{kb_id}")
     async def update_knowledge(kb_id: str, req: KnowledgeBaseUpdate) -> dict[str, Any]:
-        await asyncio.to_thread(_base_or_404, kb_id)
+        await _changeable(kb_id)
         base = await asyncio.to_thread(
             lambda: store().update_base(kb_id, name=req.name, description=req.description)
         )
@@ -143,7 +173,7 @@ def add_knowledge_routes(app: FastAPI, home: Path) -> None:
 
     @app.delete("/api/knowledge/{kb_id}")
     async def delete_knowledge(kb_id: str) -> dict[str, Any]:
-        await asyncio.to_thread(_base_or_404, kb_id)
+        await _changeable(kb_id)
         await asyncio.to_thread(lambda: store().delete_base(kb_id))
         return {"deleted": kb_id}
 
@@ -151,7 +181,7 @@ def add_knowledge_routes(app: FastAPI, home: Path) -> None:
     async def add_files(
         kb_id: str, files: Annotated[list[UploadFile], File()]
     ) -> list[dict[str, Any]]:
-        await asyncio.to_thread(_base_or_404, kb_id)
+        await _changeable(kb_id)
         added = []
         for upload in files:
             name = Path(upload.filename or "upload").name
@@ -170,7 +200,7 @@ def add_knowledge_routes(app: FastAPI, home: Path) -> None:
 
     @app.post("/api/knowledge/{kb_id}/urls", status_code=202)
     async def add_urls(kb_id: str, req: UrlsRequest) -> list[dict[str, Any]]:
-        await asyncio.to_thread(_base_or_404, kb_id)
+        await _changeable(kb_id)
         added = []
         for url in req.urls:
             url = url.strip()
@@ -183,7 +213,7 @@ def add_knowledge_routes(app: FastAPI, home: Path) -> None:
 
     @app.post("/api/knowledge/{kb_id}/text", status_code=202)
     async def add_text(kb_id: str, req: TextRequest) -> dict[str, Any]:
-        await asyncio.to_thread(_base_or_404, kb_id)
+        await _changeable(kb_id)
         doc = await asyncio.to_thread(
             lambda: store().add_document(kb_id, req.title, req.title, "text")
         )
@@ -192,16 +222,20 @@ def add_knowledge_routes(app: FastAPI, home: Path) -> None:
 
     @app.get("/api/knowledge/{kb_id}/documents/{doc_id}/chunks")
     async def document_chunks(kb_id: str, doc_id: str) -> list[dict[str, Any]]:
+        await _found(kb_id)
+        await _document(kb_id, doc_id)
         return await asyncio.to_thread(lambda: store().list_chunks(doc_id))
 
     @app.delete("/api/knowledge/{kb_id}/documents/{doc_id}")
     async def delete_document(kb_id: str, doc_id: str) -> dict[str, Any]:
+        await _changeable(kb_id)
+        await _document(kb_id, doc_id)
         await asyncio.to_thread(lambda: store().delete_document(doc_id))
         return {"deleted": doc_id}
 
     @app.post("/api/knowledge/{kb_id}/search")
     async def search(kb_id: str, req: SearchRequest) -> dict[str, Any]:
-        base = await asyncio.to_thread(_base_or_404, kb_id)
+        base = await _found(kb_id)
 
         def run() -> list[dict[str, Any]]:
             store()  # make sure the tables exist

@@ -350,7 +350,8 @@ def cmd_worker(args: argparse.Namespace) -> int:
     async def go() -> int:
         db = await Database.connect(url)
         resources = await open_resources(checkpoint_url(url))
-        hub = Hub(db, resources, FlowStore(workspace), SecretStore(home))
+        # home: other workspaces' flows and vaults are under it (server/spaces.py).
+        hub = Hub(db, resources, FlowStore(workspace), SecretStore(home), home=home)
         listener = listen(url, hub.bus)
         worker = Worker(
             hub,
@@ -454,10 +455,12 @@ def _with_accounts(args: argparse.Namespace, work: Any) -> int:
     return _platform.run(go())
 
 
-async def _cli_audit(accounts: Any, action: str, target: str, **detail: Any) -> None:
+async def _cli_audit(
+    accounts: Any, action: str, target: str, workspace: str = "default", **detail: Any
+) -> None:
     """Changes made on the command line are in the audit log too (by "the command line")."""
     await accounts.db.add_audit(
-        workspace_id="default",
+        workspace_id=workspace,
         actor_id=None,
         actor="the command line",
         via="cli",
@@ -500,10 +503,15 @@ def cmd_users(args: argparse.Namespace) -> int:
         return person
 
     async def work(accounts: Any) -> int:
+        from .server.accounts import AccountError
+
+        ws = args.workspace
+        if await accounts.workspace(ws) is None:
+            raise AccountError(f"There's no workspace {ws} (easychain workspaces list).")
         if args.action == "list":
-            people = await accounts.members()
+            people = await accounts.members(ws)
             if not people:
-                print("Nobody has an account yet.")
+                print("Nobody has an account yet." if ws == "default" else f"Nobody is in {ws}.")
             for p in people:
                 off = "  (switched off)" if p["disabled"] else ""
                 print(f"{p['email']:<36} {ROLE_LABELS[p['role']]:<8} {p['name']}{off}")
@@ -518,17 +526,23 @@ def cmd_users(args: argparse.Namespace) -> int:
             print(code)
             return 0
         if args.action == "add":
-            password = _new_password(args)
-            if password is None:
-                return 1
-            made = await accounts.create(args.email, args.name or "", password, args.role)
-            await _cli_audit(accounts, "person.add", made["email"], role=args.role)
-            print(f"Added {args.email.strip().lower()} as {ROLE_LABELS[args.role]}.")
+            found = await accounts.by_email(args.email)
+            if found is not None:
+                # Someone with an account already: into this workspace too, same password.
+                made = await accounts.add_member(found["id"], args.role, ws)
+            else:
+                password = _new_password(args)
+                if password is None:
+                    return 1
+                made = await accounts.create(args.email, args.name or "", password, args.role, ws)
+            await _cli_audit(accounts, "person.add", made["email"], ws, role=args.role)
+            where = "" if ws == "default" else f" in {ws}"
+            print(f"Added {args.email.strip().lower()} as {ROLE_LABELS[args.role]}{where}.")
             return 0
         person = await find(accounts)
         if args.action == "role":
-            await accounts.update(person["id"], role=args.role)
-            await _cli_audit(accounts, "person.change", person["email"], role=args.role)
+            await accounts.update(person["id"], role=args.role, workspace=ws)
+            await _cli_audit(accounts, "person.change", person["email"], ws, role=args.role)
             print(f"{person['email']} is now {ROLE_LABELS[args.role]}.")
         elif args.action in ("disable", "enable"):
             await accounts.update(person["id"], disabled=args.action == "disable")
@@ -545,9 +559,9 @@ def cmd_users(args: argparse.Namespace) -> int:
             await _cli_audit(accounts, "person.change", person["email"], password="set")
             print(f"New password set for {person['email']}; their browsers are signed out.")
         elif args.action == "remove":
-            await accounts.remove(person["id"])
-            await _cli_audit(accounts, "person.remove", person["email"])
-            print(f"Removed {person['email']}; their keys no longer work.")
+            await accounts.remove(person["id"], ws)
+            await _cli_audit(accounts, "person.remove", person["email"], ws)
+            print(f"Removed {person['email']} from {ws}.")
         return 0
 
     needs_email = args.action not in ("list", "setup-code")
@@ -575,9 +589,10 @@ def cmd_keys(args: argparse.Namespace) -> int:
         person = await accounts.by_email(args.target) if args.target else None
         if args.target and person is None:
             raise AccountError(f"There's no account for {args.target}.")
+        ws = args.workspace
         if args.action == "list":
-            emails = {p["id"]: p["email"] for p in await accounts.members()}
-            keys = await accounts.keys(person["id"] if person else None)
+            emails = {p["id"]: p["email"] for p in await accounts.members(ws)}
+            keys = await accounts.keys(person["id"] if person else None, workspace=ws)
             if not keys:
                 print("No keys.")
             for k in keys:
@@ -585,14 +600,15 @@ def cmd_keys(args: argparse.Namespace) -> int:
             return 0
         if person is None:
             raise AccountError("Say whose key it is: easychain keys create EMAIL")
-        member = await accounts.member(person["id"])
+        member = await accounts.member(person["id"], ws)
         made = await accounts.create_key(
-            person["id"], args.name, args.role or (member or {}).get("role", "viewer")
+            person["id"], args.name, args.role or (member or {}).get("role", "viewer"), ws
         )
         await _cli_audit(
             accounts,
             "key.create",
             made["name"],
+            ws,
             key=made["id"],
             role=made["role"],
             person=person["email"],
@@ -638,6 +654,7 @@ def cmd_audit(args: argparse.Namespace) -> int:
             target=args.target,
             since=when(args.since) if args.since else None,
             limit=args.limit,
+            workspace=args.workspace,
         )
         for entry in reversed(entries):
             if args.json:
@@ -649,6 +666,54 @@ def cmd_audit(args: argparse.Namespace) -> int:
             print("Nothing in the audit log matches.")
         return 0
 
+    return _with_accounts(args, work)
+
+
+def cmd_workspaces(args: argparse.Namespace) -> int:
+    """Workspaces: each has its own flows, runs, secrets and people (docs/workspaces.md)."""
+
+    async def work(accounts: Any) -> int:
+        from .server.accounts import AccountError
+        from .server.auth_api import _workspace_id
+        from .server.spaces import ID_RE
+
+        if args.action == "list":
+            for found in await accounts.workspaces():
+                people = f"{found['people']} {'person' if found['people'] == 1 else 'people'}"
+                print(f"{found['id']:<24} {found['name']:<32} {people}")
+            return 0
+        if not args.name:
+            raise AccountError(f"Give the name: easychain workspaces {args.action} … --name NAME")
+        if args.action == "rename":
+            changed = await accounts.rename_workspace(args.id or "", args.name)
+            await _cli_audit(accounts, "workspace.rename", changed["id"], name=changed["name"])
+            print(f"{changed['id']} is now called {changed['name']}.")
+            return 0
+        workspace_id = args.id or _workspace_id(args.name)
+        if not ID_RE.match(workspace_id):
+            raise AccountError(
+                "A workspace id is 2 to 40 lowercase letters, digits and dashes, starting with "
+                "a letter."
+            )
+        owner = await accounts.by_email(args.owner) if args.owner else None
+        if args.owner and owner is None:
+            raise AccountError(f"There's no account for {args.owner}.")
+        made = await accounts.create_workspace(
+            workspace_id, args.name, owner["id"] if owner else None
+        )
+        await _cli_audit(accounts, "workspace.create", made["id"], name=made["name"])
+        print(f"Made workspace {made['id']} ({made['name']}).")
+        if owner is None:
+            print(
+                f"Nobody is in it yet: easychain users add EMAIL --role owner --workspace "
+                f"{made['id']}",
+                file=sys.stderr,
+            )
+        return 0
+
+    if args.action == "rename" and not args.id:
+        print("Say which workspace: easychain workspaces rename ID --name NAME", file=sys.stderr)
+        return 2
     return _with_accounts(args, work)
 
 
@@ -823,6 +888,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--password-stdin", action="store_true", help="read the password from stdin (scripts)"
     )
+    p.add_argument("--workspace", default="default", help="the workspace (default: default)")
     p.add_argument("--home", help="folder for secrets and uploads (~/.easychain)")
     p.add_argument("--database-url", help="sqlite:///path.db or postgresql://… (as the API uses)")
     p.set_defaults(func=cmd_users)
@@ -832,6 +898,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("target", nargs="?", help="an email (list, create) or a key id (revoke)")
     p.add_argument("--name", default="API key", help="what the key is for (create)")
     p.add_argument("--role", choices=ROLES, help="at most the person's role (create)")
+    p.add_argument("--workspace", default="default", help="the workspace (default: default)")
     p.add_argument("--home", help="folder for secrets and uploads (~/.easychain)")
     p.add_argument("--database-url", help="sqlite:///path.db or postgresql://… (as the API uses)")
     p.set_defaults(func=cmd_keys)
@@ -843,9 +910,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--since", help="a date or time, like 2026-10-01 or 2026-10-01T09:00")
     p.add_argument("--limit", type=int, default=100, help="at most this many (default 100)")
     p.add_argument("--json", action="store_true", help="one JSON object a line, to keep or search")
+    p.add_argument("--workspace", default="default", help="the workspace (default: default)")
     p.add_argument("--home", help="folder for secrets and uploads (~/.easychain)")
     p.add_argument("--database-url", help="sqlite:///path.db or postgresql://… (as the API uses)")
     p.set_defaults(func=cmd_audit)
+
+    p = sub.add_parser("workspaces", help="workspaces: each with its own flows, secrets, people")
+    p.add_argument("action", choices=["list", "create", "rename"])
+    p.add_argument("id", nargs="?", help="the workspace's id (create: made from the name)")
+    p.add_argument("--name", help="what it's called (create, rename)")
+    p.add_argument("--owner", help="an account's email: its first Owner (create)")
+    p.add_argument("--home", help="folder for secrets and uploads (~/.easychain)")
+    p.add_argument("--database-url", help="sqlite:///path.db or postgresql://… (as the API uses)")
+    p.set_defaults(func=cmd_workspaces)
 
     p = sub.add_parser("worker", help="run queued flow runs (scale out with more workers)")
     p.add_argument("--home", help="folder for secrets and uploads (~/.easychain)")

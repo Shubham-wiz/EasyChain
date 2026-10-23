@@ -617,6 +617,19 @@ export interface Me {
   role_label: string;
   via: "local" | "session" | "key";
   workspace: string;
+  /** An Owner of the default workspace: changes what every workspace shares, and makes workspaces. */
+  server_owner?: boolean;
+}
+
+/** A workspace someone can switch to (server/auth_api.py); role is null where they aren't in it. */
+export interface WorkspaceInfo {
+  id: string;
+  name: string;
+  people: number;
+  created_at: number;
+  role: Role | null;
+  role_label: string | null;
+  current?: boolean;
 }
 
 export interface AuthStatus {

@@ -122,7 +122,12 @@ def test_every_route_says_who_may_use_it(tmp_path: Path):
     assert not missing, f"add these to PERMISSIONS in server/auth.py: {missing}"
     stale = sorted(set(auth.PERMISSIONS) - routes)
     assert not stale, f"these PERMISSIONS entries have no route any more: {stale}"
-    assert set(auth.PERMISSIONS.values()) <= {auth.PUBLIC, auth.SIGNED_IN, *auth.ROLES}
+    assert set(auth.PERMISSIONS.values()) <= {
+        auth.PUBLIC,
+        auth.SIGNED_IN,
+        auth.SERVER_OWNER,
+        *auth.ROLES,
+    }
 
 
 def test_sign_in_is_off_on_this_computer_and_on_for_the_network(monkeypatch):

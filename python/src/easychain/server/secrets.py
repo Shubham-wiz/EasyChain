@@ -106,8 +106,11 @@ class VaultLocked(ValueError):
 
 
 class SecretStore:
-    def __init__(self, home: Path):
+    def __init__(self, home: Path, key_dir: Path | None = None):
+        """The vault in ``home``. ``key_dir`` holds ``secret.key`` when it isn't ``home``: every
+        workspace's vault is encrypted with the server's one key (or EASYCHAIN_SECRET_KEY)."""
         self.home = home
+        self.key_dir = key_dir or home
         self.path = home / "secrets.enc"
         self._lock = threading.Lock()
         self._values: dict[str, str] = {}
@@ -127,7 +130,7 @@ class SecretStore:
             where = (
                 "EASYCHAIN_SECRET_KEY"
                 if scoped_env.real().get("EASYCHAIN_SECRET_KEY")
-                else str(self.home / "secret.key")
+                else str(self.key_dir / "secret.key")
             )
             raise ValueError(
                 f"The secrets key in {where} isn't a valid key: it must be 32 random bytes in "
@@ -138,10 +141,10 @@ class SecretStore:
         env_key = scoped_env.real().get("EASYCHAIN_SECRET_KEY")
         if env_key:
             return env_key.strip().encode()
-        key_path = self.home / "secret.key"
+        key_path = self.key_dir / "secret.key"
         if key_path.exists():
             return key_path.read_bytes().strip()
-        self.home.mkdir(parents=True, exist_ok=True)
+        self.key_dir.mkdir(parents=True, exist_ok=True)
         key = Fernet.generate_key()
         key_path.write_bytes(key)
         key_path.chmod(0o600)
@@ -170,7 +173,7 @@ class SecretStore:
             self.problem = (
                 f"The saved secrets in {self.path} can't be read with this key. If "
                 "EASYCHAIN_SECRET_KEY was set or changed, set it back to the key they were saved "
-                f"with (or unset it to use {self.home / 'secret.key'}). To start again without "
+                f"with (or unset it to use {self.key_dir / 'secret.key'}). To start again without "
                 "them, move secrets.enc somewhere else and restart."
             )
             return

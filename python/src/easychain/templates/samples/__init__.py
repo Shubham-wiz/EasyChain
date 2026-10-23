@@ -47,7 +47,7 @@ def ensure_sample_knowledge(store: object | None = None) -> str:
     """The sample Knowledge Base the Support bot template searches (built once, offline)."""
     from ...knowledge.ingest import ingest
     from ...knowledge.loaders import load_bytes
-    from ...knowledge.store import KnowledgeStore
+    from ...knowledge.store import SHARED, KnowledgeStore
 
     st = store if isinstance(store, KnowledgeStore) else KnowledgeStore().setup()
     files = sorted((HERE / "help").glob("*.md"))
@@ -55,6 +55,8 @@ def ensure_sample_knowledge(store: object | None = None) -> str:
     if base is not None:
         docs = st.list_documents(HELP_CENTRE)
         if len(docs) == len(files) and all(d["status"] == "ready" for d in docs):
+            if base.get("workspace_id") != SHARED:
+                st.share_base(HELP_CENTRE)  # made before workspaces: every workspace's now
             return HELP_CENTRE
         st.delete_base(HELP_CENTRE)
     st.create_base(
@@ -65,6 +67,7 @@ def ensure_sample_knowledge(store: object | None = None) -> str:
         chunk_size=600,
         chunk_overlap=60,
         kb_id=HELP_CENTRE,
+        workspace=SHARED,  # every workspace's templates search it
     )
     for path in files:
         loaded = load_bytes(path.name, path.read_bytes())

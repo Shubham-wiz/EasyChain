@@ -51,6 +51,25 @@ describe("EasyChainClient", () => {
     await expect(client.cancel("r1")).rejects.toMatchObject({ status: 403, action: "role", message: "Your role (Viewer) can't do this." });
   });
 
+  it("works in the workspace it is given", async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(json({ run_id: "r1", thread_id: "t1" }));
+    const client = new EasyChainClient({ baseUrl: "http://easy:8000", fetch, workspace: "sales-team" });
+    await client.start({ flowId: "hello" });
+    expect(fetch.mock.calls[0][1].headers["X-EasyChain-Workspace"]).toBe("sales-team");
+    const opened: string[] = [];
+    vi.stubGlobal(
+      "WebSocket",
+      class {
+        constructor(url: string) {
+          opened.push(url);
+        }
+      },
+    );
+    client.socket("r1");
+    vi.unstubAllGlobals();
+    expect(opened).toEqual(["ws://easy:8000/api/runs/r1/ws?after=0&workspace=sales-team"]);
+  });
+
   it("answers waiting steps and reports API errors plainly", async () => {
     const fetch = vi
       .fn()

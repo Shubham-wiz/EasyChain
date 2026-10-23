@@ -13,6 +13,7 @@ Start with the [project README](../README.md). This page lists every document.
 | [network.md](network.md) | Network: which addresses Easy Chain may reach on a shared server (the egress allow-list), what is checked, DNS rebinding, the API |
 | [sso.md](sso.md) | Single sign-on with OpenID Connect: setting it up (Okta, Google, Microsoft Entra), how people are matched, what is checked, the test provider |
 | [people.md](people.md) | People and sign-in: when it's on, the first account, roles, adding people, keys for scripts, the API |
+| [workspaces.md](workspaces.md) | Workspaces: what each keeps apart, the server's Owners, making and switching, people and keys in several, the API, Knowledge Bases and memory |
 | [knowledge.md](knowledge.md) | Knowledge Bases: adding documents, search modes, citations, storage, the API |
 | [patterns.md](patterns.md) | Agent team patterns: supervisor, handoffs and plan-and-execute, made of ordinary steps |
 | [copilot.md](copilot.md) | The describe-it copilot: describe a flow or a change, review it on the canvas, keep the changes you want |

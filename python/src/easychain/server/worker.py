@@ -153,11 +153,14 @@ class Worker:
         done = asyncio.Event()
         beat = asyncio.create_task(self._heartbeat(job_id, stop, lost, done))
         try:
-            await self._run_job(job, stop, lost)
-        except Exception:
-            log.exception("Job %s failed", job_id)
-            if not lost.is_set():
-                await self._failed(job)
+            # The job is its workspace's: its flows, secrets, skills and settings (spaces.py).
+            with self.hub.spaces.enter(await self._workspace_of(job)):
+                try:
+                    await self._run_job(job, stop, lost)
+                except Exception:
+                    log.exception("Job %s failed", job_id)
+                    if not lost.is_set():
+                        await self._failed(job)
         finally:
             # Let the heartbeat finish its current write rather than cutting it off.
             done.set()
@@ -168,6 +171,12 @@ class Worker:
                 del self.hub.bus.running[job["run_id"]]
             self._releasing.discard(job_id)
             self.hub.bus.notify(job["run_id"])
+
+    async def _workspace_of(self, job: dict[str, Any]) -> str:
+        if job["action"] == "ingest":
+            return (job.get("payload") or {}).get("workspace") or "default"
+        run = await self.db.get_run(job["run_id"])
+        return (run or {}).get("workspace_id") or "default"
 
     async def _heartbeat(
         self, job_id: int, stop: asyncio.Event, lost: asyncio.Event, done: asyncio.Event
@@ -306,8 +315,6 @@ class Worker:
             await db.finish_job(job["id"], self.name, "done")
             await self._write_missing_end(run)
             return
-        if hasattr(hub.vault, "reload"):
-            hub.vault.reload()
         spec, children = await hub.flow_from_version(run["version_id"])
         if job.get("cancel_requested"):
             # Someone stopped the run while the worker that had it was gone: don't run it again.
@@ -337,8 +344,9 @@ class Worker:
         if action == "start" and payload.get("rollback"):
             checkpoint_id = await self._rollback_point(run, spec, children, payload["rollback"])
         from ..integrations.mcp import connections as mcp_connections
+        from .integrations_api import mcp_setting
 
-        mcp = mcp_connections(await self.db.get_setting("mcp", {}) or {})
+        mcp = mcp_connections(await mcp_setting(self.db, hub.space.setting("mcp")))
         opts = RunOptions(
             mcp=mcp,
             sandbox=sandbox_settings(await self.db.get_setting("sandbox", {})),
@@ -346,7 +354,7 @@ class Worker:
             thread_id=run["thread_id"],
             run_id=run["id"],
             stand_in=bool(options.get("stand_in")),
-            redact=hub.vault.values() if hub.vault is not None else [],
+            redact=hub.space.vault.values() if hub.space.vault is not None else [],
             action=action,  # type: ignore[arg-type]
             resume=payload.get("resume"),
             checkpoint_id=checkpoint_id,
@@ -521,7 +529,7 @@ class Worker:
         item_ids: list[str],
         interrupts: list[dict[str, Any]],
     ) -> None:
-        config = await self.db.get_setting("notifications", {})
+        config = await self.db.get_setting(self.hub.space.setting("notifications"), {})
         writer = EventWriter(self.hub, run["id"])
         for item_id, intr in zip(item_ids, interrupts, strict=False):
             if not _wants_notify(spec, intr):
@@ -575,22 +583,34 @@ class Worker:
         now = now or time.time()
         started = []
         for trig in await self.db.due_schedules(now):
-            cfg = trig.get("config") or {}
-            if trig["kind"] == "email":
-                following = now + max(15, float(cfg.get("poll_seconds") or 60))
-                if await self.db.claim_schedule(trig["id"], trig["next_fire_at"], following):
-                    started += await self._poll_mailbox(trig)
+            try:
+                self.hub.spaces.get(trig.get("workspace_id"))
+            except KeyError:
+                log.warning("Trigger %s is in a workspace this worker can't open", trig["id"])
                 continue
-            try:
-                following = next_fire(cfg.get("cron", ""), cfg.get("timezone"), now)
-            except CronError:
-                following = None
-            if not await self.db.claim_schedule(trig["id"], trig["next_fire_at"], following):
-                continue  # another worker fired it
-            try:
-                started.append(await fire(self.hub, trig, cfg.get("inputs_values") or {}))
-            except Exception:
-                log.exception("Scheduled trigger %s failed", trig["id"])
+            with self.hub.spaces.enter(trig.get("workspace_id")):
+                started += await self._fire_due(trig, now)
+        return started
+
+    async def _fire_due(self, trig: dict[str, Any], now: float) -> list[str]:
+        """Fire one due schedule, or poll one due mailbox (inside its workspace)."""
+        started: list[str] = []
+        cfg = trig.get("config") or {}
+        if trig["kind"] == "email":
+            following = now + max(15, float(cfg.get("poll_seconds") or 60))
+            if await self.db.claim_schedule(trig["id"], trig["next_fire_at"], following):
+                started += await self._poll_mailbox(trig)
+            return started
+        try:
+            following = next_fire(cfg.get("cron", ""), cfg.get("timezone"), now)
+        except CronError:
+            following = None
+        if not await self.db.claim_schedule(trig["id"], trig["next_fire_at"], following):
+            return started  # another worker fired it
+        try:
+            started.append(await fire(self.hub, trig, cfg.get("inputs_values") or {}))
+        except Exception:
+            log.exception("Scheduled trigger %s failed", trig["id"])
         return started
 
 
@@ -684,7 +704,7 @@ def _lookup(data: Any, dotted: str) -> Any:
 
 async def fire(hub: Hub, trig: dict[str, Any], data: dict[str, Any], **extra: Any) -> str:
     """Start a run of the trigger's flow."""
-    spec = hub.flows.get(trig["flow_id"])
+    spec = hub.space.flows.get(trig["flow_id"])
     cfg = trig.get("config") or {}
     run_id = await hub.start_run(
         spec,

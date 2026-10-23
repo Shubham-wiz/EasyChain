@@ -1,10 +1,10 @@
 import type { Proposal, TestCase } from "./copilot";
-import type { ApiKeyInfo, AuditPage, AuthStatus, NetworkSettings, SsoProvider, SsoSettings, Me, NewApiKey, Person, Role, Catalog, CheckResult, ChunkPreview, CompileResult, DataField, FlowListItem, FlowSpec, FlowVersion, InboxItem, Issue, KnowledgeBase, KnowledgeDocument, KnowledgeHit, McpServer, McpSettings, McpTool, NotificationSettings, OpenApiInspection, RunEvent, RunSummary, SandboxSettings, SandboxStatus, SavePoint, SecretInfo, Skill, SkillSummary, Step, TemplateInfo, ThreadInfo, Trigger, TriggerKind } from "./types";
+import type { WorkspaceInfo, ApiKeyInfo, AuditPage, AuthStatus, NetworkSettings, SsoProvider, SsoSettings, Me, NewApiKey, Person, Role, Catalog, CheckResult, ChunkPreview, CompileResult, DataField, FlowListItem, FlowSpec, FlowVersion, InboxItem, Issue, KnowledgeBase, KnowledgeDocument, KnowledgeHit, McpServer, McpSettings, McpTool, NotificationSettings, OpenApiInspection, RunEvent, RunSummary, SandboxSettings, SandboxStatus, SavePoint, SecretInfo, Skill, SkillSummary, Step, TemplateInfo, ThreadInfo, Trigger, TriggerKind } from "./types";
 
 export class ApiError extends Error {
   status: number;
   problems: string[];
-  /** What to do: "sign_in" (401), "role" (403: an Owner can change your role). */
+  /** What to do: "sign_in" (401), "role" (403: an Owner can change your role), "workspace" (403: not in that workspace). */
   action?: string;
   constructor(status: number, message: string, problems: string[] = [], action?: string) {
     super(message);
@@ -21,17 +21,62 @@ export function whenSignedOut(handler: (() => void) | null) {
   signedOut = handler;
 }
 
+// The workspace this tab works in (docs/workspaces.md): sent with every request. Kept for the
+// tab (sessionStorage), and as the one new tabs start in (localStorage).
+const WORKSPACE_KEY = "easychain.workspace";
+
+function storedWorkspace(): string | null {
+  try {
+    return sessionStorage.getItem(WORKSPACE_KEY) ?? localStorage.getItem(WORKSPACE_KEY);
+  } catch {
+    return null; // storage switched off: the server picks the workspace
+  }
+}
+
+let workspace: string | null = storedWorkspace();
+
+/** The workspace this tab asked for (null: the server's choice, the default or your first). */
+export function chosenWorkspace(): string | null {
+  return workspace;
+}
+
+/** Work in another workspace from now on; the app then starts afresh in it. */
+export function chooseWorkspace(id: string | null) {
+  workspace = id;
+  try {
+    for (const store of [sessionStorage, localStorage]) {
+      if (id) store.setItem(WORKSPACE_KEY, id);
+      else store.removeItem(WORKSPACE_KEY);
+    }
+  } catch {
+    // storage switched off: this page still sends it
+  }
+}
+
+function workspaceHeader(): Record<string, string> {
+  return workspace ? { "X-EasyChain-Workspace": workspace } : {};
+}
+
+let workspaceGone: (() => void) | null = null;
+
+/** Called when the server says this tab's workspace isn't yours (any more). */
+export function whenWorkspaceGone(handler: (() => void) | null) {
+  workspaceGone = handler;
+}
+
 function failed(status: number, body: { message?: string; problems?: string[]; action?: string }, fallback: string): ApiError {
   if (status === 401 && body.action === "sign_in") signedOut?.();
+  if (status === 403 && body.action === "workspace" && workspace) workspaceGone?.();
   return new ApiError(status, body.message ?? fallback, body.problems ?? [], body.action);
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // FormData bodies set their own multipart Content-Type.
   const isForm = typeof FormData !== "undefined" && init?.body instanceof FormData;
+  const headers = { ...workspaceHeader(), ...((init?.headers as Record<string, string>) ?? {}) };
   const res = await fetch(path, {
     ...init,
-    headers: isForm ? (init?.headers ?? {}) : { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    headers: isForm ? headers : { "Content-Type": "application/json", ...headers },
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({})); // not JSON: the status says it
@@ -58,7 +103,7 @@ export interface RunOptionsBody {
 async function streamEvents(path: string, init: RequestInit, onEvent: (event: RunEvent) => void, signal?: AbortSignal): Promise<void> {
   const res = await fetch(path, {
     ...init,
-    headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...(init.headers ?? {}) },
+    headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...workspaceHeader(), ...((init.headers as Record<string, string>) ?? {}) },
     signal,
   });
   if (!res.ok || !res.body) {
@@ -77,11 +122,16 @@ export const api = {
   changePassword: (current: string, next: string) =>
     request<{ changed: boolean }>("/api/auth/password", { method: "POST", ...json({ current, new: next }) }),
   people: () => request<{ people: Person[] }>("/api/people").then((r) => r.people),
-  addPerson: (body: { email: string; name: string; role: Role; password: string }) =>
-    request<Person>("/api/people", { method: "POST", ...json(body) }),
+  /** Someone new needs a first password; someone with an account already keeps theirs (existing). */
+  addPerson: (body: { email: string; name: string; role: Role; password?: string }) =>
+    request<Person & { existing: boolean }>("/api/people", { method: "POST", ...json(body) }),
   updatePerson: (id: string, body: { role?: Role; disabled?: boolean; name?: string; password?: string }) =>
     request<Person>(`/api/people/${id}`, { method: "PATCH", ...json(body) }),
   removePerson: (id: string) => request<{ removed: string }>(`/api/people/${id}`, { method: "DELETE" }),
+  workspaces: () => request<{ workspaces: WorkspaceInfo[]; current: string }>("/api/workspaces"),
+  createWorkspace: (name: string) => request<WorkspaceInfo>("/api/workspaces", { method: "POST", ...json({ name }) }),
+  renameWorkspace: (id: string, name: string) =>
+    request<WorkspaceInfo>(`/api/workspaces/${encodeURIComponent(id)}`, { method: "PATCH", ...json({ name }) }),
   apiKeys: () => request<{ keys: ApiKeyInfo[] }>("/api/keys").then((r) => r.keys),
   createApiKey: (body: { name: string; role?: Role }) => request<NewApiKey>("/api/keys", { method: "POST", ...json(body) }),
   revokeApiKey: (id: string) => request<{ revoked: string }>(`/api/keys/${id}`, { method: "DELETE" }),
@@ -204,7 +254,7 @@ export const api = {
     request<{ steps: Step[]; data: DataField[] }>("/api/openapi/steps", { method: "POST", ...json(body) }),
 
   async exportZip(spec: FlowSpec, flowId?: string | null): Promise<Blob> {
-    const res = await fetch(`/api/export${flowParam(flowId)}`, { method: "POST", headers: { "Content-Type": "application/json" }, ...json(spec) });
+    const res = await fetch(`/api/export${flowParam(flowId)}`, { method: "POST", headers: { "Content-Type": "application/json", ...workspaceHeader() }, ...json(spec) });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new ApiError(res.status, body.message ?? "Export failed");

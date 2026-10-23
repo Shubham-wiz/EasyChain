@@ -112,12 +112,13 @@ function PersonRow({ person, me, reload, onError }: { person: Person; me: string
   );
 }
 
-/** Owners: who can sign in, and their roles. */
+/** Owners: who is in this workspace, and their roles. */
 export function PeopleSection() {
   const me = useMe();
   const roles = useRoles();
   const [people, setPeople] = useState<Person[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [added, setAdded] = useState<string | null>(null);
   const [draft, setDraft] = useState({ email: "", name: "", role: "runner" as Role, password: "" });
   const load = () => {
     api.people().then(setPeople).catch((err) => setError(message(err)));
@@ -128,6 +129,7 @@ export function PeopleSection() {
       <h3 className="flex items-center gap-1.5 text-sm font-semibold">
         <Users size={14} /> People
       </h3>
+      <p className="text-xs text-muted">The people in this workspace. Someone can be in several workspaces, with a role in each.</p>
       <ul className="space-y-1 text-xs text-muted">
         {roles.map((r) => (
           <li key={r.id}>
@@ -150,16 +152,23 @@ export function PeopleSection() {
         onSubmit={async (e) => {
           e.preventDefault();
           try {
-            await api.addPerson({ ...draft, email: draft.email.trim(), name: draft.name.trim() });
+            const person = await api.addPerson({ ...draft, email: draft.email.trim(), name: draft.name.trim(), password: draft.password || undefined });
             setDraft({ email: "", name: "", role: draft.role, password: "" });
             setError(null);
+            setAdded(person.existing ? `${person.email} already had an account, so they sign in with their own password.` : null);
             load();
           } catch (err) {
             setError(message(err));
+            setAdded(null);
           }
         }}
       >
         <p className="text-sm font-medium">Add someone</p>
+        {added && (
+          <p className="text-xs text-muted" role="status">
+            {added}
+          </p>
+        )}
         <div className="grid grid-cols-2 gap-2">
           <Input aria-label="Their email" type="email" placeholder="Email" value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} />
           <Input aria-label="Their name" placeholder="Name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
@@ -167,7 +176,7 @@ export function PeopleSection() {
             aria-label="Their first password"
             type="password"
             autoComplete="new-password"
-            placeholder="First password"
+            placeholder="First password (new accounts)"
             value={draft.password}
             onChange={(e) => setDraft({ ...draft, password: e.target.value })}
           />
@@ -180,8 +189,8 @@ export function PeopleSection() {
           </Select>
         </div>
         <div className="flex items-center justify-between gap-2">
-          <p className="text-[11px] text-faint">Tell them their first password; they can change it from their account menu.</p>
-          <Button type="submit" variant="outline" size="sm" disabled={!draft.email.trim() || !draft.password}>
+          <p className="text-[11px] text-faint">Tell someone new their first password; they can change it from their account menu. Someone with an account already keeps theirs.</p>
+          <Button type="submit" variant="outline" size="sm" disabled={!draft.email.trim()}>
             <Plus size={13} /> Add
           </Button>
         </div>

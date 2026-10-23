@@ -307,9 +307,8 @@ def add_sso_routes(app: FastAPI) -> None:
             )
             return back_to_sign_in(message)
         accounts = app.state.hub.accounts
-        member = await accounts.member(person["id"])
-        who = Principal(
-            role=(member or {}).get("role", "viewer"),
+        who = await accounts.signed_in_as(person["id"]) or Principal(
+            role="viewer",
             user_id=person["id"],
             email=person["email"],
             name=person["name"],

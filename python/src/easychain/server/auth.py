@@ -21,6 +21,13 @@ owner      and secrets, server settings, people
 Every route is in ``PERMISSIONS`` with the least role that may use it; ``authorize`` (run for
 every route) checks it, and ``tests/test_auth.py`` fails if a route is missing, so a new
 endpoint can't be left open by accident.
+
+**Workspaces** (Phase 5.6d, docs/workspaces.md): a request names its workspace in the
+``X-EasyChain-Workspace`` header (or ``?workspace=``, for WebSockets), and the role is the
+person's role there. Without one, it is the default workspace, or the first the person is in.
+An API key belongs to the workspace it was made in. Owners of the default workspace are the
+server's Owners: only they change what every workspace shares (the sandbox, the network,
+single sign-on) and make workspaces.
 """
 
 from __future__ import annotations
@@ -29,7 +36,7 @@ import hashlib
 import hmac
 import os
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from fastapi import HTTPException, WebSocketException
@@ -38,6 +45,7 @@ from starlette.requests import HTTPConnection
 ROLES = ("viewer", "runner", "editor", "owner")
 ROLE_LABELS = {"viewer": "Viewer", "runner": "Runner", "editor": "Editor", "owner": "Owner"}
 DEFAULT_WORKSPACE = "default"
+WORKSPACE_HEADER = "x-easychain-workspace"
 SESSION_COOKIE = "easychain_session"
 SESSION_DAYS = 14
 MIN_PASSWORD = 10
@@ -123,6 +131,8 @@ class Principal:
     via: str = "local"  # local (sign-in off), session, key
     key_id: str | None = None
     workspace: str = DEFAULT_WORKSPACE
+    # An Owner of the default workspace, so of the server (see the module's docstring).
+    server_owner: bool = False
 
     def at_least(self, role: str) -> bool:
         return rank(self.role) >= rank(role)
@@ -141,18 +151,34 @@ class Principal:
             "role_label": ROLE_LABELS.get(self.role, self.role),
             "via": self.via,
             "workspace": self.workspace,
+            "server_owner": self.server_owner,
         }
 
 
-LOCAL_OWNER = Principal(role="owner", name="", via="local")
+LOCAL_OWNER = Principal(role="owner", name="", via="local", server_owner=True)
+
+
+class WorkspaceRefused(Exception):
+    """A request names a workspace that its person isn't in, or that doesn't exist."""
+
+    def __init__(self, workspace: str):
+        super().__init__(workspace)
+        self.workspace = workspace
+
+
+def asked_workspace(connection: HTTPConnection) -> str | None:
+    """The workspace a request names, if it names one."""
+    asked = connection.headers.get(WORKSPACE_HEADER) or connection.query_params.get("workspace")
+    return asked.strip() or None if asked else None
 
 
 # ── what each route needs ────────────────────────────────────────────────────
 
-PUBLIC, SIGNED_IN = "public", "signed_in"
+PUBLIC, SIGNED_IN, SERVER_OWNER = "public", "signed_in", "server_owner"
 
 # (method, path) → the least role that may use it. "public" needs no sign-in; "signed_in" needs
-# any role. WebSocket routes use the method "WS".
+# any role; "server_owner" an Owner of the default workspace. WebSocket routes use the method
+# "WS".
 PERMISSIONS: dict[tuple[str, str], str] = {
     # the app itself, health, sign-in
     ("GET", "/{path:path}"): PUBLIC,
@@ -175,6 +201,9 @@ PERMISSIONS: dict[tuple[str, str], str] = {
     ("POST", "/api/people"): "owner",
     ("PATCH", "/api/people/{user_id}"): "owner",
     ("DELETE", "/api/people/{user_id}"): "owner",
+    ("GET", "/api/workspaces"): SIGNED_IN,
+    ("POST", "/api/workspaces"): SERVER_OWNER,
+    ("PATCH", "/api/workspaces/{workspace_id}"): SERVER_OWNER,
     ("GET", "/api/keys"): SIGNED_IN,
     ("POST", "/api/keys"): SIGNED_IN,
     ("DELETE", "/api/keys/{key_id}"): SIGNED_IN,
@@ -249,13 +278,14 @@ PERMISSIONS: dict[tuple[str, str], str] = {
     ("PUT", "/api/secrets/{name}"): "owner",
     ("DELETE", "/api/secrets/{name}"): "owner",
     ("PUT", "/api/settings/mcp"): "owner",
-    ("PUT", "/api/settings/sandbox"): "owner",
-    ("POST", "/api/sandbox/prepare"): "owner",
     ("PUT", "/api/settings/notifications"): "owner",
-    ("PUT", "/api/settings/network"): "owner",
-    ("GET", "/api/settings/sso"): "owner",
-    ("PUT", "/api/settings/sso"): "owner",
     ("POST", "/api/settings/notifications/test"): "owner",
+    # what every workspace shares
+    ("PUT", "/api/settings/sandbox"): SERVER_OWNER,
+    ("POST", "/api/sandbox/prepare"): SERVER_OWNER,
+    ("PUT", "/api/settings/network"): SERVER_OWNER,
+    ("GET", "/api/settings/sso"): SERVER_OWNER,
+    ("PUT", "/api/settings/sso"): SERVER_OWNER,
 }
 
 
@@ -266,6 +296,14 @@ def _fail(connection: HTTPConnection, status: int, message: str, action: str) ->
 
 
 def _too_low(connection: HTTPConnection, principal: Principal, need: str) -> Exception:
+    if need == SERVER_OWNER:
+        return _fail(
+            connection,
+            403,
+            "Only the server's Owners (Owners of the default workspace) can do this, because "
+            "it applies to every workspace.",
+            "role",
+        )
     return _fail(
         connection,
         403,
@@ -276,15 +314,22 @@ def _too_low(connection: HTTPConnection, principal: Principal, need: str) -> Exc
 
 
 async def identify(connection: HTTPConnection) -> Principal | None:
-    """The person behind a request (None: nobody signed in). Sign-in off: the Owner."""
+    """The person behind a request (None: nobody signed in), in the workspace it names. Sign-in
+    off: the Owner. Raises WorkspaceRefused for a workspace they can't be in."""
+    asked = asked_workspace(connection)
+    hub = getattr(connection.app.state, "hub", None)
     if auth_mode() == "off":
-        return LOCAL_OWNER
-    accounts = connection.app.state.hub.accounts
+        if asked is None or asked == DEFAULT_WORKSPACE:
+            return LOCAL_OWNER
+        if hub is None or await hub.accounts.workspace(asked) is None:
+            raise WorkspaceRefused(asked)
+        return replace(LOCAL_OWNER, workspace=asked)
+    accounts = hub.accounts
     header = connection.headers.get("authorization", "")
     if header.lower().startswith("bearer "):
-        return await accounts.principal_for_key(header[7:].strip())
+        return await accounts.principal_for_key(header[7:].strip(), asked)
     token = connection.cookies.get(SESSION_COOKIE)
-    return await accounts.principal_for_session(token) if token else None
+    return await accounts.principal_for_session(token, asked) if token else None
 
 
 async def authorize(connection: HTTPConnection) -> None:
@@ -297,13 +342,27 @@ async def authorize(connection: HTTPConnection) -> None:
     if need is None:
         # A route nobody declared: closed, never open (tests/test_auth.py catches it first).
         raise _fail(connection, 403, "This part of the API isn't open to anyone yet.", "none")
-    principal = await identify(connection)
+    try:
+        principal = await identify(connection)
+    except WorkspaceRefused as exc:
+        if need != PUBLIC:
+            raise _fail(
+                connection,
+                403,
+                f"You aren't in the workspace “{exc.workspace}”, or it doesn't exist any more. "
+                "Pick another workspace.",
+                "workspace",
+            ) from None
+        principal = None
     connection.state.principal = principal
     if need == PUBLIC:
         return
     if principal is None:
         raise _fail(connection, 401, "Sign in first.", "sign_in")
-    if need != SIGNED_IN and not principal.at_least(need):
+    if need == SERVER_OWNER:
+        if not (principal.server_owner and principal.at_least("owner")):
+            raise _too_low(connection, principal, need)
+    elif need != SIGNED_IN and not principal.at_least(need):
         raise _too_low(connection, principal, need)
 
 
@@ -316,6 +375,9 @@ def require(connection: HTTPConnection, role: str) -> Principal:
     principal = principal_of(connection)
     if principal is None:
         raise _fail(connection, 401, "Sign in first.", "sign_in")
-    if not principal.at_least(role):
+    if role == SERVER_OWNER:
+        if not (principal.server_owner and principal.at_least("owner")):
+            raise _too_low(connection, principal, role)
+    elif not principal.at_least(role):
         raise _too_low(connection, principal, role)
     return principal

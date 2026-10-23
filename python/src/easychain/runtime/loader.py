@@ -2,8 +2,10 @@
 
 The runtime executes exactly the code the compiler produced (the same code an
 export contains). The only changes: the module's ``init_chat_model``, ``init_embeddings``
-and ``mcp_tools`` names point at the gateway, and Code steps' functions run their code in
-the sandbox (``sandbox.py``) when Settings say so.
+and ``mcp_tools`` names point at the gateway, Code steps' functions run their code in
+the sandbox (``sandbox.py``) when Settings say so, web requests keep to the egress policy,
+and each workspace sees only its own Knowledge Bases and long-term memory
+(``workspace_store.py``).
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from collections import OrderedDict
 from typing import Any
 
 from ..egress import guarded_httpx
+from ..knowledge.store import in_this_workspace
 from .gateway import (
     current_sandbox,
     gateway_init_chat_model,
@@ -24,6 +27,7 @@ from .gateway import (
 )
 from .resources import Resources, memory_resources
 from .sandbox import sandboxed
+from .workspace_store import WorkspaceStore
 
 _CACHE_SIZE = 64
 _cache: OrderedDict[tuple[str, int], tuple[types.ModuleType, Any]] = OrderedDict()
@@ -55,6 +59,9 @@ def load_module(
     if "httpx" in module.__dict__:
         # Web requests keep to the server's egress policy (exported code uses plain httpx).
         module.__dict__["httpx"] = guarded_httpx
+    if callable(module.__dict__.get("search_knowledge")):
+        # A flow searches only the Knowledge Bases of the workspace it runs in.
+        module.__dict__["search_knowledge"] = in_this_workspace(module.__dict__["search_knowledge"])
     # Before build_graph() takes the functions: each call then asks the run's settings
     # whether to use the sandbox.
     for fn_name, info in (code_functions or {}).items():
@@ -82,7 +89,8 @@ def load_graph(
             _cache.move_to_end(key)
             return _cache[key]
     module = load_module(source, name, code_functions)
-    graph = module.build_graph(checkpointer=res.checkpointer, store=res.store, cache=res.cache)
+    store = WorkspaceStore(res.store) if res.store is not None else None
+    graph = module.build_graph(checkpointer=res.checkpointer, store=store, cache=res.cache)
     with _lock:
         _cache[key] = (module, graph)
         while len(_cache) > _CACHE_SIZE:

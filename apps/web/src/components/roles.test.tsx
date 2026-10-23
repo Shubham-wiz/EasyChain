@@ -16,8 +16,17 @@ vi.mock("../lib/api", async (original) => ({
 
 const roles: AuthStatus["roles"] = (["viewer", "runner", "editor", "owner"] as Role[]).map((id) => ({ id, label: id[0].toUpperCase() + id.slice(1) }));
 
-function signedInAs(role: Role) {
-  const me: Me = { id: "u1", email: `${role}@example.com`, name: "", role, role_label: role[0].toUpperCase() + role.slice(1), via: "session", workspace: "default" };
+function signedInAs(role: Role, workspace = "default") {
+  const me: Me = {
+    id: "u1",
+    email: `${role}@example.com`,
+    name: "",
+    role,
+    role_label: role[0].toUpperCase() + role.slice(1),
+    via: "session",
+    workspace,
+    server_owner: role === "owner" && workspace === "default",
+  };
   useAuth.setState({ status: { mode: "on", signed_in: true, setup_needed: false, me, roles } });
 }
 
@@ -79,9 +88,9 @@ describe("roles in the web app", () => {
 
   it("shows each role the settings it may see", () => {
     const tabs = () => screen.getAllByRole("tab").map((t) => t.textContent);
-    const open = (role: Role) => {
+    const open = (role: Role, workspace = "default") => {
       cleanup();
-      signedInAs(role);
+      signedInAs(role, workspace);
       useUi.getState().openSettings();
       render(
         <TooltipProvider>
@@ -97,7 +106,10 @@ describe("roles in the web app", () => {
     expect(tabs()).toEqual(["Keys and providers", "MCP servers", "Notifications", "Sandbox", "Network", "Keys for scripts"]);
     expect(screen.getByRole("note")).toHaveTextContent("Your role (Editor) can't change these; that needs Owner or above.");
     open("owner");
-    expect(tabs()).toEqual(["Keys and providers", "MCP servers", "Notifications", "Sandbox", "Network", "People", "Single sign-on", "Keys for scripts", "Audit log"]);
+    expect(tabs()).toEqual(["Keys and providers", "MCP servers", "Notifications", "Sandbox", "Network", "People", "Workspaces", "Single sign-on", "Keys for scripts", "Audit log"]);
     expect(screen.queryByRole("note")).toBeNull();
+    // An Owner of another workspace: what every workspace shares is the server's Owners' to change.
+    open("owner", "team-b");
+    expect(tabs()).toEqual(["Keys and providers", "MCP servers", "Notifications", "Sandbox", "Network", "People", "Keys for scripts", "Audit log"]);
   });
 });

@@ -7,7 +7,7 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from .. import egress
@@ -15,6 +15,7 @@ from ..integrations import mcp as mcp_module
 from ..integrations import openapi
 from .network import policy as network_policy
 from .secrets import MASK, masked, masked_url, unmasked_url
+from .spaces import space_of
 
 # Parts of an MCP server's settings that can hold tokens: never shown by the API.
 _SECRET_PARTS = {"headers": "header", "env": "environment variable"}
@@ -95,30 +96,53 @@ def _restored(server: dict[str, Any], saved: list[dict[str, Any]]) -> dict[str, 
     return out
 
 
+async def mcp_setting(db: Any, key: str) -> dict[str, Any]:
+    """A workspace's MCP settings (``key`` is its settings key). Which commands MCP servers may
+    run on this machine is the server's to say, so every workspace uses the default one's list."""
+    stored = dict(await db.get_setting(key, {}) or {})
+    if key != "mcp":
+        server = await db.get_setting("mcp", {}) or {}
+        stored["allowed_commands"] = list(server.get("allowed_commands") or [])
+    return stored
+
+
 def add_integration_routes(app: FastAPI, hub: Callable[[], Any]) -> None:
-    async def mcp_settings() -> dict[str, Any]:
-        stored = await hub().db.get_setting("mcp", {}) or {}
+    async def mcp_settings(request: Request) -> dict[str, Any]:
+        stored = await mcp_setting(hub().db, space_of(request).setting("mcp"))
         return McpSettings.model_validate(stored).model_dump()
 
     @app.get("/api/settings/mcp")
-    async def get_mcp() -> dict[str, Any]:
-        return _shown(await mcp_settings())
+    async def get_mcp(request: Request) -> dict[str, Any]:
+        return _shown(await mcp_settings(request))
 
     @app.put("/api/settings/mcp")
-    async def put_mcp(body: McpSettings) -> dict[str, Any]:
+    async def put_mcp(body: McpSettings, request: Request) -> dict[str, Any]:
         ids = [s.id for s in body.servers]
         if len(ids) != len(set(ids)):
             raise HTTPException(422, detail={"message": "Two MCP servers share an id."})
-        saved = (await mcp_settings())["servers"]
+        current = await mcp_settings(request)
         value = body.model_dump()
-        value["servers"] = [_restored(s, saved) for s in value["servers"]]
+        value["servers"] = [_restored(s, current["servers"]) for s in value["servers"]]
         value["allowed_commands"] = sorted({c.strip() for c in body.allowed_commands if c.strip()})
-        await hub().db.set_setting("mcp", value)
+        key = space_of(request).setting("mcp")
+        if key != "mcp":
+            if value["allowed_commands"] != sorted(set(current["allowed_commands"])):
+                raise HTTPException(
+                    403,
+                    detail={
+                        "message": "Which commands MCP servers may run on this machine applies "
+                        "to every workspace, so it is changed in the default workspace, by the "
+                        "server's Owners.",
+                    },
+                )
+            await hub().db.set_setting(key, {**value, "allowed_commands": []})
+        else:
+            await hub().db.set_setting(key, value)
         return _shown(value)
 
     @app.post("/api/mcp/tools")
-    async def mcp_tools(req: McpToolsRequest) -> dict[str, Any]:
-        settings = await mcp_settings()
+    async def mcp_tools(req: McpToolsRequest, request: Request) -> dict[str, Any]:
+        settings = await mcp_settings(request)
         server = _restored(req.server.model_dump(), settings["servers"]) if req.server else None
         if server is None:
             server = next((s for s in settings["servers"] if s["id"] == req.server_id), None)

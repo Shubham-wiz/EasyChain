@@ -12,8 +12,10 @@ import time
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
+from .. import current_workspace as context
 from .. import scoped_env
 from ..runtime.loader import load_graph
 from ..runtime.resources import Resources
@@ -22,6 +24,7 @@ from ..spec import FlowSpec, parse_spec, spec_json
 from ..steps.flow_control import subflow_ids
 from .accounts import Accounts
 from .db import FINISHED, Database
+from .spaces import Space, Spaces
 from .store import FlowNotFound, FlowStore
 
 TERMINAL_EVENTS = {"run_finished"}
@@ -76,11 +79,21 @@ class EventBus:
 
 
 class Hub:
-    def __init__(self, db: Database, resources: Resources, flows: FlowStore, vault: Any = None):
+    def __init__(
+        self,
+        db: Database,
+        resources: Resources,
+        flows: FlowStore,
+        vault: Any = None,
+        home: Path | None = None,
+        spaces: Spaces | None = None,
+    ):
         self.db = db
         self.resources = resources
+        # The default workspace's; each workspace's are in ``spaces`` (spaces.py).
         self.flows = flows
         self.vault = vault
+        self.spaces = spaces or Spaces(home, flows, vault)
         # Secrets reach runs through os.environ without being exported into it (scoped_env.py);
         # with no workspace's layer in force, the default workspace's vault applies.
         scoped_env.install()
@@ -88,6 +101,11 @@ class Hub:
             scoped_env.set_default(lambda: vault.mapping)
         self.bus = EventBus()
         self.accounts = Accounts(db)
+
+    @property
+    def space(self) -> Space:
+        """The workspace of the work in hand (its flows, vault and skills)."""
+        return self.spaces.get(context.current())
 
     # ── flow versions ────────────────────────────────────────────────────────
 
@@ -100,7 +118,7 @@ class Hub:
             if flow_id in children:
                 continue
             try:
-                child = self.flows.get(flow_id)
+                child = self.space.flows.get(flow_id)
             except (FlowNotFound, Exception):
                 continue
             children[flow_id] = spec_json(child)
@@ -135,6 +153,8 @@ class Hub:
     ) -> str:
         thread = thread_id or uuid.uuid4().hex
         payload = dict(payload or {})
+        if thread_id and await self.db.thread_elsewhere(thread_id):
+            raise NotFound("That conversation isn't in this workspace.")
         if thread_id and action == "start":
             payload.update(await self._double_text(spec, thread))
         version_id = await self.db.save_version(flow_id, self.bundle(spec))
@@ -341,9 +361,8 @@ class Hub:
 
         run = await self._run(run_id)
         graph = await self._graph(run)
-        if hasattr(self.vault, "reload"):
-            self.vault.reload()  # secrets saved by another process
-        redact = Redactor(self.vault.values() if self.vault is not None else [])
+        vault = self.space.vault  # the request's workspace's (reloaded as it was entered)
+        redact = Redactor(vault.values() if vault is not None else [])
         out = []
         async for snap in graph.aget_state_history(
             {"configurable": {"thread_id": run["thread_id"]}}

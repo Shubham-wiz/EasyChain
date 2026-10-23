@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import json
 import logging
 import os
@@ -35,6 +36,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .. import __version__
+from .. import current_workspace as context
 from ..compiler import CompileError, FlowAnalysis, compile_flow, validate
 from ..compiler.issues import Fix, error, warning
 from ..compiler.templates import secrets as template_secrets
@@ -69,6 +71,7 @@ from .knowledge_api import CUT_OFF, add_knowledge_routes, use_database
 from .listen import listen
 from .network import add_network_routes
 from .secrets import SecretStore, VaultLocked, masked, unmasked
+from .spaces import Space, Spaces, in_workspace
 from .sso import add_sso_routes
 from .store import FlowNotFound, FlowStore
 from .worker import Worker, sandbox_settings
@@ -209,6 +212,8 @@ def create_app(
     vault = SecretStore(home_path)
     if vault.problem:
         log.warning(vault.problem)
+    # Each workspace's flows, vault and skills (spaces.py); "default" has the ones above.
+    spaces = Spaces(home_path, flows, vault)
     web_dir = _web_dir(static_dir)
     db_url = database_url or default_database_url(home_path)
     inline_worker = (
@@ -236,7 +241,7 @@ def create_app(
         except Exception as exc:
             log.warning("Couldn't check the Knowledge Base documents: %s", exc)
         resources = await open_resources(checkpoint_url(db_url))
-        app.state.hub = Hub(db, resources, flows, vault)
+        app.state.hub = Hub(db, resources, flows, vault, spaces=spaces)
         listener = app.state.listener = listen(db_url, app.state.hub.bus)
         if auth_mode() == "on":
             code = await app.state.hub.accounts.setup_code()
@@ -272,10 +277,16 @@ def create_app(
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
         lifespan=lifespan,
-        # Who is asking, and whether their role may use the route (server/auth.py).
-        dependencies=[Depends(authorize)],
+        # Who is asking, and whether their role may use the route (server/auth.py); then the
+        # rest of the request is in their workspace (spaces.py).
+        dependencies=[Depends(authorize), Depends(in_workspace)],
     )
-    app.state.flows, app.state.vault = flows, vault
+    app.state.flows, app.state.vault, app.state.spaces = flows, vault, spaces
+
+    def space() -> Space:
+        """The request's workspace: its flows, secrets vault and skills."""
+        return spaces.get(context.current())
+
     add_auth_routes(app)
     add_audit_routes(app)
     add_network_routes(app)
@@ -318,7 +329,7 @@ def create_app(
                 "key_label": p.key_label,
                 "key_url": p.key_url,
                 "key_set": status[p.id],
-                "key_source": vault.source(p.key_env) if p.key_env else None,
+                "key_source": space().vault.source(p.key_env) if p.key_env else None,
                 "installed": p.installed(),
                 "install": (f"pip install 'easychain[{p.extra}]'" if p.extra else None),
                 "credentials": p.credentials,
@@ -390,7 +401,7 @@ def create_app(
 
     @app.get("/api/flows")
     def list_flows() -> list[dict[str, Any]]:
-        return flows.list()
+        return space().flows.list()
 
     @app.post("/api/flows", status_code=201)
     def create_flow(req: CreateFlowRequest, request: Request) -> dict[str, Any]:
@@ -415,20 +426,20 @@ def create_app(
             spec = _spec_or_422(req.spec)
         else:
             spec = blank_flow(req.name or "My flow")
-        flow_id = flows.create(spec)
+        flow_id = space().flows.create(spec)
         note(request, flow_id, name=spec.name)
         return {"id": flow_id, "spec": spec_json(spec)}
 
     def resolve_flow(flow_id: str) -> FlowSpec | None:
         """Flows used as Sub-flows come from the workspace."""
         try:
-            return flows.get(flow_id)
+            return space().flows.get(flow_id)
         except (FlowNotFound, SpecError):
             return None
 
     def _get(flow_id: str) -> FlowSpec:
         try:
-            return flows.get(flow_id)
+            return space().flows.get(flow_id)
         except FlowNotFound:
             raise HTTPException(
                 404, detail={"message": "That flow doesn't exist (any more)."}
@@ -447,7 +458,7 @@ def create_app(
     async def save_flow(flow_id: str, spec: dict[str, Any] = Body(...)) -> dict[str, Any]:
         parsed = _spec_or_422(spec)
         try:
-            flows.save(flow_id, parsed)
+            space().flows.save(flow_id, parsed)
         except FlowNotFound:
             raise HTTPException(404, detail={"message": "Bad flow id."}) from None
         version_id = None
@@ -459,7 +470,7 @@ def create_app(
     @app.delete("/api/flows/{flow_id}")
     def delete_flow(flow_id: str) -> dict[str, Any]:
         try:
-            flows.delete(flow_id)
+            space().flows.delete(flow_id)
         except FlowNotFound:
             raise HTTPException(404, detail={"message": "That flow doesn't exist."}) from None
         return {"deleted": True}
@@ -467,7 +478,7 @@ def create_app(
     @app.get("/api/flows/{flow_id}/yaml", response_class=PlainTextResponse)
     def flow_yaml(flow_id: str) -> str:
         try:
-            return flows.yaml(flow_id)
+            return space().flows.yaml(flow_id)
         except FlowNotFound:
             raise HTTPException(404, detail={"message": "That flow doesn't exist."}) from None
 
@@ -491,7 +502,7 @@ def create_app(
             return []
         issues = []
         for step in steps:
-            base = store.get_base(step.settings.knowledge_base)
+            base = store.get_base(step.settings.knowledge_base, context.current())
             if base is None:
                 issues.append(
                     warning(
@@ -530,9 +541,10 @@ def create_app(
         return []
 
     def _saved_setting(name: str) -> Any:
-        """A saved setting, read from this worker thread on the server's event loop."""
+        """A saved setting (this workspace's, for those kept per workspace), read from this
+        worker thread on the server's event loop."""
         try:
-            return anyio.from_thread.run(hub().db.get_setting, name, {}) or {}
+            return anyio.from_thread.run(hub().db.get_setting, space().setting(name), {}) or {}
         except Exception:  # no server loop (a script) or no settings yet
             return {}
 
@@ -631,7 +643,7 @@ def create_app(
                 for name in _secret_names(parts):
                     needed.setdefault(name, "server" if step.type == "mcp_tool" else "mcp")
             for name, setting in sorted(needed.items()):
-                if not vault.has(name):
+                if not space().vault.has(name):
                     issues.append(
                         warning(
                             "missing_secret",
@@ -806,8 +818,14 @@ def create_app(
         )
         return [run_summary(r) for r in rows]
 
+    def _here(row: dict[str, Any] | None) -> dict[str, Any] | None:
+        """The row, if it is the request's workspace's (another's looks like it isn't there)."""
+        if row is None or (row.get("workspace_id") or "default") != context.current():
+            return None
+        return row
+
     async def _run_or_404(run_id: str) -> dict[str, Any]:
-        run = await hub().db.get_run(run_id)
+        run = _here(await hub().db.get_run(run_id))
         if run is None:
             raise HTTPException(404, detail={"message": "That run doesn't exist."})
         return run
@@ -829,7 +847,7 @@ def create_app(
     @app.websocket("/api/runs/{run_id}/ws")
     async def run_socket(socket: WebSocket, run_id: str, after: int = 0) -> None:
         await socket.accept()
-        if await hub().db.get_run(run_id) is None:
+        if _here(await hub().db.get_run(run_id)) is None:
             await socket.send_json({"type": "error", "message": "That run doesn't exist."})
             await socket.close(code=4404)
             return
@@ -935,7 +953,7 @@ def create_app(
 
     @app.get("/api/inbox/{item_id}")
     async def get_inbox(item_id: str) -> dict[str, Any]:
-        item = await hub().db.get_inbox(item_id)
+        item = _here(await hub().db.get_inbox(item_id))
         if item is None:
             raise HTTPException(404, detail={"message": "That Inbox item doesn't exist."})
         return item
@@ -954,6 +972,8 @@ def create_app(
             answer["value"] = req.value
         if req.comment:
             answer["comment"] = req.comment
+        if _here(await hub().db.get_inbox(item_id)) is None:
+            raise HTTPException(404, detail={"message": "That Inbox item doesn't exist."})
         try:
             item = await hub().answer(item_id, answer, _answered_by(request, req.by))
         except (Busy, NotFound, Invalid) as exc:
@@ -1019,7 +1039,7 @@ def create_app(
 
     @app.patch("/api/triggers/{trigger_id}")
     async def update_trigger(trigger_id: str, req: TriggerUpdate) -> dict[str, Any]:
-        trig = await hub().db.get_trigger(trigger_id)
+        trig = _here(await hub().db.get_trigger(trigger_id))
         if trig is None:
             raise HTTPException(404, detail={"message": "That trigger doesn't exist."})
         values: dict[str, Any] = {}
@@ -1044,9 +1064,15 @@ def create_app(
 
     @app.delete("/api/triggers/{trigger_id}")
     async def delete_trigger(trigger_id: str) -> dict[str, Any]:
-        if not await hub().db.delete_trigger(trigger_id):
+        if _here(await hub().db.get_trigger(trigger_id)) is None or not (
+            await hub().db.delete_trigger(trigger_id)
+        ):
             raise HTTPException(404, detail={"message": "That trigger doesn't exist."})
         return {"deleted": True}
+
+    def _webhook(trig: dict[str, Any]) -> Any:
+        """Who the audit log says started the run: a webhook, in the trigger's workspace."""
+        return dataclasses.replace(WEBHOOK, workspace=trig.get("workspace_id") or "default")
 
     async def _hook(trigger_id: str, kind: str, request: Request) -> dict[str, Any]:
         trig = await hub().db.get_trigger(trigger_id)
@@ -1059,6 +1085,8 @@ def create_app(
             raise HTTPException(404, detail={"message": "No trigger here, or the token is wrong."})
         if not trig["enabled"]:
             raise HTTPException(409, detail={"message": "This trigger is switched off."})
+        # Anyone with the token may call it, and the run is the trigger's workspace's.
+        spaces.enter_now(trig.get("workspace_id"))
         return trig
 
     @app.post("/api/hooks/{trigger_id}", status_code=202)
@@ -1075,7 +1103,7 @@ def create_app(
             run_id = await fire_trigger(hub(), trig, data)
         except (Busy, NotFound, Invalid) as exc:
             raise hub_errors(exc) from exc
-        note(request, actor=WEBHOOK, flow=trig["flow_id"], run=run_id)
+        note(request, actor=_webhook(trig), flow=trig["flow_id"], run=run_id)
         return {"run_id": run_id}
 
     @app.post("/api/hooks/{trigger_id}/upload", status_code=202)
@@ -1093,13 +1121,13 @@ def create_app(
         run_id = await fire_trigger(
             hub(), {**trig, "config": {**cfg, "inputs": cfg.get("inputs")}}, data
         )
-        note(request, actor=WEBHOOK, flow=trig["flow_id"], run=run_id, file=safe)
+        note(request, actor=_webhook(trig), flow=trig["flow_id"], run=run_id, file=safe)
         return {"run_id": run_id, "file": str(target)}
 
     # ── the describe-it copilot ─────────────────────────────────────────────
 
     async def _copilot_choice() -> str | None:
-        return (await hub().db.get_setting("copilot", {})).get("model") or None
+        return (await hub().db.get_setting(space().setting("copilot"), {})).get("model") or None
 
     @app.get("/api/settings/copilot")
     async def get_copilot() -> dict[str, Any]:
@@ -1113,7 +1141,7 @@ def create_app(
             raise HTTPException(
                 422, detail={"message": "Pick a model as provider:model, like openai:gpt-4.1."}
             )
-        await hub().db.set_setting("copilot", {"model": model})
+        await hub().db.set_setting(space().setting("copilot"), {"model": model})
         return {"model": model, "using": copilot_model(model)}
 
     @app.post("/api/copilot")
@@ -1145,7 +1173,8 @@ def create_app(
         """Add cases (from the copilot) to the flow's Test Set, ``<flow id>.tests.yaml``."""
         _get(flow_id)
         cases = [c for c in body.get("cases") or [] if isinstance(c, dict)]
-        return add_cases(flows.workspace / f"{flow_id}.tests.yaml", f"{flow_id}.flow.yaml", cases)
+        folder = space().flows.workspace
+        return add_cases(folder / f"{flow_id}.tests.yaml", f"{flow_id}.flow.yaml", cases)
 
     # ── the Skills library ──────────────────────────────────────────────────
 
@@ -1213,20 +1242,21 @@ def create_app(
 
     @app.get("/api/settings/notifications")
     async def get_notifications() -> dict[str, Any]:
-        return notify.shown(await hub().db.get_setting("notifications", {}))
+        return notify.shown(await hub().db.get_setting(space().setting("notifications"), {}))
 
     @app.put("/api/settings/notifications")
     async def set_notifications(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
         try:
-            value = notify.to_save(body, await hub().db.get_setting("notifications", {}))
+            key = space().setting("notifications")
+            value = notify.to_save(body, await hub().db.get_setting(key, {}))
         except ValueError as exc:
             raise HTTPException(422, detail={"message": str(exc)}) from None
-        await hub().db.set_setting("notifications", value)
+        await hub().db.set_setting(key, value)
         return notify.shown(value)
 
     @app.post("/api/settings/notifications/test")
     async def test_notifications() -> dict[str, Any]:
-        config = await hub().db.get_setting("notifications", {})
+        config = await hub().db.get_setting(space().setting("notifications"), {})
         sample = {
             "id": "test",
             "run_id": "test",
@@ -1245,7 +1275,7 @@ def create_app(
 
     @app.get("/api/versions/{version_id}")
     async def get_version(version_id: str) -> dict[str, Any]:
-        version = await hub().db.get_version(version_id)
+        version = _here(await hub().db.get_version(version_id))
         if version is None:
             raise HTTPException(404, detail={"message": "That version doesn't exist."})
         return version
@@ -1254,6 +1284,8 @@ def create_app(
 
     @app.get("/api/secrets")
     def list_secrets() -> list[dict[str, Any]]:
+        """This workspace's secrets (names only), and provider keys the server was given."""
+        vault = space().vault
         names = {s["name"]: s for s in vault.names()}
         for p in PROVIDERS.values():
             if p.key_env and p.key_env not in names and os.environ.get(p.key_env):
@@ -1263,7 +1295,7 @@ def create_app(
     @app.put("/api/secrets/{name}")
     def set_secret(name: str, body: SecretValue) -> dict[str, Any]:
         try:
-            vault.set(name, body.value.strip())
+            space().vault.set(name, body.value.strip())
         except VaultLocked as exc:
             raise HTTPException(409, detail={"message": str(exc)}) from exc
         except ValueError as exc:
@@ -1273,7 +1305,7 @@ def create_app(
     @app.delete("/api/secrets/{name}")
     def delete_secret(name: str) -> dict[str, Any]:
         try:
-            deleted = vault.delete(name)
+            deleted = space().vault.delete(name)
         except VaultLocked as exc:
             raise HTTPException(409, detail={"message": str(exc)}) from exc
         if not deleted:

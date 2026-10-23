@@ -2,7 +2,7 @@ import { CheckCircle2, ChevronDown, ChevronRight, ExternalLink, KeyRound, Plus, 
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../../lib/api";
 import type { ProviderInfo, SecretInfo } from "../../lib/types";
-import { useAuth, useCan, useRoleNote } from "../../state/auth";
+import { useAuth, useCan, useRoleNote, useServerOwner } from "../../state/auth";
 import { useCatalog } from "../../state/catalog";
 import { useUi, type SettingsTab } from "../../state/ui";
 import { Badge, Button, Dialog, Input, Locked, Tabs, TabsContent, TabsList, TabsTrigger } from "../ui";
@@ -12,6 +12,7 @@ import { NotificationsSection } from "./Notifications";
 import { AuditSection } from "./Audit";
 import { ApiKeysSection, PeopleSection } from "./People";
 import { SsoSection } from "./Sso";
+import { WorkspacesSection } from "./Workspaces";
 import { SandboxSection } from "./Sandbox";
 
 function KeyRow({
@@ -230,18 +231,25 @@ function KeysSection() {
   );
 }
 
-/** Editors see the server's settings; only an Owner changes them (server/auth.py). */
-function OwnerOnly({ children }: { children: ReactNode }) {
+/** Editors see the settings; only an Owner changes them, and only the server's Owners change
+ * what every workspace shares (`server`; server/auth.py). */
+function OwnerOnly({ children, server = false }: { children: ReactNode; server?: boolean }) {
   const owner = useCan("owner");
-  const note = useRoleNote("owner", "change these");
+  const serverOwner = useServerOwner();
+  const roleNote = useRoleNote("owner", "change these");
+  const allowed = server ? serverOwner : owner;
+  const note =
+    server && owner
+      ? "These apply to every workspace, so only the server's Owners (Owners of the default workspace) change them."
+      : roleNote;
   return (
     <>
-      {!owner && (
+      {!allowed && (
         <p className="mb-3 rounded-lg border border-border bg-surface-2 px-3 py-2 text-xs text-muted" role="note">
           {note}
         </p>
       )}
-      <Locked locked={!owner}>{children}</Locked>
+      <Locked locked={!allowed}>{children}</Locked>
     </>
   );
 }
@@ -255,11 +263,14 @@ export function SettingsDialog() {
   const signIn = useAuth((s) => s.status?.mode === "on");
   const owner = useCan("owner");
   const editor = useCan("editor");
-  // What each role sees: Editors the server's settings (read only), Owners people too, and
-  // everyone signed in their own keys for scripts.
+  const serverOwner = useServerOwner();
+  // What each role sees: Editors the settings (read only), Owners people too, the server's
+  // Owners workspaces and single sign-on, and everyone signed in their own keys for scripts.
   const tabs: SettingsTab[] = [
     ...(editor ? (["keys", "mcp", "notifications", "sandbox", "network"] as const) : []),
-    ...(signIn && owner ? (["people", "sso"] as const) : []),
+    ...(signIn && owner ? (["people"] as const) : []),
+    ...(serverOwner ? (["workspaces"] as const) : []),
+    ...(signIn && serverOwner ? (["sso"] as const) : []),
     ...(signIn ? (["api-keys"] as const) : []),
     ...(owner ? (["audit"] as const) : []),
   ];
@@ -284,7 +295,8 @@ export function SettingsDialog() {
             </>
           )}
           {signIn && owner && <TabsTrigger value="people">People</TabsTrigger>}
-          {signIn && owner && <TabsTrigger value="sso">Single sign-on</TabsTrigger>}
+          {serverOwner && <TabsTrigger value="workspaces">Workspaces</TabsTrigger>}
+          {signIn && serverOwner && <TabsTrigger value="sso">Single sign-on</TabsTrigger>}
           {signIn && <TabsTrigger value="api-keys">Keys for scripts</TabsTrigger>}
           {owner && <TabsTrigger value="audit">Audit log</TabsTrigger>}
         </TabsList>
@@ -311,20 +323,23 @@ export function SettingsDialog() {
         </TabsContent>
         <TabsContent value="sandbox" className="pt-4">
           {shown("sandbox") && (
-            <OwnerOnly>
+            <OwnerOnly server>
               <SandboxSection />
             </OwnerOnly>
           )}
         </TabsContent>
         <TabsContent value="network" className="pt-4">
           {shown("network") && (
-            <OwnerOnly>
+            <OwnerOnly server>
               <NetworkSection />
             </OwnerOnly>
           )}
         </TabsContent>
         <TabsContent value="people" className="pt-4">
           {shown("people") && <PeopleSection />}
+        </TabsContent>
+        <TabsContent value="workspaces" className="pt-4">
+          {shown("workspaces") && <WorkspacesSection />}
         </TabsContent>
         <TabsContent value="sso" className="pt-4">
           {shown("sso") && <SsoSection />}

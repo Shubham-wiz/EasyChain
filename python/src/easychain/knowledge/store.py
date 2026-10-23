@@ -6,6 +6,9 @@ available (with an HNSW index per Knowledge Base, at half precision for more tha
 2,000 dimensions), and full-text search uses a
 generated ``tsvector`` column. On SQLite embeddings are float32 blobs searched with
 numpy, and full-text search uses FTS5. ``knowledge.search`` reads all of this.
+
+Each Knowledge Base belongs to a workspace (``workspace_id``, Phase 5.6d); the sample one the
+templates search is shared by all of them (``SHARED``).
 """
 
 from __future__ import annotations
@@ -16,17 +19,25 @@ import re
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 from sqlalchemy import Engine, text
 
+from .. import current_workspace
 from .search import knowledge_engine, knowledge_vector_kind
 
 log = logging.getLogger("easychain.knowledge")
 _setup_lock = threading.Lock()
 _ready: set[str] = set()
+# The workspace of a Knowledge Base every workspace can search (the templates' sample).
+SHARED = "*"
+
+
+class KnowledgeNotHere(LookupError):
+    """A flow searched a Knowledge Base of another workspace."""
 
 
 @dataclass
@@ -96,9 +107,27 @@ class KnowledgeStore:
                 " id VARCHAR(64) PRIMARY KEY, name TEXT NOT NULL, description TEXT DEFAULT '',"
                 " embedding_model TEXT NOT NULL, dims INTEGER NOT NULL,"
                 " chunk_size INTEGER NOT NULL, chunk_overlap INTEGER NOT NULL,"
-                " created_at DOUBLE PRECISION NOT NULL, updated_at DOUBLE PRECISION NOT NULL)"
+                " created_at DOUBLE PRECISION NOT NULL, updated_at DOUBLE PRECISION NOT NULL,"
+                " workspace_id VARCHAR(40) NOT NULL DEFAULT 'default')"
             )
         )
+        # Knowledge Bases made before workspaces (Phase 5.6d) are the default workspace's.
+        if self.dialect == "postgresql":
+            conn.execute(
+                text(
+                    "ALTER TABLE kb_bases ADD COLUMN IF NOT EXISTS"
+                    " workspace_id VARCHAR(40) NOT NULL DEFAULT 'default'"
+                )
+            )
+        else:
+            columns = {r[1] for r in conn.execute(text("PRAGMA table_info(kb_bases)"))}
+            if "workspace_id" not in columns:
+                conn.execute(
+                    text(
+                        "ALTER TABLE kb_bases ADD COLUMN"
+                        " workspace_id VARCHAR(40) NOT NULL DEFAULT 'default'"
+                    )
+                )
         conn.execute(
             text(
                 "CREATE TABLE IF NOT EXISTS kb_documents ("
@@ -174,22 +203,38 @@ class KnowledgeStore:
 
     # ── bases ────────────────────────────────────────────────────────────────
 
-    def list_bases(self) -> list[dict[str, Any]]:
+    def list_bases(self, workspace: str | None = None) -> list[dict[str, Any]]:
+        """Every Knowledge Base, or (``workspace``) those that workspace can use."""
+        where = " WHERE b.workspace_id IN (:ws, :shared)" if workspace is not None else ""
         with self.engine.connect() as conn:
             rows = conn.execute(
                 text(
                     "SELECT b.*, (SELECT COUNT(*) FROM kb_documents d WHERE d.kb_id = b.id) AS documents,"
                     " (SELECT COALESCE(SUM(d.chunks), 0) FROM kb_documents d WHERE d.kb_id = b.id)"
-                    " AS chunks FROM kb_bases b ORDER BY b.updated_at DESC"
-                )
+                    f" AS chunks FROM kb_bases b{where} ORDER BY b.updated_at DESC"
+                ),
+                {"ws": workspace, "shared": SHARED},
             ).mappings()
             return [dict(r) for r in rows]
 
-    def get_base(self, kb_id: str) -> dict[str, Any] | None:
+    def get_base(self, kb_id: str, workspace: str | None = None) -> dict[str, Any] | None:
+        """A Knowledge Base; with ``workspace``, only if that workspace can use it."""
         with self.engine.connect() as conn:
             row = conn.execute(text("SELECT * FROM kb_bases WHERE id = :id"), {"id": kb_id})
             found = row.mappings().first()
-            return dict(found) if found else None
+        if found is None:
+            return None
+        if workspace is not None and found["workspace_id"] not in (workspace, SHARED):
+            return None
+        return dict(found)
+
+    def share_base(self, kb_id: str) -> None:
+        """Let every workspace search it (the templates' sample)."""
+        with self.engine.begin() as conn:
+            conn.execute(
+                text("UPDATE kb_bases SET workspace_id = :shared WHERE id = :id"),
+                {"shared": SHARED, "id": kb_id},
+            )
 
     def create_base(
         self,
@@ -201,7 +246,9 @@ class KnowledgeStore:
         chunk_size: int = 1000,
         chunk_overlap: int = 150,
         kb_id: str | None = None,
+        workspace: str = current_workspace.DEFAULT,
     ) -> dict[str, Any]:
+        """A new Knowledge Base in ``workspace``. Ids are unique across workspaces."""
         base_id = kb_id or slug(name)
         with self.engine.begin() as conn:
             taken = {
@@ -221,8 +268,8 @@ class KnowledgeStore:
             conn.execute(
                 text(
                     "INSERT INTO kb_bases (id, name, description, embedding_model, dims, chunk_size,"
-                    " chunk_overlap, created_at, updated_at) VALUES (:id, :name, :description,"
-                    " :model, :dims, :size, :overlap, :now, :now)"
+                    " chunk_overlap, created_at, updated_at, workspace_id) VALUES (:id, :name,"
+                    " :description, :model, :dims, :size, :overlap, :now, :now, :ws)"
                 ),
                 {
                     "id": base_id,
@@ -233,6 +280,7 @@ class KnowledgeStore:
                     "size": chunk_size,
                     "overlap": chunk_overlap,
                     "now": now,
+                    "ws": workspace,
                 },
             )
             if dims:
@@ -463,3 +511,20 @@ class KnowledgeStore:
                 {"id": doc_id, "n": limit},
             ).mappings()
             return [dict(r) for r in rows]
+
+
+def in_this_workspace(search: Callable[..., Any]) -> Callable[..., Any]:
+    """``search_knowledge`` for a flow run by Easy Chain: it searches only the Knowledge Bases
+    of the workspace the run belongs to (exported code searches whatever it is pointed at)."""
+
+    def search_knowledge(base: str, *args: Any, **kwargs: Any) -> Any:
+        workspace = current_workspace.current()
+        if KnowledgeStore().setup().get_base(base, workspace) is None:
+            raise KnowledgeNotHere(
+                f"There's no Knowledge Base “{base}” in this workspace. Make it on the "
+                "Knowledge page, or pick another one in the step."
+            )
+        return search(base, *args, **kwargs)
+
+    search_knowledge.__wrapped__ = search  # type: ignore[attr-defined]
+    return search_knowledge

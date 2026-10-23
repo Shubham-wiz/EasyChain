@@ -29,6 +29,10 @@ TABLES_040 = {
     "settings",
     "easychain_meta",
 }
+# Columns later migrations add to those tables.
+ADDED_SINCE_040 = {
+    (table, "workspace_id") for table in ("flow_versions", "runs", "inbox", "triggers")
+}
 
 
 def _differences(url: str) -> list:
@@ -63,7 +67,12 @@ async def test_a_database_made_before_migrations_is_upgraded_in_place(tmp_path: 
     # Easy Chain 0.4.0 made the tables with create_all and kept a schema number.
     url = f"sqlite:///{tmp_path / 'old.db'}"
     engine = sa.create_engine(url)
-    metadata.create_all(engine, tables=[t for t in metadata.sorted_tables if t.name in TABLES_040])
+    legacy = sa.MetaData()
+    for table in metadata.sorted_tables:
+        if table.name in TABLES_040:
+            columns = [c for c in table.columns if (table.name, c.name) not in ADDED_SINCE_040]
+            sa.Table(table.name, legacy, *[c._copy() for c in columns])
+    legacy.create_all(engine)
     with engine.begin() as conn:
         conn.execute(meta.insert().values(key="schema", value="1"))
     engine.dispose()

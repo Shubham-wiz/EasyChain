@@ -4,6 +4,10 @@ The audit log records who changed what in Easy Chain, and when. Owners can read 
 **Settings → Audit log**, through the API (`GET /api/audit`), or on the server with
 `easychain audit`. Nothing in it can be changed or removed.
 
+Each [workspace](workspaces.md) has its own log, and its Owners read it. Changes to what every
+workspace shares (the sandbox, the network, single sign-on, making workspaces) are in the
+default workspace's log. `easychain audit --workspace ID` reads another workspace's.
+
 ## What is recorded
 
 Every request that changes something and succeeds is recorded:

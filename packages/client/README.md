@@ -37,6 +37,8 @@ Docker), pass an API key: `new EasyChainClient({ baseUrl, apiKey: process.env.EA
 Make one in the app under Settings → Keys for scripts, or with
 `easychain keys create you@example.com --role runner`. A key acts as its person, with at most
 the role it was made with; a Runner key can start, follow, answer and stop runs of saved flows.
+A key works in the [workspace](../../docs/workspaces.md) it was made in. In a browser signed in
+to Easy Chain, `workspace: "sales-team"` picks one of yours.
 Keep keys on a server: in a web page anyone can read them. A page served by Easy Chain itself
 uses the browser's sign-in and needs no key. A 401 error has `action` `"sign_in"`; a 403 has
 `"role"`.

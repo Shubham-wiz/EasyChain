@@ -4,7 +4,9 @@ People can sign in with your company's identity provider instead of an Easy Chai
 This works with any provider that speaks **OpenID Connect**, such as Okta, Google, Microsoft
 Entra ID, Keycloak, Auth0 or Authentik. Passwords keep working alongside it.
 
-Single sign-on needs [sign-in](people.md) to be on, and a first Owner, who sets it up.
+Single sign-on needs [sign-in](people.md) to be on, and a first Owner, who sets it up. It
+applies to every [workspace](workspaces.md), so only the server's Owners (Owners of the
+default workspace) set it up. People who join through it join the default workspace.
 
 ## Setting it up
 

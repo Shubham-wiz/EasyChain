@@ -50,7 +50,12 @@ Each person has one role. Each role can do everything the roles above it in this
 | **Viewer** | see flows, runs, the Inbox, Knowledge Bases and skills |
 | **Runner** | start and stop runs of saved flows, and answer the Inbox |
 | **Editor** | change flows, Knowledge Bases, triggers and skills; run a flow that isn't saved; use the copilot and Import an API; see which secrets are set |
-| **Owner** | change secrets and server settings (MCP servers, the sandbox, notifications); add people and change their roles |
+| **Owner** | change secrets and the workspace's settings (MCP servers, notifications); add people and change their roles |
+
+A person's role is per [workspace](workspaces.md): someone can be an Editor in one and a
+Viewer in another. Owners of the default workspace are the **server's Owners**: only they
+change what every workspace shares (the sandbox, the network, single sign-on) and make
+workspaces.
 
 The server checks the role on every request. Every part of the API declares the least role it
 needs (`PERMISSIONS` in `python/src/easychain/server/auth.py`). A test fails if a new part has

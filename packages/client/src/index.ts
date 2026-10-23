@@ -15,7 +15,10 @@ export { readSse } from "./sse.js";
 export class EasyChainError extends Error {
   status: number;
   kind?: string;
-  /** What to do about it: "sign_in" (401: no key, or it was revoked), "role" (403: the key's role is too low). */
+  /**
+   * What to do about it: "sign_in" (401: no key, or it was revoked), "role" (403: the key's role is
+   * too low), "workspace" (403: not in that workspace).
+   */
   action?: string;
   constructor(status: number, message: string, kind?: string, action?: string) {
     super(message);
@@ -35,6 +38,12 @@ export interface ClientOptions {
    * browser signed in to Easy Chain itself, leave it out: the sign-in is used.
    */
   apiKey?: string;
+  /**
+   * The workspace to work in (its id, like "sales-team"), for someone in several. Left out: the
+   * default workspace, or the first one you're in. An API key always works in the workspace it
+   * was made in.
+   */
+  workspace?: string;
   /** Extra headers for every request (for example a reverse proxy's auth header). */
   headers?: Record<string, string>;
   fetch?: typeof fetch;
@@ -56,10 +65,16 @@ export class EasyChainClient {
   private readonly base: string;
   private readonly headers: Record<string, string>;
   private readonly fetcher: typeof fetch;
+  private readonly workspace?: string;
 
   constructor(options: ClientOptions = {}) {
     this.base = (options.baseUrl ?? "").replace(/\/$/, "");
-    this.headers = { ...(options.apiKey ? { Authorization: `Bearer ${options.apiKey}` } : {}), ...(options.headers ?? {}) };
+    this.workspace = options.workspace;
+    this.headers = {
+      ...(options.apiKey ? { Authorization: `Bearer ${options.apiKey}` } : {}),
+      ...(options.workspace ? { "X-EasyChain-Workspace": options.workspace } : {}),
+      ...(options.headers ?? {}),
+    };
     this.fetcher = options.fetch ?? ((...args) => globalThis.fetch(...args));
   }
 
@@ -205,7 +220,9 @@ export class EasyChainClient {
    */
   socket(runId: string, after = 0): WebSocket {
     const base = this.base || (typeof location !== "undefined" ? location.origin : "");
-    const url = `${base.replace(/^http/, "ws")}/api/runs/${encodeURIComponent(runId)}/ws?after=${after}`;
+    // WebSockets can't carry headers either: the workspace goes in the address.
+    const where = this.workspace ? `&workspace=${encodeURIComponent(this.workspace)}` : "";
+    const url = `${base.replace(/^http/, "ws")}/api/runs/${encodeURIComponent(runId)}/ws?after=${after}${where}`;
     return new WebSocket(url);
   }
 }

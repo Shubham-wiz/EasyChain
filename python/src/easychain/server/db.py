@@ -26,6 +26,8 @@ import sqlalchemy as sa
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
+from .. import current_workspace as context
+
 log = logging.getLogger("easychain.db")
 
 # Advisory lock ids (Postgres) that keep processes starting together from racing.
@@ -51,12 +53,16 @@ flow_versions = sa.Table(
     sa.Column("bundle", sa.JSON),
     sa.Column("note", sa.String(200), default=""),
     sa.Column("created_at", sa.Float),
+    # The workspace it belongs to (Phase 5.6d, migration 0006).
+    sa.Column("workspace_id", sa.String(40), index=True, server_default="default"),
 )
 
 runs = sa.Table(
     "runs",
     metadata,
     sa.Column("id", sa.String(40), primary_key=True),
+    # The workspace it belongs to (Phase 5.6d, migration 0006).
+    sa.Column("workspace_id", sa.String(40), index=True, server_default="default"),
     sa.Column("flow_id", sa.String(100), index=True, nullable=True),
     sa.Column("flow_name", sa.String(200)),
     sa.Column("version_id", sa.String(40)),
@@ -126,6 +132,8 @@ inbox = sa.Table(
     "inbox",
     metadata,
     sa.Column("id", sa.String(40), primary_key=True),
+    # The workspace it belongs to (Phase 5.6d, migration 0006).
+    sa.Column("workspace_id", sa.String(40), index=True, server_default="default"),
     sa.Column("run_id", sa.String(40), index=True),
     sa.Column("thread_id", sa.String(100)),
     sa.Column("flow_id", sa.String(100), nullable=True),
@@ -147,6 +155,8 @@ triggers = sa.Table(
     "triggers",
     metadata,
     sa.Column("id", sa.String(40), primary_key=True),
+    # The workspace it belongs to (Phase 5.6d, migration 0006).
+    sa.Column("workspace_id", sa.String(40), index=True, server_default="default"),
     sa.Column("flow_id", sa.String(100), index=True),
     # webhook, schedule, upload, after_flow
     sa.Column("kind", sa.String(20)),
@@ -393,11 +403,14 @@ class Database:
     async def save_version(
         self, flow_id: str | None, bundle: dict[str, Any], note: str = ""
     ) -> str:
+        workspace = context.current()
         digest = hashlib.sha256(
             json.dumps(bundle, sort_keys=True, default=str).encode()
         ).hexdigest()
         async with self._tx() as conn:
-            query = sa.select(flow_versions.c.id).where(flow_versions.c.hash == digest)
+            query = sa.select(flow_versions.c.id).where(
+                flow_versions.c.hash == digest, flow_versions.c.workspace_id == workspace
+            )
             query = query.where(
                 flow_versions.c.flow_id == flow_id if flow_id else flow_versions.c.flow_id.is_(None)
             )
@@ -408,6 +421,7 @@ class Database:
             await conn.execute(
                 flow_versions.insert().values(
                     id=version_id,
+                    workspace_id=workspace,
                     flow_id=flow_id,
                     name=bundle.get("spec", {}).get("name", ""),
                     hash=digest,
@@ -430,7 +444,10 @@ class Database:
         async with self.reader.connect() as conn:
             rows = await conn.execute(
                 sa.select(*cols)
-                .where(flow_versions.c.flow_id == flow_id)
+                .where(
+                    flow_versions.c.flow_id == flow_id,
+                    flow_versions.c.workspace_id == context.current(),
+                )
                 .order_by(flow_versions.c.created_at.desc())
                 .limit(limit)
             )
@@ -461,6 +478,7 @@ class Database:
             await conn.execute(
                 runs.insert().values(
                     id=run_id,
+                    workspace_id=context.current(),
                     flow_id=flow_id,
                     flow_name=flow_name,
                     version_id=version_id,
@@ -576,7 +594,12 @@ class Database:
         status: str | None = None,
         limit: int = 100,
     ) -> list[dict[str, Any]]:
-        query = sa.select(runs).order_by(runs.c.created_at.desc()).limit(limit)
+        query = (
+            sa.select(runs)
+            .where(runs.c.workspace_id == context.current())
+            .order_by(runs.c.created_at.desc())
+            .limit(limit)
+        )
         if flow_id:
             query = query.where(runs.c.flow_id == flow_id)
         if thread_id:
@@ -592,6 +615,7 @@ class Database:
         last = sa.func.max(runs.c.created_at).label("last_at")
         query = (
             sa.select(runs.c.thread_id, runs.c.flow_id, sa.func.count().label("runs"), last)
+            .where(runs.c.workspace_id == context.current())
             .group_by(runs.c.thread_id, runs.c.flow_id)
             .order_by(last.desc())
             .limit(limit)
@@ -600,6 +624,14 @@ class Database:
             query = query.where(runs.c.flow_id == flow_id)
         async with self.reader.connect() as conn:
             return [dict(r._mapping) for r in await conn.execute(query)]
+
+    async def thread_elsewhere(self, thread_id: str) -> bool:
+        """Whether a conversation with this id belongs to another workspace."""
+        query = sa.select(runs.c.id).where(
+            runs.c.thread_id == thread_id, runs.c.workspace_id != context.current()
+        )
+        async with self.reader.connect() as conn:
+            return (await conn.execute(query.limit(1))).first() is not None
 
     async def update_run(self, run_id: str, **values: Any) -> None:
         async with self._tx() as conn:
@@ -760,7 +792,7 @@ class Database:
         kept in ``uploads`` until it has been read). One Knowledge Base's documents are read
         one at a time (their jobs share a thread)."""
         now = time.time()
-        payload = {"kb_id": kb_id, **source}
+        payload = {"kb_id": kb_id, "workspace": context.current(), **source}
         async with self._tx() as conn:
             if data is not None:
                 upload_id = new_id()
@@ -898,6 +930,7 @@ class Database:
                 await conn.execute(
                     inbox.insert().values(
                         id=item_id,
+                        workspace_id=run.get("workspace_id") or context.current(),
                         run_id=run["id"],
                         thread_id=run["thread_id"],
                         flow_id=run["flow_id"],
@@ -930,7 +963,12 @@ class Database:
     async def list_inbox(
         self, status: str | None = "open", limit: int = 200
     ) -> list[dict[str, Any]]:
-        query = sa.select(inbox).order_by(inbox.c.created_at.desc()).limit(limit)
+        query = (
+            sa.select(inbox)
+            .where(inbox.c.workspace_id == context.current())
+            .order_by(inbox.c.created_at.desc())
+            .limit(limit)
+        )
         if status:
             query = query.where(inbox.c.status == status)
         async with self.reader.connect() as conn:
@@ -973,6 +1011,7 @@ class Database:
             await conn.execute(
                 triggers.insert().values(
                     id=trigger_id,
+                    workspace_id=context.current(),
                     flow_id=flow_id,
                     kind=kind,
                     name=name,
@@ -994,7 +1033,11 @@ class Database:
     async def list_triggers(
         self, flow_id: str | None = None, kind: str | None = None
     ) -> list[dict[str, Any]]:
-        query = sa.select(triggers).order_by(triggers.c.created_at)
+        query = (
+            sa.select(triggers)
+            .where(triggers.c.workspace_id == context.current())
+            .order_by(triggers.c.created_at)
+        )
         if flow_id:
             query = query.where(triggers.c.flow_id == flow_id)
         if kind:
@@ -1064,9 +1107,13 @@ class Database:
         since: float | None = None,
         before: int | None = None,
         limit: int = 100,
+        workspace: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Newest first. ``action`` may end in "." for a kind (``flow.``); ``before`` is an id."""
-        query = sa.select(audit_log)
+        """Newest first, of the workspace in hand (or ``workspace``). ``action`` may end in "."
+        for a kind (``flow.``); ``before`` is an id."""
+        query = sa.select(audit_log).where(
+            audit_log.c.workspace_id == (workspace or context.current())
+        )
         if actor_id:
             query = query.where(audit_log.c.actor_id == actor_id)
         if action:

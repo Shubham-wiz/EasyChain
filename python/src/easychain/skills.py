@@ -22,6 +22,7 @@ import os
 import re
 import shutil
 import threading
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -223,6 +224,8 @@ def skills_key(spec: Any) -> str:
 
 
 _library: SkillLibrary | None = None
+# The library of the work in hand (a workspace's, Phase 5.6d); wins over ``_library``.
+_here: ContextVar[SkillLibrary | None] = ContextVar("easychain_skills", default=None)
 
 
 def default_workspace() -> Path:
@@ -231,9 +234,19 @@ def default_workspace() -> Path:
 
 
 def library() -> SkillLibrary:
-    """The process's Skills library: the one set with ``use_library``, or the default
-    workspace's (``EASYCHAIN_WORKSPACE``, else ``<EASYCHAIN_HOME>/flows``)."""
-    return _library or SkillLibrary(default_workspace() / "skills")
+    """The Skills library of the work in hand (its workspace's, ``use_library_here``), else the
+    process's (``use_library``), else the default workspace's (``EASYCHAIN_WORKSPACE``, else
+    ``<EASYCHAIN_HOME>/flows``)."""
+    return _here.get() or _library or SkillLibrary(default_workspace() / "skills")
+
+
+def use_library_here(lib: SkillLibrary | None) -> Any:
+    """The library for the current request or run only (a context variable)."""
+    return _here.set(lib)
+
+
+def reset_library_here(token: Any) -> None:
+    _here.reset(token)
 
 
 def use_library(lib: SkillLibrary | None) -> None:

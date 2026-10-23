@@ -11,6 +11,7 @@ import { SkillsLink } from "./Skills";
 import { InboxLink } from "./TopBar";
 import { Badge, Button } from "./ui";
 import { UserMenu } from "./UserMenu";
+import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 
 export function Home({ open }: { open: (flowId: string, opts?: { tryIt?: boolean }) => void }) {
   const [flows, setFlows] = useState<FlowListItem[] | null>(null);
@@ -46,6 +47,7 @@ export function Home({ open }: { open: (flowId: string, opts?: { tryIt?: boolean
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-6">
           <img src="/favicon.svg" alt="" className="h-7 w-7" />
           <span className="text-base font-semibold">Easy Chain</span>
+          <WorkspaceSwitcher />
           <div className="ml-auto flex items-center gap-1">
             <KnowledgeLink />
             <SkillsLink />

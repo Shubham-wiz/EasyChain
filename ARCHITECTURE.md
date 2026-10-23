@@ -357,8 +357,32 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
   - The first Owner needs a 12-character code printed in the server's log (or made by
     `easychain users setup-code`).
   - The tables (`users`, `workspaces`, `memberships`, `sessions`, `api_keys`) come in migration
-    0003. Everyone is in the one workspace, `default`, until 5.6d.
+    0003.
   - With sign-in off, every request is the Owner (`via: "local"`), as in Phases 0–4.
+- **Workspaces** (Phase 5.6d, `server/spaces.py`, `current_workspace.py`,
+  [docs/workspaces.md](docs/workspaces.md)).
+  - A request names its workspace (`X-EasyChain-Workspace`, or `?workspace=` for WebSockets).
+    `authorize` takes the person's role from their membership there; an API key is bound to
+    its own. Owners of `default` are the server's Owners (`server_owner`), the only ones for
+    routes marked `server_owner` in `PERMISSIONS` (sandbox, network, single sign-on, making
+    workspaces).
+  - A second app-level dependency, `in_workspace`, then enters the workspace for the rest of
+    the request: a context variable (`current_workspace`), the workspace's vault as the
+    `scoped_env` layer, and its skills library. The worker enters each job's workspace (the
+    run's `workspace_id`, or the ingest job's payload), and each due schedule's.
+  - A `Space` is a workspace's files: its `FlowStore`, `SecretStore` and `SkillLibrary`
+    (`default` keeps the old folders; others live in `~/.easychain/workspaces/<id>/`).
+  - The run database stamps `workspace_id` on flow versions, runs, Inbox items and triggers
+    (migration 0006) and lists only the current workspace's. Getting a row by id is checked in
+    the route, so another workspace's row is a 404.
+  - Settings are per workspace (`mcp@<id>`, `notifications@<id>`, `copilot@<id>`), except
+    those every workspace shares. MCP's allowed commands are always the default workspace's.
+  - Knowledge Bases carry a `workspace_id` (added by `KnowledgeStore.setup`); the sample one
+    is shared (`*`). The loader wraps a flow module's `search_knowledge` so a run searches only
+    its workspace's.
+  - Long-term memory: the loader gives the graph a `WorkspaceStore`, which puts every namespace
+    of a non-default workspace under `("easychain-workspace", <id>)` and takes it off again in
+    results.
 - **Single sign-on** (Phase 5.6e, `server/sso.py`, [docs/sso.md](docs/sso.md)).
   - OpenID Connect, using the authorization code flow with PKCE (S256).
   - The `state` is bound to the browser by a short-lived cookie. The state's nonce and
@@ -387,12 +411,6 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
   encrypted with Fernet in `~/.easychain/secrets.enc` (the key is in `secret.key` with mode 0600,
   or in `EASYCHAIN_SECRET_KEY`). They are never returned by the API, never written to flow files
   or exports, and are redacted from run events.
-  - Since 5.6d they are **not exported into the process's environment**. `scoped_env.py`
-    replaces `os.environ` with a view that lays the vault of the work in hand (a context
-    variable) over the real environment. So generated code and the providers still read
-    `os.environ`, but child processes inherit none of it, and one process can serve several
-    workspaces.
-  - The vault wins over the server's environment for the same name.
   - Since 5.6d they are **not exported into the process's environment**. `scoped_env.py`
     replaces `os.environ` with a view that lays the vault of the work in hand (a context
     variable) over the real environment. So generated code and the providers still read
@@ -481,6 +499,7 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
 | `test_egress.py` | The policy's modes and allow-list (names, endings, addresses, networks; IPv4 written as IPv6); Easy Chain's fetches and their redirects; a name that changes address between the check and the connection is refused, and connections go to the checked address; async clients; on a server with sign-in on, a Web request step, a Knowledge Base page, an OpenAPI document and an MCP server can't reach inside until allowed; who may change it; the environment wins; nothing changes on this computer |
 | `test_sso.py` | Single sign-on against the test identity provider: an existing account signs in and stays linked by the provider's id; new people get the provider's role only for allowed domains, or are told to ask an Owner; a wrong nonce, audience, issuer, signing key, an expired token, an unverified email, a refusal at the provider, the wrong client secret, a sign-in from another browser and a reused state are all refused with a message; a switched-off account can't; Owners set it up, the secret goes to the vault; the environment wins; it's in the audit log |
 | `test_scoped_env.py` | Secrets reach the work in hand through `os.environ` but aren't exported into the process (child processes don't see them); work running at the same time sees only its own layer, threads included; a layer wins over the server's environment, and the server's keys apply everywhere |
+| `test_workspaces.py` | Each workspace keeps its own flows, runs, versions, conversations, Inbox, triggers (webhooks run in theirs), settings, skills, Knowledge Bases (runs can't search another's; the sample is shared, read-only), secrets (a run sees only its workspace's vault) and long-term memory; roles are per workspace, keys are bound to theirs, only server Owners change shared settings; the command line's `workspaces` and `--workspace` |
 | `test_listen.py` | On Postgres, a run's new events wake a follower in another process at once (median about 2 ms), a queued job wakes a waiting worker, and a listener whose connection is killed reconnects |
 | `test_knowledge_queue.py` | Knowledge Base documents wait for a worker and survive a restart; a worker with its own disk reads uploads from the database; a worker that dies mid-document is replaced without doubling chunks; a removed document leaves nothing; an unexpected problem shows on the document and isn't retried |
 | `apps/web/src/**/*.test.ts` | Editing helpers, undo grouping, SSE parsing, formatting, the copilot's changes and panel |

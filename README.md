@@ -300,13 +300,13 @@ updated in the same commit as the work (decision 5.6). Each phase's report has t
 - [x] ✅ Knowledge Base ingestion on the job queue: workers read documents, which survive restarts; files wait in the database, so workers need no shared disk
 - [x] ✅ Postgres LISTEN/NOTIFY: events and jobs wake other processes in about 2 ms instead of up to 250 ms; polling stays as the fallback
 
-**5.6 Users, roles, SSO, audit**
+**5.6 Users, roles, SSO, audit** ✅
 
 - [x] ✅ 5.6a Local accounts and sign-in (on by default when the server answers the network); the first Owner with a code from the server's log; keys for scripts; `easychain users` / `keys`; People and Keys pages ([docs](docs/people.md))
 - [x] ✅ 5.6a Roles (Owner, Editor, Runner, Viewer) enforced on every endpoint, with a test that fails for an undeclared one
 - [x] ✅ 5.6b Role-aware web app: a view-only editor for Viewers and Runners, Runners run saved flows and answer the Inbox, Editors see server settings read-only; a Playwright journey per role
 - [x] ✅ 5.6c Audit log: every change with who, when and what (a test fails for a change that isn't recorded); append-only in the database; Settings → Audit log, `GET /api/audit`, `easychain audit` ([docs](docs/audit.md)). Publishing joins it in 5.4
-- [ ] 🚧 5.6d Workspaces and per-workspace vaults. Done so far: secrets reach runs through a per-run layer over `os.environ`, never exported into the process (`scoped_env.py`). Still to do: workspaces themselves (flows, runs, Inbox, triggers, Knowledge Bases, skills, settings and vaults kept apart), switching, and the web app
+- [x] ✅ 5.6d Workspaces and per-workspace vaults: flows, runs, Inbox, triggers, Knowledge Bases, skills, settings, secrets, long-term memory, people and the audit log kept apart; roles per workspace; secrets reach runs through a per-run layer over `os.environ`, never exported into the process; a workspace menu and Settings → Workspaces; `easychain workspaces` ([docs](docs/workspaces.md))
 - [x] ✅ 5.6e Single sign-on (OpenID Connect, PKCE, ID tokens checked), tested against a local test provider; new people get a role by domain; Settings → Single sign-on; setup for Okta, Google and Entra ([docs](docs/sso.md))
 - [x] ✅ 5.6f Egress allow-list: a shared server reaches public sites, and internal addresses only when allowed (or only an allow-list); Web request steps, Knowledge Base pages, OpenAPI documents and MCP servers; checked again at connect time against DNS rebinding; Settings → Network ([docs](docs/network.md))
 
@@ -397,6 +397,10 @@ yet.
 | F26 | ~~The web app shows every button to every role~~ | 5.6a | ✅ Fixed in 5.6b |
 | F28 | The egress policy doesn't cover AI model endpoints (an AI Model step's custom endpoint can point anywhere) or notification addresses; through a proxy only the URL is checked | 5.6f | backlog (an option to check model endpoints too) |
 | F27 | The audit log is protected by database triggers: someone with direct database access could drop them; nothing removes old entries | 5.6c | backlog (a hash chain, or shipping entries to a log service) |
+| F29 | Workspaces can't be deleted; a server Owner can't switch into a workspace they aren't in (they add themselves with `easychain users add … --workspace`) | 5.6d | backlog |
+| F30 | Workspaces are kept apart inside Easy Chain, but a Code step run without the sandbox runs in the server's process and could read another workspace's files | 5.6d | backlog (require the sandbox outside the default workspace when sign-in is on); docs say to set it to required |
+| F31 | Exported code, `easychain run` and `easychain test` use the default workspace's secrets | 5.6d | 5.4 (environments) |
+| F32 | In the default workspace, a long-term memory search over every namespace can return fewer than its limit (other workspaces' items are filtered out after the search) | 5.6d | backlog |
 
 ## Licence
 

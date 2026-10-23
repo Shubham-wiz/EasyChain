@@ -72,8 +72,9 @@ A failed run offers a **Network settings** button.
 
 ## Who can change it
 
-Owners change it. Editors can see it, because it explains why a request was refused. Each
-change is in the [audit log](audit.md).
+The server's Owners (Owners of the default workspace) change it, because it applies to every
+[workspace](workspaces.md). Editors can see it, because it explains why a request was refused.
+Each change is in the [audit log](audit.md).
 
 To set it for the whole server instead, use environment variables:
 
@@ -89,7 +90,7 @@ should get the same values.
 
 ```
 GET /api/settings/network   (Editors)  → {mode, allow, source: "settings"|"environment"|"default", modes}
-PUT /api/settings/network   (Owners)   ← {mode, allow: [...]}
+PUT /api/settings/network   (server Owners)   ← {mode, allow: [...]}
 ```
 
 An entry that isn't a host name, a name ending, an address or a network gets a `422` that
