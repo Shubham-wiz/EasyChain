@@ -303,8 +303,8 @@ updated in the same commit as the work (decision 5.6). Each phase's report has t
 **5.6 Users, roles, SSO, audit**
 
 - [x] ✅ 5.6a Local accounts and sign-in (on by default when the server answers the network); the first Owner with a code from the server's log; keys for scripts; `easychain users` / `keys`; People and Keys pages ([docs](docs/people.md))
-- [x] ⚠️ 5.6a Roles (Owner, Editor, Runner, Viewer) enforced on every endpoint, with a test that fails for an undeclared one: the web app doesn't hide what your role can't do yet (5.6b)
-- [ ] ⬜ 5.6b Role-aware web app: buttons and pages a role can't use are hidden or explained
+- [x] ✅ 5.6a Roles (Owner, Editor, Runner, Viewer) enforced on every endpoint, with a test that fails for an undeclared one
+- [x] ✅ 5.6b Role-aware web app: a view-only editor for Viewers and Runners, Runners run saved flows and answer the Inbox, Editors see server settings read-only; a Playwright journey per role
 - [ ] ⬜ 5.6d Workspaces (more than the one default workspace)
 - [ ] ⬜ OIDC single sign-on, tested against a local test provider; setup docs for Okta, Google, Entra
 - [ ] ⬜ Per-workspace secret vaults
@@ -395,7 +395,7 @@ yet.
 | F23 | Server logs show a harmless Pydantic serialisation warning from `langchain-openai` structured replies | Phase 4 | backlog (upstream) |
 | F24 | A live-run WebSocket closed by the client mid-run can leave a database connection for the garbage collector (a warning in tests) | 5.6a | backlog |
 | F25 | Wrong-password counts live in each API process's memory: with several API servers, each counts on its own, and a restart forgets them | 5.6a | backlog (count in the database) |
-| F26 | The web app shows every button to every role; the server refuses what a role can't do, with a message naming the role needed | 5.6a | 5.6b |
+| F26 | ~~The web app shows every button to every role~~ | 5.6a | ✅ Fixed in 5.6b |
 
 ## Licence
 

@@ -414,6 +414,20 @@ export function TabsTrigger({ value, children }: { value: string; children: Reac
 
 export const TabsContent = TabsPrimitive.Content;
 
+/**
+ * Controls a role can see but not use: a fieldset, so every input and button inside is
+ * disabled at once. It lays out like a div: no border, padding or side margins, and its top and
+ * bottom margins come from the parent's spacing (`space-y-*`). So it is neither
+ * `display: contents` nor `m-0`, because either one drops that spacing.
+ */
+export function Locked({ locked, className, children, ...props }: { locked: boolean; className?: string; children: ReactNode; "data-testid"?: string }) {
+  return (
+    <fieldset disabled={locked} className={cn("mx-0 min-w-0 border-0 p-0", className)} {...props}>
+      {children}
+    </fieldset>
+  );
+}
+
 export function Badge({ children, tone = "neutral", className }: { children: ReactNode; tone?: "neutral" | "accent" | "ok" | "warn" | "danger"; className?: string }) {
   const tones = {
     neutral: "bg-surface-2 text-muted",

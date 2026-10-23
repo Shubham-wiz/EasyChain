@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../lib/api";
 import type { FlowListItem, TemplateInfo } from "../lib/types";
 import { timeAgo } from "../lib/utils";
+import { useCan, useRoleNote } from "../state/auth";
 import { useUi } from "../state/ui";
 import { SettingsDialog } from "./dialogs/SettingsDialog";
 import { KnowledgeLink } from "./Knowledge";
@@ -18,6 +19,8 @@ export function Home({ open }: { open: (flowId: string, opts?: { tryIt?: boolean
   const [busy, setBusy] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const { theme, toggleTheme, openSettings } = useUi();
+  const canEdit = useCan("editor");
+  const cantAdd = useRoleNote("editor", "add or remove flows");
 
   const load = () => {
     api.flows().then(setFlows).catch((e) => setError(String(e.message ?? e)));
@@ -66,26 +69,32 @@ export function Home({ open }: { open: (flowId: string, opts?: { tryIt?: boolean
               Build LLM apps and agents by connecting steps. Every flow runs on LangGraph and exports as clean LangChain code you can ship.
             </p>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => fileRef.current?.click()}>
-              <Upload size={15} /> Open a flow file
-            </Button>
-            <Button variant="primary" onClick={() => create("blank", { name: "My flow" })} disabled={busy !== null} data-testid="new-flow">
-              {busy === "blank" ? <Loader2 size={15} className="animate-spin" /> : <FilePlus2 size={15} />} New blank flow
-            </Button>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".yaml,.yml"
-              className="hidden"
-              aria-label="Flow file"
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (file) await create("import", { yaml: await file.text() });
-                e.target.value = "";
-              }}
-            />
-          </div>
+          {canEdit ? (
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => fileRef.current?.click()}>
+                <Upload size={15} /> Open a flow file
+              </Button>
+              <Button variant="primary" onClick={() => create("blank", { name: "My flow" })} disabled={busy !== null} data-testid="new-flow">
+                {busy === "blank" ? <Loader2 size={15} className="animate-spin" /> : <FilePlus2 size={15} />} New blank flow
+              </Button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".yaml,.yml"
+                className="hidden"
+                aria-label="Flow file"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (file) await create("import", { yaml: await file.text() });
+                  e.target.value = "";
+                }}
+              />
+            </div>
+          ) : (
+            <p className="max-w-sm text-sm text-muted" role="note" data-testid="cant-add-flows">
+              {cantAdd}
+            </p>
+          )}
         </section>
 
         {error && (
@@ -94,36 +103,38 @@ export function Home({ open }: { open: (flowId: string, opts?: { tryIt?: boolean
           </p>
         )}
 
-        <section aria-labelledby="templates-heading" className="space-y-3">
-          <h2 id="templates-heading" className="text-lg font-semibold">
-            Start from a template
-          </h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {templates.map((t) => (
-              <article key={t.id} className="flex flex-col rounded-xl border border-border bg-surface p-4 shadow-sm" data-testid={`template-${t.id}`}>
-                <p className="text-[11px] font-medium tracking-wide text-faint uppercase">{t.category}</p>
-                <h3 className="mt-1 font-semibold">{t.name}</h3>
-                <p className="mt-1 flex-1 text-sm leading-relaxed text-muted">{t.description}</p>
-                <div className="mt-3 flex flex-wrap gap-1">
-                  {t.keys.map((k) => (
-                    <Badge key={k.env} tone={k.set ? "ok" : "warn"}>
-                      {k.set ? <CheckCircle2 size={10} /> : <KeyRound size={10} />} {k.label}
-                    </Badge>
-                  ))}
-                  {!t.keys.length && <Badge tone="ok">No key needed</Badge>}
-                </div>
-                <div className="mt-3 flex gap-2">
-                  <Button size="sm" variant="primary" disabled={busy !== null} onClick={() => create(`try-${t.id}`, { template: t.id }, true)}>
-                    {busy === `try-${t.id}` ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />} Try it
-                  </Button>
-                  <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => create(`use-${t.id}`, { template: t.id })}>
-                    Use template
-                  </Button>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
+        {canEdit && (
+          <section aria-labelledby="templates-heading" className="space-y-3">
+            <h2 id="templates-heading" className="text-lg font-semibold">
+              Start from a template
+            </h2>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {templates.map((t) => (
+                <article key={t.id} className="flex flex-col rounded-xl border border-border bg-surface p-4 shadow-sm" data-testid={`template-${t.id}`}>
+                  <p className="text-[11px] font-medium tracking-wide text-faint uppercase">{t.category}</p>
+                  <h3 className="mt-1 font-semibold">{t.name}</h3>
+                  <p className="mt-1 flex-1 text-sm leading-relaxed text-muted">{t.description}</p>
+                  <div className="mt-3 flex flex-wrap gap-1">
+                    {t.keys.map((k) => (
+                      <Badge key={k.env} tone={k.set ? "ok" : "warn"}>
+                        {k.set ? <CheckCircle2 size={10} /> : <KeyRound size={10} />} {k.label}
+                      </Badge>
+                    ))}
+                    {!t.keys.length && <Badge tone="ok">No key needed</Badge>}
+                  </div>
+                  <div className="mt-3 flex gap-2">
+                    <Button size="sm" variant="primary" disabled={busy !== null} onClick={() => create(`try-${t.id}`, { template: t.id }, true)}>
+                      {busy === `try-${t.id}` ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />} Try it
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => create(`use-${t.id}`, { template: t.id })}>
+                      Use template
+                    </Button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
 
         <section aria-labelledby="flows-heading" className="space-y-3">
           <h2 id="flows-heading" className="text-lg font-semibold">
@@ -136,7 +147,7 @@ export function Home({ open }: { open: (flowId: string, opts?: { tryIt?: boolean
           ) : !flows.length ? (
             <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted">
               <Workflow className="mx-auto mb-2 text-faint" />
-              No flows yet. Start from a template or a blank canvas.
+              {canEdit ? "No flows yet. Start from a template or a blank canvas." : "No flows yet. An Editor adds them."}
             </div>
           ) : (
             <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface">
@@ -147,18 +158,20 @@ export function Home({ open }: { open: (flowId: string, opts?: { tryIt?: boolean
                     <p className="truncate text-xs text-muted">{f.problem ?? (f.description || `${f.steps} steps`)}</p>
                   </button>
                   <span className="text-xs text-faint">{timeAgo(f.updated)}</span>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={`Delete ${f.name}`}
-                    onClick={async () => {
-                      if (!window.confirm(`Delete “${f.name}”? This can't be undone.`)) return;
-                      await api.deleteFlow(f.id);
-                      load();
-                    }}
-                  >
-                    <Trash2 size={14} />
-                  </Button>
+                  {canEdit && (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={`Delete ${f.name}`}
+                      onClick={async () => {
+                        if (!window.confirm(`Delete “${f.name}”? This can't be undone.`)) return;
+                        await api.deleteFlow(f.id);
+                        load();
+                      }}
+                    >
+                      <Trash2 size={14} />
+                    </Button>
+                  )}
                   <Button variant="outline" size="sm" onClick={() => open(f.id)}>
                     Open <ArrowRight size={13} />
                   </Button>

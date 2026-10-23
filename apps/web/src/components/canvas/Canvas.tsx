@@ -179,6 +179,9 @@ export function Canvas() {
   // While the copilot's proposal is open, the canvas shows it, and nothing can be edited.
   const preview = useCopilot((s) => s.preview);
   const previewing = preview != null;
+  // A role that can't change flows can look and select (to inspect), not move or connect.
+  const readOnly = useFlow((s) => s.readOnly);
+  const locked = previewing || readOnly;
   const spec = preview ?? flowSpec;
   const apply = useFlow((s) => s.apply);
   const selected = useUi((s) => s.selected);
@@ -343,7 +346,7 @@ export function Canvas() {
     (event: React.DragEvent) => {
       event.preventDefault();
       const type = event.dataTransfer.getData(STEP_MIME);
-      if (!type || useCopilot.getState().preview) return;
+      if (!type || useCopilot.getState().preview || useFlow.getState().readOnly) return;
       const pos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
       addAt(type, { x: Math.round(pos.x - NODE_WIDTH / 2), y: Math.round(pos.y - 40) });
     },
@@ -361,8 +364,8 @@ export function Canvas() {
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
-        nodesDraggable={!previewing}
-        nodesConnectable={!previewing}
+        nodesDraggable={!locked}
+        nodesConnectable={!locked}
         elementsSelectable={!previewing}
         onEdgesChange={onEdgesChange}
         onNodeDragStop={onNodeDragStop}
@@ -387,7 +390,7 @@ export function Canvas() {
         maxZoom={2}
         snapToGrid
         snapGrid={[10, 10]}
-        deleteKeyCode={previewing ? null : ["Backspace", "Delete"]}
+        deleteKeyCode={locked ? null : ["Backspace", "Delete"]}
         multiSelectionKeyCode={["Meta", "Control", "Shift"]}
         onlyRenderVisibleElements={spec.steps.length > 150}
         proOptions={{ hideAttribution: true }}
@@ -406,7 +409,7 @@ export function Canvas() {
         </div>
       )}
 
-      {onlyEnds && !previewing && (
+      {onlyEnds && !locked && (
         <div className="pointer-events-none absolute inset-x-0 top-6 flex justify-center">
           <div className="flex items-center gap-2 rounded-full border border-border bg-surface/95 px-4 py-2 text-sm text-muted shadow-sm">
             <MousePointerClick size={15} className="text-accent" />

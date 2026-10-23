@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-10-23 (Phase 5: 5.8 is done; 5.6a, sign-in, people, roles and keys, is done; 5.6b, the role-aware web app, is next)._
+_Last updated: 2026-10-23 (Phase 5: 5.8 is done; 5.6a and 5.6b, sign-in, people, roles, keys and a role-aware web app, are done; 5.6c, the audit log, is next)._
 
 ## In one paragraph
 
@@ -58,9 +58,9 @@ issues under *Fix later* (decision 5.6).
 |---|---|
 | Python on Linux (`pnpm test`, and CI) | 543 pass (2026-10-23, 5.6a), with SQLite, Postgres (+ pgvector in CI) and Docker (the sandbox escape tests; skipped without Docker); compiler and steps coverage 94% |
 | Python on Windows 11 (CI) | all pass |
-| Web unit (vitest) | 98 passed |
+| Web unit (vitest) | 102 passed |
 | Client package (vitest) | 11 passed |
-| Playwright e2e | 40 passed (Linux), one on a second server with sign-in on; the screenshot spec runs only with `SCREENSHOTS=1` |
+| Playwright e2e | 41 passed (Linux), two on a second server with sign-in on (sign-in, and each role); the screenshot spec runs only with `SCREENSHOTS=1` |
 | Template Test Sets | all 13 pass (`tests/test_templates.py`), with the stand-in AI and scripted turns; research-assistant 10/10, inbox-triage 10/10 |
 | Lint | ruff check + format clean; tsc clean for web and client |
 
@@ -72,11 +72,14 @@ Compose, and **Windows** (Python suite, CLI and worker, web checks, the app serv
 1. ~~**5.8 Platform groundwork**~~ (done): database migrations (Alembic, `server/migrations/`),
    Knowledge Base documents read by workers from the job queue, and Postgres LISTEN/NOTIFY
    (`server/listen.py`).
-2. **5.6 Users, roles, SSO, audit:** ~~5.6a, sign-in, people, roles on every endpoint and keys
-   for scripts~~ (done, [people.md](../people.md)). Next 5.6b, the role-aware web app (hide or
-   explain what a role can't do; Playwright journeys per role on the sign-in server), then the
-   audit log (5.6c), workspaces and per-workspace vaults (5.6d), OIDC single sign-on against a
-   local test provider (5.6e) and the egress allow-list (5.6f).
+2. **5.6 Users, roles, SSO, audit:**
+   - Done: ~~5.6a, sign-in, people, roles on every endpoint and keys for scripts~~, and
+     ~~5.6b, the role-aware web app~~ ([people.md](../people.md)).
+   - Next: the audit log (5.6c). It records edits, publishes, secret and settings changes,
+     people and keys, and Inbox answers. It is append-only, with who, when and what, a page for
+     Owners, and a filtered API.
+   - Then: workspaces and per-workspace vaults (5.6d), OIDC single sign-on against a local test
+     provider (5.6e), and the egress allow-list (5.6f).
 3. Then 5.1–5.3 (Test Sets, Test Runs, CI gate), 5.4–5.5 (environments, Publish, model gateway)
    and 5.7 (dashboards and tracing).
 
@@ -97,10 +100,10 @@ These are listed in full in the phase reports and review.md. The ones that matte
   otherwise). In Docker Compose, that takes the `docker-compose.sandbox.yml` overlay. Exported
   code runs Code steps in its own process.
 - The copilot and the agent templates are tested with scripted model turns, not real models.
-- Sign-in and roles are in (5.6a, [people.md](../people.md)). They're on when the server answers
-  the network (Docker), off for `easychain dev` on this computer. The web app doesn't hide what
-  a role can't do yet: the server refuses it, with a message naming the role needed (5.6b). No
-  audit log yet (5.6c), one workspace (5.6d), no single sign-on (5.6e).
+- Sign-in and roles are in (5.6a and 5.6b, [people.md](../people.md)). Sign-in is on when the
+  server answers the network (Docker), and off for `easychain dev` on this computer. The web app
+  shows each role what it can do. There's no audit log yet (5.6c), only one workspace (5.6d), and
+  no single sign-on (5.6e).
 - Knowledge Base documents are read by workers from the job queue (5.8); no OCR yet.
 - Schema migrations are in place (Alembic, 5.8); every schema change needs one
   (`python/src/easychain/server/migrations/`).

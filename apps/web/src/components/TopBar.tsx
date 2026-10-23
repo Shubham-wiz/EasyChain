@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, CircleAlert, Cloud, CloudOff, Code2, FileJ
 import { useStore } from "zustand";
 import { autoLayout } from "../lib/spec";
 import { cn, modKey } from "../lib/utils";
+import { useCan } from "../state/auth";
 import { useCheck } from "../state/check";
 import { redo, undo, useFlow } from "../state/flow";
 import { useRun } from "../state/run";
@@ -79,6 +80,8 @@ export function TopBar({ onHome }: { onHome: () => void }) {
   const canRedo = useStore(useFlow.temporal, (s) => s.futureStates.length > 0);
   const { mode, setMode, theme, toggleTheme, openSettings, setExportOpen, setRightTab, select, setTriggersOpen, setImportOpen } = useUi();
   const running = useRun((s) => s.status === "running" || s.status === "queued");
+  const canEdit = useCan("editor");
+  const canRun = useCan("runner");
   const mod = modKey();
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-surface px-3">
@@ -90,39 +93,47 @@ export function TopBar({ onHome }: { onHome: () => void }) {
       <button type="button" className="max-w-[28ch] truncate rounded px-1 text-sm font-medium hover:bg-surface-2" onClick={() => select([])} title="Flow settings">
         {name}
       </button>
-      <SaveIndicator />
-      <div className="ml-2 flex items-center">
-        <Tooltip content={`Undo (${mod}+Z)`}>
-          <Button variant="ghost" size="icon-sm" aria-label="Undo" disabled={!canUndo} onClick={undo}>
-            <Undo2 size={15} />
-          </Button>
-        </Tooltip>
-        <Tooltip content={`Redo (${mod}+Shift+Z)`}>
-          <Button variant="ghost" size="icon-sm" aria-label="Redo" disabled={!canRedo} onClick={redo}>
-            <Redo2 size={15} />
-          </Button>
-        </Tooltip>
-        <Tooltip content="Tidy up the layout">
-          <Button variant="ghost" size="icon-sm" aria-label="Auto-layout" onClick={() => apply(autoLayout)}>
-            <LayoutGrid size={15} />
-          </Button>
-        </Tooltip>
-      </div>
+      {canEdit && (
+        <>
+          <SaveIndicator />
+          <div className="ml-2 flex items-center">
+            <Tooltip content={`Undo (${mod}+Z)`}>
+              <Button variant="ghost" size="icon-sm" aria-label="Undo" disabled={!canUndo} onClick={undo}>
+                <Undo2 size={15} />
+              </Button>
+            </Tooltip>
+            <Tooltip content={`Redo (${mod}+Shift+Z)`}>
+              <Button variant="ghost" size="icon-sm" aria-label="Redo" disabled={!canRedo} onClick={redo}>
+                <Redo2 size={15} />
+              </Button>
+            </Tooltip>
+            <Tooltip content="Tidy up the layout">
+              <Button variant="ghost" size="icon-sm" aria-label="Auto-layout" onClick={() => apply(autoLayout)}>
+                <LayoutGrid size={15} />
+              </Button>
+            </Tooltip>
+          </div>
+        </>
+      )}
       <div className="ml-auto flex items-center gap-1.5">
         <ProblemsButton />
         <KnowledgeLink />
         <SkillsLink />
         <InboxLink />
-        <Tooltip content="Import an API (OpenAPI) as steps or agent tools">
-          <Button variant="ghost" size="icon-sm" aria-label="Import an API" onClick={() => setImportOpen(true)}>
-            <FileJson size={15} />
-          </Button>
-        </Tooltip>
-        <Tooltip content="Start this flow from a webhook, a schedule, an upload or another flow">
-          <Button variant="ghost" size="icon-sm" aria-label="Triggers" onClick={() => setTriggersOpen(true)}>
-            <Zap size={15} />
-          </Button>
-        </Tooltip>
+        {canEdit && (
+          <>
+            <Tooltip content="Import an API (OpenAPI) as steps or agent tools">
+              <Button variant="ghost" size="icon-sm" aria-label="Import an API" onClick={() => setImportOpen(true)}>
+                <FileJson size={15} />
+              </Button>
+            </Tooltip>
+            <Tooltip content="Start this flow from a webhook, a schedule, an upload or another flow">
+              <Button variant="ghost" size="icon-sm" aria-label="Triggers" onClick={() => setTriggersOpen(true)}>
+                <Zap size={15} />
+              </Button>
+            </Tooltip>
+          </>
+        )}
         <div className="flex items-center rounded-md bg-surface-2 p-0.5 text-xs" role="group" aria-label="Mode">
           {(["beginner", "pro"] as const).map((m) => (
             <button
@@ -149,11 +160,13 @@ export function TopBar({ onHome }: { onHome: () => void }) {
         <Button variant="outline" size="sm" onClick={() => setExportOpen(true)} data-testid="export-button">
           <Code2 size={14} /> Export
         </Button>
-        <Tooltip content={`Run (${mod}+Enter)`}>
-          <Button variant="primary" size="sm" onClick={() => setRightTab("run")} data-testid="open-run">
-            {running ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />} Run
-          </Button>
-        </Tooltip>
+        {canRun && (
+          <Tooltip content={`Run (${mod}+Enter)`}>
+            <Button variant="primary" size="sm" onClick={() => setRightTab("run")} data-testid="open-run">
+              {running ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />} Run
+            </Button>
+          </Tooltip>
+        )}
         <UserMenu />
       </div>
     </header>

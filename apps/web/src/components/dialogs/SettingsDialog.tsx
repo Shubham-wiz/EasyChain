@@ -1,11 +1,11 @@
 import { CheckCircle2, ChevronDown, ChevronRight, ExternalLink, KeyRound, Plus, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../../lib/api";
 import type { ProviderInfo, SecretInfo } from "../../lib/types";
-import { useAuth } from "../../state/auth";
+import { useAuth, useCan, useRoleNote } from "../../state/auth";
 import { useCatalog } from "../../state/catalog";
 import { useUi, type SettingsTab } from "../../state/ui";
-import { Badge, Button, Dialog, Input, Tabs, TabsContent, TabsList, TabsTrigger } from "../ui";
+import { Badge, Button, Dialog, Input, Locked, Tabs, TabsContent, TabsList, TabsTrigger } from "../ui";
 import { McpSection } from "./McpServers";
 import { NotificationsSection } from "./Notifications";
 import { ApiKeysSection, PeopleSection } from "./People";
@@ -126,7 +126,7 @@ function ProviderBlock({ p, focus, onSaved, secrets }: { p: ProviderInfo; focus:
 
 function KeysSection() {
   const settings = useUi((s) => s.settings);
-  const providers = useCatalog((s) => s.catalog?.providers ?? []);
+  const providers = useCatalog((s) => s.catalog?.providers ?? NO_PROVIDERS);
   const refresh = useCatalog((s) => s.refreshProviders);
   const [secrets, setSecrets] = useState<SecretInfo[]>([]);
   const [name, setName] = useState("");
@@ -227,44 +227,93 @@ function KeysSection() {
   );
 }
 
+/** Editors see the server's settings; only an Owner changes them (server/auth.py). */
+function OwnerOnly({ children }: { children: ReactNode }) {
+  const owner = useCan("owner");
+  const note = useRoleNote("owner", "change these");
+  return (
+    <>
+      {!owner && (
+        <p className="mb-3 rounded-lg border border-border bg-surface-2 px-3 py-2 text-xs text-muted" role="note">
+          {note}
+        </p>
+      )}
+      <Locked locked={!owner}>{children}</Locked>
+    </>
+  );
+}
+
+// One empty list, so a store selector returns the same value while nothing is loaded.
+const NO_PROVIDERS: ProviderInfo[] = [];
+
 export function SettingsDialog() {
   const settings = useUi((s) => s.settings);
   const close = useUi((s) => s.closeSettings);
-  const [tab, setTab] = useState<SettingsTab>("keys");
   const signIn = useAuth((s) => s.status?.mode === "on");
-  const owner = useAuth((s) => s.status?.me?.role === "owner");
+  const owner = useCan("owner");
+  const editor = useCan("editor");
+  // What each role sees: Editors the server's settings (read only), Owners people too, and
+  // everyone signed in their own keys for scripts.
+  const tabs: SettingsTab[] = [
+    ...(editor ? (["keys", "mcp", "notifications", "sandbox"] as const) : []),
+    ...(signIn && owner ? (["people"] as const) : []),
+    ...(signIn ? (["api-keys"] as const) : []),
+  ];
+  const first = tabs[0] ?? "keys";
+  const [tab, setTab] = useState<SettingsTab>(first);
   useEffect(() => {
-    if (settings.open) setTab(settings.tab ?? "keys");
-  }, [settings.open, settings.tab]);
+    if (settings.open) setTab(settings.tab && tabs.includes(settings.tab) ? settings.tab : first);
+  }, [settings.open, settings.tab, first]);
+  const shown = (t: SettingsTab) => settings.open && tab === t;
 
   return (
     <Dialog open={settings.open} onOpenChange={(o) => !o && close()} title="Settings" description="Keys and secrets are encrypted on this machine and never saved in flows or exports.">
       <Tabs value={tab} onValueChange={(v) => setTab(v as SettingsTab)}>
         <TabsList>
-          <TabsTrigger value="keys">Keys and providers</TabsTrigger>
-          <TabsTrigger value="mcp">MCP servers</TabsTrigger>
-          <TabsTrigger value="notifications">Notifications</TabsTrigger>
-          <TabsTrigger value="sandbox">Sandbox</TabsTrigger>
+          {editor && (
+            <>
+              <TabsTrigger value="keys">Keys and providers</TabsTrigger>
+              <TabsTrigger value="mcp">MCP servers</TabsTrigger>
+              <TabsTrigger value="notifications">Notifications</TabsTrigger>
+              <TabsTrigger value="sandbox">Sandbox</TabsTrigger>
+            </>
+          )}
           {signIn && owner && <TabsTrigger value="people">People</TabsTrigger>}
           {signIn && <TabsTrigger value="api-keys">Keys for scripts</TabsTrigger>}
         </TabsList>
         <TabsContent value="keys" className="pt-4">
-          {settings.open && tab === "keys" && <KeysSection />}
+          {shown("keys") && (
+            <OwnerOnly>
+              <KeysSection />
+            </OwnerOnly>
+          )}
         </TabsContent>
         <TabsContent value="mcp" className="pt-4">
-          {settings.open && tab === "mcp" && <McpSection />}
+          {shown("mcp") && (
+            <OwnerOnly>
+              <McpSection />
+            </OwnerOnly>
+          )}
         </TabsContent>
         <TabsContent value="notifications" className="pt-4">
-          {settings.open && tab === "notifications" && <NotificationsSection />}
+          {shown("notifications") && (
+            <OwnerOnly>
+              <NotificationsSection />
+            </OwnerOnly>
+          )}
         </TabsContent>
         <TabsContent value="sandbox" className="pt-4">
-          {settings.open && tab === "sandbox" && <SandboxSection />}
+          {shown("sandbox") && (
+            <OwnerOnly>
+              <SandboxSection />
+            </OwnerOnly>
+          )}
         </TabsContent>
         <TabsContent value="people" className="pt-4">
-          {settings.open && tab === "people" && <PeopleSection />}
+          {shown("people") && <PeopleSection />}
         </TabsContent>
         <TabsContent value="api-keys" className="pt-4">
-          {settings.open && tab === "api-keys" && <ApiKeysSection />}
+          {shown("api-keys") && <ApiKeysSection />}
         </TabsContent>
       </Tabs>
     </Dialog>

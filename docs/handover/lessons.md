@@ -76,6 +76,7 @@ whenever something takes more than a few minutes to understand.
 | `RuntimeError: … is bound to a different event loop` in a two-browser auth test | Two `TestClient(app)` context managers start the app twice, each on its own event loop, sharing one database engine | Use one `TestClient` and swap its cookie jar for the second browser (`Browser` in `tests/test_auth.py`); the jar is `type(client.cookies)()` (Starlette's TestClient uses `httpx2`, not `httpx`) |
 | A test flow that ran in the API test went to `error` from a webhook | Input straight to Output is a check error ("nothing would happen"); a background run only says so when it finishes | Put a step between them, and wait for the run in the test |
 | An e2e test needed something only the second web server knew (its home folder) | `playwright.config.ts` is loaded again in each worker, so a `mkdtemp` there gives each process a different folder | Set it once in `process.env` when unset (`E2E_AUTH_HOME`); workers inherit the environment |
+| An axe check failed with "target-size" (a link 22 px from an input) after wrapping a form in a `<fieldset>` | Tailwind's `space-y-*` puts its margin on the children; a `display: contents` fieldset drops it, and `m-0` overrides it (the utility has zero specificity) | `Locked` in `ui.tsx`: a block fieldset with `mx-0 min-w-0 border-0 p-0` |
 
 ## Windows
 

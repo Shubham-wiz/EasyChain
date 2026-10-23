@@ -11,6 +11,9 @@ interface FlowState {
   spec: FlowSpec | null;
   saveState: SaveState;
   saveError: string | null;
+  /** The signed-in person's role can't change flows: edits are ignored (and the app hides them). */
+  readOnly: boolean;
+  setReadOnly: (readOnly: boolean) => void;
   load: (flowId: string, spec: FlowSpec) => void;
   /**
    * Apply an edit as one undo step. Edits that pass the same `mergeKey` in quick
@@ -28,6 +31,8 @@ export const useFlow = create<FlowState>()(
       spec: null,
       saveState: "saved",
       saveError: null,
+      readOnly: false,
+      setReadOnly: (readOnly) => set({ readOnly }),
       load: (flowId, spec) => {
         lastMerge = { key: null, at: 0 };
         set({ flowId, spec, saveState: "saved", saveError: null });
@@ -35,7 +40,7 @@ export const useFlow = create<FlowState>()(
       },
       apply: (edit, mergeKey) => {
         const spec = get().spec;
-        if (!spec) return;
+        if (!spec || get().readOnly) return;
         const next = edit(spec);
         if (next === spec) return;
         const now = Date.now();

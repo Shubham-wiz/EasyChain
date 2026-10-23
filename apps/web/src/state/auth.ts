@@ -3,6 +3,10 @@ import { api, whenSignedOut } from "../lib/api";
 import type { AuthStatus, Me, Role } from "../lib/types";
 
 const RANK: Record<Role, number> = { viewer: 0, runner: 1, editor: 2, owner: 3 };
+const LABEL: Record<Role, string> = { viewer: "Viewer", runner: "Runner", editor: "Editor", owner: "Owner" };
+
+/** Before the server has said (and with sign-in off), the app acts as the Owner; the server decides. */
+const LOCAL_OWNER: Me = { id: null, email: null, name: "", role: "owner", role_label: "Owner", via: "local", workspace: "default" };
 
 interface AuthState {
   status: AuthStatus | null;
@@ -32,6 +36,25 @@ whenSignedOut(() => useAuth.getState().signedOut());
 
 export function useMe(): Me | null {
   return useAuth((s) => s.status?.me ?? null);
+}
+
+function current(status: AuthStatus | null): Me | null {
+  return status ? status.me : LOCAL_OWNER;
+}
+
+/** Whether the person signed in may do what needs `role` (server/auth.py has the same table). */
+export function useCan(role: Role): boolean {
+  return useAuth((s) => atLeast(current(s.status), role));
+}
+
+export function can(role: Role): boolean {
+  return atLeast(current(useAuth.getState().status), role);
+}
+
+/** "Your role (Viewer) can't …; it needs Editor or above. An Owner can change your role." */
+export function useRoleNote(role: Role, what: string): string {
+  const me = useAuth((s) => current(s.status));
+  return `Your role (${me?.role_label ?? "none"}) can't ${what}; that needs ${LABEL[role]} or above. An Owner can change your role.`;
 }
 
 /** Whether the signed-in person's role is at least `role` (always, with sign-in off). */

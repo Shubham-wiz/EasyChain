@@ -4,19 +4,21 @@
 
 import AxeBuilder from "@axe-core/playwright";
 import { execFileSync } from "node:child_process";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Page } from "@playwright/test";
 
 const BASE = `http://127.0.0.1:${process.env.E2E_AUTH_PORT ?? 8126}`;
 const PASSWORD = "correct horse battery";
 
 test.use({ baseURL: BASE });
 
+/** `easychain …` against the sign-in server's database. */
+function easychain(args: string[], input?: string): string {
+  return execFileSync("uv", ["run", "--project", "../../python", "easychain", ...args, "--home", process.env.E2E_AUTH_HOME!], { encoding: "utf-8", input, stdio: ["pipe", "pipe", "pipe"] }).trim();
+}
+
 /** What `easychain users setup-code` prints: a fresh code for the first account. */
 function setupCode(): string {
-  const out = execFileSync("uv", ["run", "--project", "../../python", "easychain", "users", "setup-code", "--home", process.env.E2E_AUTH_HOME!], {
-    encoding: "utf-8",
-  });
-  return out.trim();
+  return easychain(["users", "setup-code"]);
 }
 
 async function serious(page: Page) {
@@ -99,4 +101,94 @@ test("sign-in: the first Owner, people, keys, and signing in again", async ({ pa
   await signIn(page, "rita@example.com");
   await expect(page.getByRole("main", { name: "Sign in again" })).toHaveCount(0);
   await expect(page).toHaveURL(/#\/inbox/);
+});
+
+/** A person with a role, added on the command line, signed in in a browser of their own. */
+async function person(browser: Browser, email: string, role: string): Promise<Page> {
+  easychain(["users", "add", email, "--role", role, "--password-stdin"], `${PASSWORD}\n`);
+  const page = await (await browser.newContext({ baseURL: BASE })).newPage();
+  await page.goto("/");
+  await signIn(page, email);
+  await expect(page.getByRole("heading", { name: /Draw your AI app/ })).toBeVisible();
+  return page;
+}
+
+const APPROVAL = {
+  name: "Approve a reply",
+  steps: [
+    { id: "input", type: "input", name: "Input", settings: { fields: [{ name: "draft" }] } },
+    { id: "review", type: "ask_human", name: "Check the reply", settings: { question: "Send this reply?", show: ["draft"] } },
+    { id: "send", type: "code", name: "Send", settings: { code: "def run(data):\n    return {'sent': 'SENT: ' + data['draft']}\n" } },
+    { id: "output", type: "output", name: "Output", settings: { fields: ["sent"] } },
+  ],
+  connections: [
+    { from: "input", to: "review" },
+    { from: "review", to: "send", exit: "Approved" },
+    { from: "review", to: "output", exit: "Rejected" },
+    { from: "send", to: "output" },
+  ],
+  canvas: { steps: { input: { x: 0, y: 120 }, review: { x: 300, y: 120 }, send: { x: 600, y: 120 }, output: { x: 900, y: 120 } }, notes: [] },
+};
+
+test("roles: a Viewer looks, a Runner runs and answers, an Editor sees settings it can't change", async ({ browser }) => {
+  // An Owner of their own (the first test made one; this one doesn't depend on it) makes a flow.
+  easychain(["users", "add", "oscar@example.com", "--role", "owner", "--password-stdin"], `${PASSWORD}\n`);
+  const ownerKey = easychain(["keys", "create", "oscar@example.com", "--name", "e2e"]);
+  const owner = await (await browser.newContext({ baseURL: BASE, extraHTTPHeaders: { Authorization: `Bearer ${ownerKey}` } })).request;
+  const made = await owner.post("/api/flows", { data: { spec: APPROVAL } });
+  expect(made.status()).toBe(201);
+  const flowId = (await made.json()).id;
+
+  // A Viewer: no new flows, a view-only editor, nothing to run, settings only for their keys.
+  const viewer = await person(browser, "vera@example.com", "viewer");
+  await expect(viewer.getByTestId("cant-add-flows")).toContainText("Your role (Viewer) can't add or remove flows");
+  await expect(viewer.getByTestId("new-flow")).toHaveCount(0);
+  await viewer.goto(`/#/flows/${flowId}`);
+  await expect(viewer.getByTestId("view-only")).toContainText("needs Editor or above");
+  await expect(viewer.getByTestId("library-ai_model")).toHaveCount(0);
+  await expect(viewer.getByTestId("open-run")).toHaveCount(0);
+  await expect(viewer.getByRole("tab", { name: "Copilot" })).toHaveCount(0);
+  await viewer.getByTestId("step-review").click({ position: { x: 60, y: 14 } });
+  const fields = viewer.getByTestId("inspector-read-only");
+  await expect(fields).toBeAttached();
+  await expect(fields.getByRole("textbox").first()).toBeDisabled();
+  await viewer.getByRole("tab", { name: "Run" }).click();
+  await expect(viewer.getByTestId("cant-run")).toContainText("needs Runner or above");
+  await expect(viewer.getByTestId("run-submit")).toBeDisabled();
+  await viewer.getByRole("button", { name: "Settings" }).click();
+  await expect(viewer.getByRole("tab")).toHaveText(["Keys for scripts"]);
+  await viewer.keyboard.press("Escape");
+
+  // A Runner runs the saved flow from the editor (the app sends the flow's id, not its steps).
+  const runner = await person(browser, "rui@example.com", "runner");
+  await runner.goto(`/#/flows/${flowId}`);
+  await expect(runner.getByTestId("view-only")).toBeVisible();
+  await runner.getByTestId("open-run").click();
+  await runner.getByLabel("draft").fill("Thanks for writing");
+  await runner.getByTestId("run-submit").click();
+  await expect(runner.getByTestId("run-waiting")).toContainText("Send this reply?");
+
+  // The Viewer sees it waiting in the Inbox but can't answer it.
+  await viewer.goto("/#/inbox");
+  const seen = viewer.getByTestId("inbox-item").filter({ hasText: "Approve a reply" });
+  await expect(seen).toContainText("Your role (Viewer) can't answer the Inbox");
+  await expect(seen.getByRole("button", { name: "Approve" })).toBeDisabled();
+
+  // The Runner answers it there, and the run finishes; the Inbox records who answered.
+  await runner.goto("/#/inbox");
+  const item = runner.getByTestId("inbox-item").filter({ hasText: "Approve a reply" });
+  await item.getByRole("button", { name: "Approve" }).click();
+  await expect(runner.getByRole("status")).toContainText("The run carries on");
+  const answered = await (await owner.get("/api/inbox?status=answered")).json();
+  expect(answered.find((i: { flow_name: string }) => i.flow_name === "Approve a reply")?.answered_by).toBe("rui@example.com");
+
+  // An Editor changes flows, and sees the server's settings without being able to change them.
+  const editor = await person(browser, "eddie@example.com", "editor");
+  await editor.goto(`/#/flows/${flowId}`);
+  await expect(editor.getByTestId("library-ai_model")).toBeVisible();
+  await expect(editor.getByTestId("view-only")).toHaveCount(0);
+  await editor.getByRole("button", { name: "Settings" }).click();
+  await expect(editor.getByRole("tab")).toHaveText(["Keys and providers", "MCP servers", "Notifications", "Sandbox", "Keys for scripts"]);
+  await expect(editor.getByRole("dialog").getByRole("note")).toContainText("Your role (Editor) can't change these; that needs Owner or above");
+  await expect(editor.getByLabel("Secret name")).toBeDisabled();
 });

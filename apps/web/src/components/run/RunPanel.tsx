@@ -21,6 +21,7 @@ import { api } from "../../lib/api";
 import { applyFix } from "../../lib/fixes";
 import type { RunError, RunSummary, Step, ThreadInfo, Todo } from "../../lib/types";
 import { cn, formatCost, formatMs, formatTokens, preview, timeAgo } from "../../lib/utils";
+import { useCan, useRoleNote } from "../../state/auth";
 import { useCheck } from "../../state/check";
 import { useFlow } from "../../state/flow";
 import {
@@ -37,7 +38,7 @@ import {
 } from "../../state/run";
 import { useUi } from "../../state/ui";
 import { IssueList } from "../inspector/Inspector";
-import { Badge, Button, Field, Input, Select, Switch, Textarea, Tooltip } from "../ui";
+import { Badge, Button, Field, Input, Locked, Select, Switch, Textarea, Tooltip } from "../ui";
 import { AnswerForm } from "./AnswerForm";
 import { CitedText, isSources, SourceList } from "./Citations";
 import { SavePoints } from "./SavePoints";
@@ -707,6 +708,8 @@ export function RunPanel() {
   const errors = useMemo(() => issues.filter((i) => i.level === "error"), [issues]);
   const outputs = Object.entries(run.final?.status === "ok" ? run.final.output ?? {} : {});
   const sources = findSources(run.final?.status === "ok" ? run.final.output : null);
+  const canRun = useCan("runner");
+  const cantRun = useRoleNote("runner", "start runs or answer them");
 
   const retry = useCallback(() => {
     const state = useRun.getState();
@@ -746,15 +749,22 @@ export function RunPanel() {
           </Button>
         )}
       </div>
-      <StandInToggle />
+      {!canRun && (
+        <p className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-xs text-muted" role="note" data-testid="cant-run">
+          {cantRun} You can follow runs others start, and look back over them.
+        </p>
+      )}
+      {canRun && <StandInToggle />}
       {errors.length > 0 && run.status !== "running" && (
         <div className="space-y-1.5">
           <p className="text-xs font-medium text-danger">Fix these before running:</p>
           <IssueList issues={errors} />
         </div>
       )}
-      {chat ? <ChatRun /> : <FormRun inputStep={inputStep} />}
-      <PausedCard />
+      <Locked locked={!canRun} className="space-y-4">
+        {chat ? <ChatRun /> : <FormRun inputStep={inputStep} />}
+        <PausedCard />
+      </Locked>
 
       {run.status !== "idle" && run.status !== "running" && run.status !== "queued" && run.final && (
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted" data-testid="run-summary">

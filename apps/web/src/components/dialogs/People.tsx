@@ -1,7 +1,7 @@
 import { Check, Copy, KeyRound, Plus, Trash2, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../../lib/api";
-import type { ApiKeyInfo, NewApiKey, Person, Role } from "../../lib/types";
+import type { ApiKeyInfo, AuthStatus, NewApiKey, Person, Role } from "../../lib/types";
 import { timeAgo } from "../../lib/utils";
 import { atLeast, useAuth, useMe } from "../../state/auth";
 import { Badge, Button, Input, Select } from "../ui";
@@ -13,8 +13,10 @@ const ROLE_HELP: Record<Role, string> = {
   owner: "and secrets, settings and people",
 };
 
+const NO_ROLES: AuthStatus["roles"] = [];
+
 function useRoles() {
-  return useAuth((s) => s.status?.roles ?? []);
+  return useAuth((s) => s.status?.roles ?? NO_ROLES);
 }
 
 function message(err: unknown) {

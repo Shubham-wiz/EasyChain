@@ -8,6 +8,14 @@ import { useUi, type SettingsTab } from "../state/ui";
 import { addStep, createStep, getStep, insertBefore, nextFreePosition, renameStepId, renameVariable, updateSettings } from "./spec";
 import type { Fix } from "./types";
 
+// Fixes that open a page, retry or switch the stand-in on, without changing the flow: offered
+// to a role that can't change flows too.
+const LEAVES_THE_FLOW = new Set(["add_key", "add_secret", "open_settings", "use_stand_in", "retry", "reconnect", "focus_setting"]);
+
+export function changesFlow(fix: Fix): boolean {
+  return !LEAVES_THE_FLOW.has(fix.kind);
+}
+
 export function applyFix(fix: Fix, stepId?: string, rerun?: () => void) {
   const { apply } = useFlow.getState();
   const ui = useUi.getState();

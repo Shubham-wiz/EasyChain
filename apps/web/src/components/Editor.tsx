@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { copySteps, pasteSteps, type Clipboard } from "../lib/spec";
 import type { FlowSpec } from "../lib/types";
+import { can, useCan, useRoleNote } from "../state/auth";
 import { useCheck } from "../state/check";
 import { redo, undo, useFlow } from "../state/flow";
 import { attachRun, tryRun, useRun } from "../state/run";
@@ -118,6 +119,7 @@ function useShortcuts() {
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key === "Enter") {
         e.preventDefault();
+        if (!can("runner")) return;
         useUi.getState().setRightTab("run");
         window.dispatchEvent(new Event("easychain:run"));
         return;
@@ -203,6 +205,13 @@ export function Editor({ flowId, tryIt, onHome }: { flowId: string; tryIt: boole
     };
   }, [flowId, tryIt]);
 
+  const canEdit = useCan("editor");
+  const viewOnly = useRoleNote("editor", "change flows");
+  useEffect(() => {
+    useFlow.getState().setReadOnly(!canEdit);
+    if (!canEdit && useUi.getState().rightTab === "copilot") setRightTab("inspect");
+  }, [canEdit, setRightTab]);
+
   useBackgroundSync();
   useShortcuts();
 
@@ -225,8 +234,13 @@ export function Editor({ flowId, tryIt, onHome }: { flowId: string; tryIt: boole
     <ReactFlowProvider>
       <div className="flex h-full flex-col">
         <TopBar onHome={onHome} />
+        {!canEdit && (
+          <p className="border-b border-border bg-surface-2 px-4 py-1.5 text-xs text-muted" role="note" data-testid="view-only">
+            <strong className="text-text">View only.</strong> {viewOnly}
+          </p>
+        )}
         <div className="flex min-h-0 flex-1">
-          <StepLibrary />
+          {canEdit && <StepLibrary />}
           <main className="relative min-w-0 flex-1" aria-label="Canvas">
             <Canvas key={flowId} />
           </main>
@@ -235,7 +249,7 @@ export function Editor({ flowId, tryIt, onHome }: { flowId: string; tryIt: boole
               <TabsList>
                 <TabsTrigger value="inspect">Inspect</TabsTrigger>
                 <TabsTrigger value="run">Run</TabsTrigger>
-                <TabsTrigger value="copilot">Copilot</TabsTrigger>
+                {canEdit && <TabsTrigger value="copilot">Copilot</TabsTrigger>}
               </TabsList>
               <TabsContent value="inspect" className="min-h-0 flex-1 overflow-hidden">
                 <div className="scroll-thin h-full overflow-y-auto">

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { api, ApiError } from "../lib/api";
 import type { AskRequest, FlowSpec, Issue, RunError, RunEvent, RunStatus, Todo, Usage, Waiting } from "../lib/types";
+import { can } from "./auth";
 import { useCheck } from "./check";
 import { useFlow } from "./flow";
 import { useUi } from "./ui";
@@ -510,7 +511,10 @@ async function follow(open: Stream, controller = takeOver()) {
   }
 }
 
-/** Start a run of the flow open in the editor (unsaved edits included). */
+/**
+ * Start a run of the flow open in the editor (unsaved edits included). A Runner runs the
+ * saved flow: running one given in full needs an Editor, and a Runner can't change it anyway.
+ */
 export async function startRun(inputs: Record<string, unknown>, opts: { chatMessage?: string } = {}) {
   const { spec, flowId } = useFlow.getState();
   if (!spec) return;
@@ -534,7 +538,7 @@ export async function startRun(inputs: Record<string, unknown>, opts: { chatMess
     api.runStream(
       {
         flow_id: flowId ?? undefined,
-        spec,
+        spec: can("editor") || !flowId ? spec : undefined,
         inputs,
         thread_id: threadId,
         stand_in: standIn,

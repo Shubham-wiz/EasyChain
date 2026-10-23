@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
 import type { SavePoint } from "../../lib/types";
 import { cn } from "../../lib/utils";
+import { useCan } from "../../state/auth";
 import { useCheck } from "../../state/check";
 import { useFlow } from "../../state/flow";
 import { forkFrom, useRun } from "../../state/run";
@@ -23,6 +24,8 @@ function parse(text: string, original: unknown): unknown {
 
 /** Save Points of the current run: look at the Flow Data at each one and re-run from there. */
 export function SavePoints({ runId }: { runId: string }) {
+  // Running again from a Save Point is a new run: a Runner's call.
+  const canRun = useCan("runner");
   const [open, setOpen] = useState(false);
   const [points, setPoints] = useState<SavePoint[] | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -110,7 +113,7 @@ export function SavePoints({ runId }: { runId: string }) {
                 </label>
               ))}
               {!Object.keys(draft).length && <p className="text-xs text-faint">No Flow Data yet.</p>}
-              {point.next.length > 0 && (
+              {point.next.length > 0 && canRun && (
                 <Button size="sm" variant="primary" onClick={rerun} data-testid="rerun-from-here">
                   <GitBranch size={13} /> Run again from here
                 </Button>

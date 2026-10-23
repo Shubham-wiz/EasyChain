@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../lib/api";
 import type { ChunkPreview, KnowledgeBase, KnowledgeDocument, KnowledgeHit } from "../lib/types";
 import { cn, timeAgo } from "../lib/utils";
+import { useCan } from "../state/auth";
 import { useCatalog } from "../state/catalog";
 import { passageText, SourceList } from "./run/Citations";
 import { InboxLink } from "./TopBar";
@@ -122,6 +123,7 @@ function NewBase({ onCreated }: { onCreated: (kb: KnowledgeBase) => void }) {
 function KnowledgeList() {
   const [bases, setBases] = useState<KnowledgeBase[] | null>(null);
   const [creating, setCreating] = useState(false);
+  const canEdit = useCan("editor");
   useEffect(() => {
     api.knowledgeBases().then(setBases).catch(() => setBases([]));
   }, []);
@@ -137,9 +139,11 @@ function KnowledgeList() {
               from your facts and cites them.
             </p>
           </div>
-          <Button variant="primary" onClick={() => setCreating(!creating)} data-testid="new-kb-button">
-            <Plus size={14} /> New Knowledge Base
-          </Button>
+          {canEdit && (
+            <Button variant="primary" onClick={() => setCreating(!creating)} data-testid="new-kb-button">
+              <Plus size={14} /> New Knowledge Base
+            </Button>
+          )}
         </div>
         {creating && <NewBase onCreated={(kb) => (window.location.hash = `#/knowledge/${kb.id}`)} />}
         {!bases && <Loader2 className="animate-spin text-muted" size={18} />}
@@ -423,6 +427,7 @@ function TrySearch({ kb }: { kb: KnowledgeBase }) {
 }
 
 function DocumentRow({ kb, doc, onChange }: { kb: KnowledgeBase; doc: KnowledgeDocument; onChange: () => void }) {
+  const canEdit = useCan("editor");
   const [chunks, setChunks] = useState<KnowledgeHit[] | null>(null);
   const [open, setOpen] = useState(false);
   return (
@@ -447,17 +452,19 @@ function DocumentRow({ kb, doc, onChange }: { kb: KnowledgeBase; doc: KnowledgeD
           {doc.status === "ready" ? `${doc.chunks} passages` : doc.status}
         </Badge>
         <span className="hidden w-20 text-right text-xs text-faint sm:inline">{timeAgo(doc.created_at)}</span>
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          aria-label={`Remove ${doc.title}`}
-          onClick={async () => {
-            await api.deleteKnowledgeDocument(kb.id, doc.id);
-            onChange();
-          }}
-        >
-          <Trash2 size={13} />
-        </Button>
+        {canEdit && (
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label={`Remove ${doc.title}`}
+            onClick={async () => {
+              await api.deleteKnowledgeDocument(kb.id, doc.id);
+              onChange();
+            }}
+          >
+            <Trash2 size={13} />
+          </Button>
+        )}
       </div>
       {doc.status === "error" && doc.error && <p className="mt-1 pl-5 text-xs text-danger">{doc.error}</p>}
       {doc.status === "queued" && Date.now() / 1000 - doc.created_at > WAITING_HINT_AFTER && (
@@ -486,6 +493,7 @@ function DocumentRow({ kb, doc, onChange }: { kb: KnowledgeBase; doc: KnowledgeD
 
 function KnowledgeDetail({ id }: { id: string }) {
   const [kb, setKb] = useState<(KnowledgeBase & { documents: KnowledgeDocument[] }) | null | undefined>(undefined);
+  const canEdit = useCan("editor");
   const load = useCallback(() => {
     api.knowledgeBase(id).then(setKb).catch(() => setKb(null));
   }, [id]);
@@ -508,17 +516,19 @@ function KnowledgeDetail({ id }: { id: string }) {
   return (
     <div className="h-full overflow-y-auto">
       <Header title={kb.name} onBack={() => (window.location.hash = "#/knowledge")}>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={async () => {
-            if (!window.confirm(`Delete “${kb.name}” and everything in it?`)) return;
-            await api.deleteKnowledgeBase(kb.id);
-            window.location.hash = "#/knowledge";
-          }}
-        >
-          <Trash2 size={13} /> Delete
-        </Button>
+        {canEdit && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={async () => {
+              if (!window.confirm(`Delete “${kb.name}” and everything in it?`)) return;
+              await api.deleteKnowledgeBase(kb.id);
+              window.location.hash = "#/knowledge";
+            }}
+          >
+            <Trash2 size={13} /> Delete
+          </Button>
+        )}
       </Header>
       <main className="mx-auto max-w-5xl space-y-5 px-6 py-6">
         <div className="space-y-1">
@@ -528,7 +538,7 @@ function KnowledgeDetail({ id }: { id: string }) {
             {kb.documents.length} documents, {passages} passages
           </p>
         </div>
-        <AddDocuments kb={kb} onAdded={load} />
+        {canEdit && <AddDocuments kb={kb} onAdded={load} />}
         <section aria-label="Documents">
           <h2 className="mb-1.5 text-xs font-semibold tracking-wide text-faint uppercase">Documents</h2>
           {kb.documents.length ? (
@@ -538,11 +548,13 @@ function KnowledgeDetail({ id }: { id: string }) {
               ))}
             </ul>
           ) : (
-            <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted">No documents yet. Add some above.</p>
+            <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted">
+              {canEdit ? "No documents yet. Add some above." : "No documents yet. An Editor adds them."}
+            </p>
           )}
         </section>
         <TrySearch kb={kb} />
-        <ChunkPreviewPanel kb={kb} />
+        {canEdit && <ChunkPreviewPanel kb={kb} />}
       </main>
     </div>
   );

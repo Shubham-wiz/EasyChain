@@ -320,6 +320,14 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
   waiting steps, For Each progress, Sub-flow detail and Save Points), plus chat. `ui` holds the
   selection, Beginner/Pro mode, theme, dialogs and breakpoints (kept per flow in the browser).
   Flows autosave; every save records a flow version.
+- **Sign-in and roles** (`state/auth.ts`). The app asks `GET /api/auth/status` first, and shows
+  the first-account or sign-in page when it needs to. A 401 later (the session ran out) shows
+  sign-in over the page, so nothing open is lost. `useCan(role)` and `useRoleNote` drive what
+  each role sees: a role that can't change flows gets a view-only editor (`flow.readOnly` makes
+  every edit a no-op; the canvas can't move or connect; the Inspector is a disabled fieldset; no
+  step library or copilot). A Runner's runs send only the flow's id, never its steps. Settings
+  show Editors the server's settings without letting them change them. This is only for
+  clarity: the server checks every request (section 7).
 - **Runs outlive the page.** A run is a server-side job; the run panel follows its events and
   re-attaches after a reload (`GET /api/runs/{id}/events?after=…`).
 - **Canvas performance.** Nodes subscribe to just their own step, run state and issues, so a
@@ -417,7 +425,7 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
 | `test_listen.py` | On Postgres, a run's new events wake a follower in another process at once (median about 2 ms), a queued job wakes a waiting worker, and a listener whose connection is killed reconnects |
 | `test_knowledge_queue.py` | Knowledge Base documents wait for a worker and survive a restart; a worker with its own disk reads uploads from the database; a worker that dies mid-document is replaced without doubling chunks; a removed document leaves nothing; an unexpected problem shows on the document and isn't retried |
 | `apps/web/src/**/*.test.ts` | Editing helpers, undo grouping, SSE parsing, formatting, the copilot's changes and panel |
-| `apps/web/e2e/*.spec.ts` | Playwright: build → run → debug → export (and run the export), templates and chat, fixes, undo, copy/paste, Pro mode, settings, Ask a Human in the run panel and the Inbox, For Each, breakpoints and Save Points, stop and carry on, reload during a run, triggers, the Flow Data panel, Sub-flows, agent tools and live tool calls, tool approval, the reply format builder, Knowledge Bases, cited answers, MCP servers, API import, the copilot (propose, preview, apply as one undo step, discard), the Research assistant (Helpers on the canvas, the trace with nested Helper calls, the to-do list and files), the Skills library, Inbox triage (a supervisor and an Inbox pause), the sandbox settings, sign-in on a second server with it on (the first Owner with the code, adding a Runner, keys for scripts, signing out and in, signing in again over the page), axe WCAG 2.2 AA scans, 300-step canvas |
+| `apps/web/e2e/*.spec.ts` | Playwright: build → run → debug → export (and run the export), templates and chat, fixes, undo, copy/paste, Pro mode, settings, Ask a Human in the run panel and the Inbox, For Each, breakpoints and Save Points, stop and carry on, reload during a run, triggers, the Flow Data panel, Sub-flows, agent tools and live tool calls, tool approval, the reply format builder, Knowledge Bases, cited answers, MCP servers, API import, the copilot (propose, preview, apply as one undo step, discard), the Research assistant (Helpers on the canvas, the trace with nested Helper calls, the to-do list and files), the Skills library, Inbox triage (a supervisor and an Inbox pause), the sandbox settings, sign-in on a second server with it on (the first Owner with the code, adding a Runner, keys for scripts, signing out and in, signing in again over the page; a Viewer's view-only editor and Inbox, a Runner running a saved flow and answering it, an Editor's read-only server settings), axe WCAG 2.2 AA scans, 300-step canvas |
 | `test_standin_tools.py` | The stand-in AI calls tools, fills arguments and JSON schemas, cites sources, reads each web address a request names, and plays scripts |
 | `test_agent.py` | Agent tool calls and their events, approvals (approve, edit, reject) through the Inbox shape, structured answers, add-ons, limits, MCP tools |
 | `test_knowledge.py` | Every file format, chunk provenance, hybrid search and citations on SQLite and on Postgres with pgvector, the API, an agent searching with its own queries, documents cut off by a restart, exported code searching on its own |

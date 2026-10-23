@@ -8,6 +8,7 @@ import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 import { useEffect } from "react";
 import { flowDataCompletions } from "../lib/completions";
 import { useCheck } from "../state/check";
+import { useFlow } from "../state/flow";
 import { useUi } from "../state/ui";
 
 self.MonacoEnvironment = { getWorker: () => new EditorWorker() };
@@ -60,6 +61,8 @@ export default function MonacoEditor({
   label?: string;
 }) {
   const theme = useUi((s) => s.theme);
+  // A role that can't change flows sees code it can't edit.
+  const locked = useFlow((s) => s.readOnly) || readOnly;
   useEffect(registerFlowDataCompletions, []);
   const onMount: OnMount = (editor) => {
     editor.getDomNode()?.setAttribute("aria-label", label ?? "Code editor");
@@ -73,7 +76,7 @@ export default function MonacoEditor({
       onChange={(v) => onChange?.(v ?? "")}
       onMount={onMount}
       options={{
-        readOnly,
+        readOnly: locked,
         minimap: { enabled: false },
         fontSize: 12.5,
         lineNumbers: readOnly ? "on" : "on",

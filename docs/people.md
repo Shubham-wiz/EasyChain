@@ -58,6 +58,29 @@ Webhook triggers don't need a sign-in. Their secret token is the check, as befor
 When you answer the Inbox while signed in, your name is recorded as who answered, whatever the
 app or script says.
 
+## What each role sees in the app
+
+The app shows each person what their role can do. Anything their role can't do is either
+hidden or greyed out, with a note that names the role it needs.
+
+- **Viewer**
+  - Flows open in a view-only editor: there is no step library or copilot, the canvas can't
+    be changed, and the Inspector shows every setting but can't change it.
+  - There is no Run button. The Run panel says why, and shows runs that others start.
+  - Inbox items show what they're waiting for, but can't be answered.
+- **Runner**: the same view-only editor, but with **Run**. Runs use the saved flow. Inbox
+  items can be answered.
+- **Editor**: everything to do with flows, Knowledge Bases, skills and triggers. Settings show
+  the providers and keys that are set, the MCP servers, notifications and the sandbox, but only
+  an Owner can change them.
+- **Owner**: everything, including **Settings → People**.
+
+On Home, Viewers and Runners see the flows but not **New blank flow**, the templates or delete.
+In Settings, they see only **Keys for scripts**.
+
+This is so the app makes sense to each person. The server checks every request on its own,
+whatever the app shows.
+
 ## Adding people
 
 An Owner adds people in **Settings → People** (or from the account menu, top right), with:

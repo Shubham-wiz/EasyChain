@@ -1,10 +1,11 @@
 import { ArrowLeft, Hand, Inbox as InboxIcon, Loader2, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useCan, useRoleNote } from "../state/auth";
 import { api, ApiError } from "../lib/api";
 import type { InboxItem } from "../lib/types";
 import { cn, timeAgo } from "../lib/utils";
 import { AnswerForm, type Answer } from "./run/AnswerForm";
-import { Badge, Button } from "./ui";
+import { Badge, Button, Locked } from "./ui";
 
 /** How many runs are waiting for someone (for badges). */
 export function useInboxCount(): number {
@@ -27,6 +28,8 @@ export function useInboxCount(): number {
 }
 
 function Item({ item, highlight, onDone }: { item: InboxItem; highlight: boolean; onDone: (message: string) => void }) {
+  const canAnswer = useCan("runner");
+  const cantAnswer = useRoleNote("runner", "answer the Inbox");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const answer = async (a: Answer) => {
@@ -53,7 +56,14 @@ function Item({ item, highlight, onDone }: { item: InboxItem; highlight: boolean
         <span>{[...item.path, item.step_name || item.step].join(" › ")}</span>
         <span className="ml-auto">{timeAgo(item.created_at)}</span>
       </div>
-      <AnswerForm request={item.request} onAnswer={answer} busy={busy} testId={`inbox-answer-${item.id}`} />
+      <Locked locked={!canAnswer}>
+        <AnswerForm request={item.request} onAnswer={answer} busy={busy} testId={`inbox-answer-${item.id}`} />
+      </Locked>
+      {!canAnswer && (
+        <p className="text-xs text-muted" role="note">
+          {cantAnswer}
+        </p>
+      )}
       {error && <p className="text-xs text-danger">{error}</p>}
       {item.flow_id && (
         <a className="text-xs text-accent hover:underline" href={`#/flows/${item.flow_id}`}>

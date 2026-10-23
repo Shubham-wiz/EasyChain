@@ -1,6 +1,6 @@
 import { AlertTriangle, ChevronDown, ChevronRight, CircleAlert, Sparkles, Wrench } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { applyFix } from "../../lib/fixes";
+import { applyFix, changesFlow } from "../../lib/fixes";
 import { getStep, helperOf, renameStepId, toIdent, toolOf, updateSettings, updateStep } from "../../lib/spec";
 import type { Issue } from "../../lib/types";
 import { cn, preview } from "../../lib/utils";
@@ -12,7 +12,7 @@ import { useRun } from "../../state/run";
 import { useUi } from "../../state/ui";
 import { colorsFor, iconFor } from "../canvas/stepMeta";
 import { CodeView } from "../CodeView";
-import { Button, Field, Input, Tabs, TabsContent, TabsList, TabsTrigger, Textarea } from "../ui";
+import { Button, Field, Input, Locked, Tabs, TabsContent, TabsList, TabsTrigger, Textarea } from "../ui";
 import { isVisible, renderControl } from "./fields";
 import { FlowDataEditor, FlowRunSettings, RunPolicySection } from "./FlowSettings";
 
@@ -37,6 +37,7 @@ const GROUP_KINDS = new Set([
 /** The flow's problems. With `askCopilot`, a problem with no fix of its own can go to the copilot. */
 export function IssueList({ issues, compact, retry, askCopilot }: { issues: Issue[]; compact?: boolean; retry?: () => void; askCopilot?: boolean }) {
   const steps = useFlow((s) => s.spec?.steps);
+  const readOnly = useFlow((s) => s.readOnly);
   const focus = useUi((s) => s.focus);
   if (!issues.length) return null;
   return (
@@ -65,12 +66,12 @@ export function IssueList({ issues, compact, retry, askCopilot }: { issues: Issu
                 )}
                 {issue.message}
                 {issue.hint && <span className="block text-muted">{issue.hint}</span>}
-                {issue.fix && (
+                {issue.fix && !(readOnly && changesFlow(issue.fix)) && (
                   <Button size="sm" variant="outline" className="mt-1.5" onClick={() => applyFix(issue.fix!, issue.step, retry)}>
                     <Wrench size={12} /> {issue.fix.label}
                   </Button>
                 )}
-                {!issue.fix && askCopilot && (
+                {!issue.fix && askCopilot && !readOnly && (
                   <Button size="sm" variant="outline" className="mt-1.5" onClick={() => void useCopilot.getState().ask("", issue)}>
                     <Sparkles size={12} /> Ask the copilot
                   </Button>
@@ -335,8 +336,17 @@ function StepIdField({ stepId }: { stepId: string }) {
 export function Inspector() {
   const selected = useUi((s) => s.selected);
   const exists = useFlow((s) => (selected.length === 1 ? !!s.spec?.steps.some((x) => x.id === selected[0]) : false));
+  const readOnly = useFlow((s) => s.readOnly);
   if (selected.length > 1) {
     return <p className="p-4 text-sm text-muted">{selected.length} steps selected. Press Delete to remove them, or {navigator.platform.includes("Mac") ? "⌘" : "Ctrl"}+C to copy.</p>;
   }
-  return exists ? <StepPanel key={selected[0]} stepId={selected[0]} /> : <FlowPanel />;
+  const panel = exists ? <StepPanel key={selected[0]} stepId={selected[0]} /> : <FlowPanel />;
+  // View only: every field shows its value and none can be changed.
+  return readOnly ? (
+    <Locked locked data-testid="inspector-read-only">
+      {panel}
+    </Locked>
+  ) : (
+    panel
+  );
 }
