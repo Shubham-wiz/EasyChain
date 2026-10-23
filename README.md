@@ -15,7 +15,7 @@ with no Easy Chain runtime required.
 > [build tracker](#build-tracker), with known issues under [Fix later](#fix-later). Deep Agents
 > plan, keep files and hand work to Helpers that follow your Skills; agent teams are made of
 > ordinary steps; Code runs in a sandbox; a copilot drafts flows from a description. Phase 5 adds
-> logins and roles, evaluation and publishing.
+> sign-in and roles (done: [people.md](docs/people.md)), evaluation and publishing.
 
 ## Quick start
 
@@ -25,6 +25,10 @@ with no Easy Chain runtime required.
 docker compose up        # Postgres + API + a worker; open http://localhost:8000
 docker compose up --scale worker=3   # more workers; stopping or killing one is safe
 ```
+
+In Docker, people sign in. The first account (an Owner) needs the code that
+`docker compose logs easychain` shows; then add your team under Settings → People
+([docs/people.md](docs/people.md)). From source on your own computer, sign-in is off, as before.
 
 **From source** on Windows, macOS or Linux (needs [uv](https://docs.astral.sh/uv/) and
 [pnpm](https://pnpm.io/), Node 20+):
@@ -298,8 +302,10 @@ updated in the same commit as the work (decision 5.6). Each phase's report has t
 
 **5.6 Users, roles, SSO, audit**
 
-- [ ] ⬜ Local accounts and sign-in; API keys for scripts
-- [ ] ⬜ Workspaces and roles (Owner, Editor, Runner, Viewer), enforced on every endpoint
+- [x] ✅ 5.6a Local accounts and sign-in (on by default when the server answers the network); the first Owner with a code from the server's log; keys for scripts; `easychain users` / `keys`; People and Keys pages ([docs](docs/people.md))
+- [x] ⚠️ 5.6a Roles (Owner, Editor, Runner, Viewer) enforced on every endpoint, with a test that fails for an undeclared one: the web app doesn't hide what your role can't do yet (5.6b)
+- [ ] ⬜ 5.6b Role-aware web app: buttons and pages a role can't use are hidden or explained
+- [ ] ⬜ 5.6d Workspaces (more than the one default workspace)
 - [ ] ⬜ OIDC single sign-on, tested against a local test provider; setup docs for Okta, Google, Entra
 - [ ] ⬜ Per-workspace secret vaults
 - [ ] ⬜ Audit log of edits, publishes, secret changes and approvals
@@ -364,7 +370,7 @@ yet.
 
 | # | Issue | Where it came from | Where it's handled |
 |---|---|---|---|
-| F1 | No login, roles or audit log: keep the server on localhost or behind your own access control | Phase 1 | 5.6 |
+| F1 | ~~No login or roles~~; no audit log yet | Phase 1 | ✅ Sign-in and roles in 5.6a; the audit log in 5.6c |
 | F2 | No egress allow-list for fetches the server makes (pages, OpenAPI documents, Web request tools) | Review | 5.6 |
 | F3 | Real models are never called in CI; agent templates need a real-model check before a release | Phase 1 | 5.2 (manual CI workflow) |
 | F4 | ~~No database migrations (`create_all` plus a version number)~~ | Phase 2 | ✅ Fixed in 5.8 (Alembic) |
@@ -387,6 +393,9 @@ yet.
 | F21 | "Under 5 minutes for a new user" is shown by a scripted test, not real users | Phase 1 | backlog (a usability test with 3–5 people) |
 | F22 | No labelled frames, version history view or visual diff on the canvas | Phase 1 | backlog (collaboration in 6.4) |
 | F23 | Server logs show a harmless Pydantic serialisation warning from `langchain-openai` structured replies | Phase 4 | backlog (upstream) |
+| F24 | A live-run WebSocket closed by the client mid-run can leave a database connection for the garbage collector (a warning in tests) | 5.6a | backlog |
+| F25 | Wrong-password counts live in each API process's memory: with several API servers, each counts on its own, and a restart forgets them | 5.6a | backlog (count in the database) |
+| F26 | The web app shows every button to every role; the server refuses what a role can't do, with a message naming the role needed | 5.6a | 5.6b |
 
 ## Licence
 

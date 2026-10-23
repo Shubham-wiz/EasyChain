@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 import anyio
-from fastapi import Body, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import Body, Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -56,6 +56,8 @@ from ..templates import list_templates, load_template
 from ..templates.samples import ensure_sample_knowledge, ensure_samples
 from ..testsets import add_cases
 from . import notify
+from .auth import auth_mode, authorize, principal_of, require
+from .auth_api import add_auth_routes
 from .cron import CronError, next_fire
 from .cron import describe as describe_cron
 from .db import Database, checkpoint_url
@@ -233,6 +235,16 @@ def create_app(
         resources = await open_resources(checkpoint_url(db_url))
         app.state.hub = Hub(db, resources, flows, vault)
         listener = app.state.listener = listen(db_url, app.state.hub.bus)
+        if auth_mode() == "on":
+            code = await app.state.hub.accounts.setup_code()
+            if code:
+                # Only someone who can see the server's log can make the first account.
+                public = os.environ.get("EASYCHAIN_PUBLIC_URL", "").rstrip("/")
+                print(
+                    f"Sign-in is on and there are no accounts yet. To make the first one (an "
+                    f"Owner), open {public or 'Easy Chain'} and enter the code {code}.",
+                    flush=True,
+                )
         stop = asyncio.Event()
         task = None
         if inline_worker:
@@ -257,8 +269,11 @@ def create_app(
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
         lifespan=lifespan,
+        # Who is asking, and whether their role may use the route (server/auth.py).
+        dependencies=[Depends(authorize)],
     )
     app.state.flows, app.state.vault = flows, vault
+    add_auth_routes(app)
     add_knowledge_routes(app, home_path)
     origins = os.environ.get(
         "EASYCHAIN_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
@@ -747,7 +762,10 @@ def create_app(
         }
 
     @app.post("/api/runs")
-    async def start_run(req: RunRequest) -> Response:
+    async def start_run(req: RunRequest, request: Request) -> Response:
+        if req.spec is not None:
+            # Running a flow given in full (not a saved one) can run any code: an Editor's call.
+            require(request, "editor")
         spec = _spec_or_422(req.spec) if req.spec is not None else _get(req.flow_id or "")
         try:
             run_id = await hub().start_run(
@@ -835,7 +853,7 @@ def create_app(
         return {"run_id": run_id, "status": await hub().cancel(run_id)}
 
     @app.post("/api/runs/{run_id}/resume")
-    async def resume_run(run_id: str, req: ResumeRequest) -> Response:
+    async def resume_run(run_id: str, req: ResumeRequest, request: Request) -> Response:
         run = await _run_or_404(run_id)
         answers = dict(req.answers or {})
         if req.answer is not None or not answers:
@@ -852,7 +870,9 @@ def create_app(
             for interrupt_id in answers:
                 for item in await hub().db.list_inbox(status="open"):
                     if item["run_id"] == run_id and item["interrupt_id"] == interrupt_id:
-                        await hub().db.answer_inbox(item["id"], answers[interrupt_id], req.by)
+                        await hub().db.answer_inbox(
+                            item["id"], answers[interrupt_id], _answered_by(request, req.by)
+                        )
             await hub().resume(run_id, answers)
         except (Busy, NotFound, Invalid) as exc:
             raise hub_errors(exc) from exc
@@ -911,15 +931,22 @@ def create_app(
             raise HTTPException(404, detail={"message": "That Inbox item doesn't exist."})
         return item
 
+    def _answered_by(request: Request, given: str | None) -> str | None:
+        """Who answered: the signed-in person (sign-in on), or what the client said (off)."""
+        principal = principal_of(request)
+        if principal is not None and principal.user_id is not None:
+            return principal.label
+        return given
+
     @app.post("/api/inbox/{item_id}/answer")
-    async def answer_inbox(item_id: str, req: AnswerRequest) -> dict[str, Any]:
+    async def answer_inbox(item_id: str, req: AnswerRequest, request: Request) -> dict[str, Any]:
         answer: dict[str, Any] = {"action": req.action}
         if req.value is not None:
             answer["value"] = req.value
         if req.comment:
             answer["comment"] = req.comment
         try:
-            item = await hub().answer(item_id, answer, req.by)
+            item = await hub().answer(item_id, answer, _answered_by(request, req.by))
         except (Busy, NotFound, Invalid) as exc:
             raise hub_errors(exc) from exc
         return {"answered": True, "run_id": item["run_id"]}

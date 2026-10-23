@@ -73,6 +73,9 @@ whenever something takes more than a few minutes to understand.
 | An unscripted stand-in researcher never read its pages | The stand-in fills a lone string argument with the whole request, so a `url` got the question text, and no tool matched the request's words | A tool with a `url`/`link`/`address` argument reads each web address the request names, in order (`standin._unread_urls`) |
 | A stand-in Helper's reply showed up as "task returned: [Stand-in AI…" | Text starting with `[` was taken for data rows | The stand-in's label is removed from tool results before answering |
 | The deep agent crash test timed out on Windows (Postgres half) | The worker's start-up imports take far longer on the Windows runner | The test waits up to 150 s for the slow tool, and its failure names the run's status and events |
+| `RuntimeError: … is bound to a different event loop` in a two-browser auth test | Two `TestClient(app)` context managers start the app twice, each on its own event loop, sharing one database engine | Use one `TestClient` and swap its cookie jar for the second browser (`Browser` in `tests/test_auth.py`); the jar is `type(client.cookies)()` (Starlette's TestClient uses `httpx2`, not `httpx`) |
+| A test flow that ran in the API test went to `error` from a webhook | Input straight to Output is a check error ("nothing would happen"); a background run only says so when it finishes | Put a step between them, and wait for the run in the test |
+| An e2e test needed something only the second web server knew (its home folder) | `playwright.config.ts` is loaded again in each worker, so a `mkdtemp` there gives each process a different folder | Set it once in `process.env` when unset (`E2E_AUTH_HOME`); workers inherit the environment |
 
 ## Windows
 

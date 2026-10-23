@@ -1,14 +1,29 @@
 import type { Proposal, TestCase } from "./copilot";
-import type { Catalog, CheckResult, ChunkPreview, CompileResult, DataField, FlowListItem, FlowSpec, FlowVersion, InboxItem, Issue, KnowledgeBase, KnowledgeDocument, KnowledgeHit, McpServer, McpSettings, McpTool, NotificationSettings, OpenApiInspection, RunEvent, RunSummary, SandboxSettings, SandboxStatus, SavePoint, SecretInfo, Skill, SkillSummary, Step, TemplateInfo, ThreadInfo, Trigger, TriggerKind } from "./types";
+import type { ApiKeyInfo, AuthStatus, Me, NewApiKey, Person, Role, Catalog, CheckResult, ChunkPreview, CompileResult, DataField, FlowListItem, FlowSpec, FlowVersion, InboxItem, Issue, KnowledgeBase, KnowledgeDocument, KnowledgeHit, McpServer, McpSettings, McpTool, NotificationSettings, OpenApiInspection, RunEvent, RunSummary, SandboxSettings, SandboxStatus, SavePoint, SecretInfo, Skill, SkillSummary, Step, TemplateInfo, ThreadInfo, Trigger, TriggerKind } from "./types";
 
 export class ApiError extends Error {
   status: number;
   problems: string[];
-  constructor(status: number, message: string, problems: string[] = []) {
+  /** What to do: "sign_in" (401), "role" (403: an Owner can change your role). */
+  action?: string;
+  constructor(status: number, message: string, problems: string[] = [], action?: string) {
     super(message);
     this.status = status;
     this.problems = problems;
+    this.action = action;
   }
+}
+
+let signedOut: (() => void) | null = null;
+
+/** Called when the server says nobody is signed in: the session ran out or was ended elsewhere. */
+export function whenSignedOut(handler: (() => void) | null) {
+  signedOut = handler;
+}
+
+function failed(status: number, body: { message?: string; problems?: string[]; action?: string }, fallback: string): ApiError {
+  if (status === 401 && body.action === "sign_in") signedOut?.();
+  return new ApiError(status, body.message ?? fallback, body.problems ?? [], body.action);
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -19,16 +34,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: isForm ? (init?.headers ?? {}) : { "Content-Type": "application/json", ...(init?.headers ?? {}) },
   });
   if (!res.ok) {
-    let message = `${res.status} ${res.statusText}`;
-    let problems: string[] = [];
-    try {
-      const body = await res.json();
-      message = body.message ?? message;
-      problems = body.problems ?? [];
-    } catch {
-      /* not JSON */
-    }
-    throw new ApiError(res.status, message, problems);
+    const body = await res.json().catch(() => ({})); // not JSON: the status says it
+    throw failed(res.status, body, `${res.status} ${res.statusText}`);
   }
   const type = res.headers.get("content-type") ?? "";
   return (type.includes("application/json") ? res.json() : res.text()) as Promise<T>;
@@ -55,13 +62,30 @@ async function streamEvents(path: string, init: RequestInit, onEvent: (event: Ru
     signal,
   });
   if (!res.ok || !res.body) {
-    const err = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, err.message ?? "The run could not start", err.problems ?? []);
+    throw failed(res.status, await res.json().catch(() => ({})), "The run could not start");
   }
   await readSse(res.body, (data) => onEvent(JSON.parse(data) as RunEvent));
 }
 
 export const api = {
+  // signing in, people and keys for scripts (server/auth_api.py)
+  authStatus: () => request<AuthStatus>("/api/auth/status"),
+  setup: (body: { code: string; email: string; name: string; password: string }) =>
+    request<{ me: Me }>("/api/auth/setup", { method: "POST", ...json(body) }),
+  signIn: (email: string, password: string) => request<{ me: Me }>("/api/auth/login", { method: "POST", ...json({ email, password }) }),
+  signOut: () => request<{ signed_in: boolean }>("/api/auth/logout", { method: "POST" }),
+  changePassword: (current: string, next: string) =>
+    request<{ changed: boolean }>("/api/auth/password", { method: "POST", ...json({ current, new: next }) }),
+  people: () => request<{ people: Person[] }>("/api/people").then((r) => r.people),
+  addPerson: (body: { email: string; name: string; role: Role; password: string }) =>
+    request<Person>("/api/people", { method: "POST", ...json(body) }),
+  updatePerson: (id: string, body: { role?: Role; disabled?: boolean; name?: string; password?: string }) =>
+    request<Person>(`/api/people/${id}`, { method: "PATCH", ...json(body) }),
+  removePerson: (id: string) => request<{ removed: string }>(`/api/people/${id}`, { method: "DELETE" }),
+  apiKeys: () => request<{ keys: ApiKeyInfo[] }>("/api/keys").then((r) => r.keys),
+  createApiKey: (body: { name: string; role?: Role }) => request<NewApiKey>("/api/keys", { method: "POST", ...json(body) }),
+  revokeApiKey: (id: string) => request<{ revoked: string }>(`/api/keys/${id}`, { method: "DELETE" }),
+
   catalog: () => request<Catalog>("/api/catalog"),
   templates: () => request<TemplateInfo[]>("/api/templates"),
   templateSpec: (id: string) => request<FlowSpec>(`/api/templates/${encodeURIComponent(id)}`),

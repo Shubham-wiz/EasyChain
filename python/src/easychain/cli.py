@@ -432,6 +432,155 @@ def cmd_db(args: argparse.Namespace) -> int:
     return _platform.run(status() if args.action == "status" else upgrade())
 
 
+def _with_accounts(args: argparse.Namespace, work: Any) -> int:
+    """Open the run database and call ``work(accounts)``; an AccountError is printed."""
+    from .server.accounts import AccountError, Accounts
+    from .server.app import default_database_url
+    from .server.db import Database
+
+    home = Path(args.home or os.environ.get("EASYCHAIN_HOME") or Path.home() / ".easychain")
+    url = args.database_url or default_database_url(home)
+
+    async def go() -> int:
+        db = await Database.connect(url)
+        try:
+            return int(await work(Accounts(db)) or 0)
+        except AccountError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        finally:
+            await db.close()
+
+    return _platform.run(go())
+
+
+def _new_password(args: argparse.Namespace) -> str | None:
+    """From stdin (--password-stdin), or asked for twice; None (and a message) if unusable."""
+    from .server.auth import password_problem
+
+    if args.password_stdin:
+        password = sys.stdin.readline().rstrip("\r\n")
+    else:
+        import getpass
+
+        password = getpass.getpass("Password: ")
+        if getpass.getpass("Again: ") != password:
+            print("The two passwords don't match.", file=sys.stderr)
+            return None
+    if problem := password_problem(password):
+        print(problem, file=sys.stderr)
+        return None
+    return password
+
+
+def cmd_users(args: argparse.Namespace) -> int:
+    """People who can sign in (when sign-in is on: see docs/people.md)."""
+    from .server.auth import ROLE_LABELS
+
+    async def find(accounts: Any) -> dict[str, Any]:
+        from .server.accounts import AccountError
+
+        person = await accounts.by_email(args.email)
+        if person is None:
+            raise AccountError(f"There's no account for {args.email}.")
+        return person
+
+    async def work(accounts: Any) -> int:
+        if args.action == "list":
+            people = await accounts.members()
+            if not people:
+                print("Nobody has an account yet.")
+            for p in people:
+                off = "  (switched off)" if p["disabled"] else ""
+                print(f"{p['email']:<36} {ROLE_LABELS[p['role']]:<8} {p['name']}{off}")
+            return 0
+        if args.action == "setup-code":
+            code = await accounts.setup_code()
+            if code is None:
+                print("There are accounts already: sign in, or ask an Owner.", file=sys.stderr)
+                return 1
+            # Replaces the code the server printed when it started.
+            print(code)
+            return 0
+        if args.action == "add":
+            password = _new_password(args)
+            if password is None:
+                return 1
+            await accounts.create(args.email, args.name or "", password, args.role)
+            print(f"Added {args.email.strip().lower()} as {ROLE_LABELS[args.role]}.")
+            return 0
+        person = await find(accounts)
+        if args.action == "role":
+            await accounts.update(person["id"], role=args.role)
+            print(f"{person['email']} is now {ROLE_LABELS[args.role]}.")
+        elif args.action in ("disable", "enable"):
+            await accounts.update(person["id"], disabled=args.action == "disable")
+            state = "switched off and signed out" if args.action == "disable" else "switched on"
+            print(f"{person['email']} is {state}.")
+        elif args.action == "password":
+            password = _new_password(args)
+            if password is None:
+                return 1
+            await accounts.set_password(person["id"], password)
+            print(f"New password set for {person['email']}; their browsers are signed out.")
+        elif args.action == "remove":
+            await accounts.remove(person["id"])
+            print(f"Removed {person['email']}; their keys no longer work.")
+        return 0
+
+    needs_email = args.action not in ("list", "setup-code")
+    if needs_email and not args.email:
+        print(f"Say whose account: easychain users {args.action} EMAIL", file=sys.stderr)
+        return 2
+    if args.action in ("add", "role") and not args.role:
+        print("Say which role: --role viewer|runner|editor|owner", file=sys.stderr)
+        return 2
+    return _with_accounts(args, work)
+
+
+def cmd_keys(args: argparse.Namespace) -> int:
+    """API keys for scripts and other apps (Authorization: Bearer eck_…)."""
+
+    async def work(accounts: Any) -> int:
+        from .server.accounts import AccountError
+
+        if args.action == "revoke":
+            if not await accounts.revoke_key(args.target):
+                raise AccountError(f"There's no key {args.target} (or it's already revoked).")
+            print(f"Revoked key {args.target}.")
+            return 0
+        person = await accounts.by_email(args.target) if args.target else None
+        if args.target and person is None:
+            raise AccountError(f"There's no account for {args.target}.")
+        if args.action == "list":
+            emails = {p["id"]: p["email"] for p in await accounts.members()}
+            keys = await accounts.keys(person["id"] if person else None)
+            if not keys:
+                print("No keys.")
+            for k in keys:
+                print(f"{k['id']}  {emails.get(k['user_id'], '?'):<36} {k['role']:<8} {k['name']}")
+            return 0
+        if person is None:
+            raise AccountError("Say whose key it is: easychain keys create EMAIL")
+        member = await accounts.member(person["id"])
+        made = await accounts.create_key(
+            person["id"], args.name, args.role or (member or {}).get("role", "viewer")
+        )
+        # Only the key on stdout, so a script can capture it; it isn't shown again.
+        print(made["key"])
+        print(
+            f"Key {made['id']} ({made['role']}) for {person['email']}. Copy it now.",
+            file=sys.stderr,
+        )
+        return 0
+
+    if args.action in ("create", "revoke") and not args.target:
+        what = "EMAIL" if args.action == "create" else "KEY_ID"
+        print(f"easychain keys {args.action} {what}", file=sys.stderr)
+        return 2
+    return _with_accounts(args, work)
+
+
 def cmd_test(args: argparse.Namespace) -> int:
     from .testsets import run_test_set
 
@@ -481,6 +630,8 @@ def cmd_dev(args: argparse.Namespace) -> int:
         os.environ["EASYCHAIN_DATABASE_URL"] = args.database_url
     if args.no_worker:
         os.environ["EASYCHAIN_WORKER"] = "off"
+    # Sign-in is on by default when the server answers the network (server/auth.py).
+    os.environ["EASYCHAIN_HOST"] = args.host
     print(f"Easy Chain {__version__} running at http://{args.host}:{args.port}", flush=True)
     uvicorn.run(
         "easychain.server.app:create_app",
@@ -586,6 +737,33 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--home", help="folder for secrets and uploads (~/.easychain)")
     p.add_argument("--database-url", help="sqlite:///path.db or postgresql://… (as the API uses)")
     p.set_defaults(func=cmd_db)
+
+    from .server.auth import ROLES
+
+    p = sub.add_parser("users", help="people who can sign in, and their roles")
+    p.add_argument(
+        "action",
+        choices=["list", "add", "role", "disable", "enable", "password", "remove", "setup-code"],
+        help="setup-code: a new code for the first account, if the server's log is gone",
+    )
+    p.add_argument("email", nargs="?")
+    p.add_argument("--role", choices=ROLES)
+    p.add_argument("--name", help="how they're shown (add)")
+    p.add_argument(
+        "--password-stdin", action="store_true", help="read the password from stdin (scripts)"
+    )
+    p.add_argument("--home", help="folder for secrets and uploads (~/.easychain)")
+    p.add_argument("--database-url", help="sqlite:///path.db or postgresql://… (as the API uses)")
+    p.set_defaults(func=cmd_users)
+
+    p = sub.add_parser("keys", help="API keys for scripts and other apps")
+    p.add_argument("action", choices=["list", "create", "revoke"])
+    p.add_argument("target", nargs="?", help="an email (list, create) or a key id (revoke)")
+    p.add_argument("--name", default="API key", help="what the key is for (create)")
+    p.add_argument("--role", choices=ROLES, help="at most the person's role (create)")
+    p.add_argument("--home", help="folder for secrets and uploads (~/.easychain)")
+    p.add_argument("--database-url", help="sqlite:///path.db or postgresql://… (as the API uses)")
+    p.set_defaults(func=cmd_keys)
 
     p = sub.add_parser("worker", help="run queued flow runs (scale out with more workers)")
     p.add_argument("--home", help="folder for secrets and uploads (~/.easychain)")

@@ -180,6 +180,67 @@ uploads = sa.Table(
     sa.Column("created_at", sa.Float),
 )
 
+# ── people (Phase 5.6, migration 0003) ───────────────────────────────────────
+
+users = sa.Table(
+    "users",
+    metadata,
+    sa.Column("id", sa.String(40), primary_key=True),
+    sa.Column("email", sa.String(320)),  # stored in lower case
+    sa.Column("name", sa.String(200)),
+    # scrypt (server/auth.py); empty for people who only sign in with single sign-on
+    sa.Column("password_hash", sa.String(300), nullable=True),
+    sa.Column("disabled", sa.Boolean),
+    sa.Column("created_at", sa.Float),
+    sa.Column("last_login_at", sa.Float, nullable=True),
+    sa.UniqueConstraint("email", name="uq_users_email"),
+)
+
+workspaces = sa.Table(
+    "workspaces",
+    metadata,
+    sa.Column("id", sa.String(40), primary_key=True),
+    sa.Column("name", sa.String(200)),
+    sa.Column("created_at", sa.Float),
+)
+
+# What each person may do in a workspace: owner, editor, runner or viewer.
+memberships = sa.Table(
+    "memberships",
+    metadata,
+    sa.Column("workspace_id", sa.String(40), primary_key=True),
+    sa.Column("user_id", sa.String(40), primary_key=True),
+    sa.Column("role", sa.String(20)),
+    sa.Column("created_at", sa.Float),
+)
+
+# Signed-in browsers. The cookie holds a random token; only its SHA-256 is kept.
+sessions = sa.Table(
+    "sessions",
+    metadata,
+    sa.Column("id", sa.String(64), primary_key=True),
+    sa.Column("user_id", sa.String(40), index=True),
+    sa.Column("created_at", sa.Float),
+    sa.Column("expires_at", sa.Float),
+    sa.Column("last_seen_at", sa.Float),
+)
+
+# Keys for scripts and other apps (Authorization: Bearer eck_<id>_<secret>); only the secret's
+# SHA-256 is kept. A key acts as its person, with at most the role it was made with.
+api_keys = sa.Table(
+    "api_keys",
+    metadata,
+    sa.Column("id", sa.String(16), primary_key=True),
+    sa.Column("user_id", sa.String(40), index=True),
+    sa.Column("workspace_id", sa.String(40)),
+    sa.Column("name", sa.String(200)),
+    sa.Column("role", sa.String(20)),
+    sa.Column("secret_hash", sa.String(64)),
+    sa.Column("created_at", sa.Float),
+    sa.Column("last_used_at", sa.Float, nullable=True),
+    sa.Column("revoked_at", sa.Float, nullable=True),
+)
+
 # Easy Chain 0.4.0 and earlier kept a schema number here; migrations replaced it.
 meta = sa.Table(
     "easychain_meta",

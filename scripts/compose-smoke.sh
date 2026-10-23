@@ -1,7 +1,20 @@
 #!/usr/bin/env bash
 # Run a flow through the Compose stack: the API queues it, a worker runs it.
+# Sign-in is on in Docker, so this makes an Owner and an API key with the command line first
+# (or uses EASYCHAIN_KEY if it is set). COMPOSE is how to reach the stack's containers.
 set -euo pipefail
 BASE=${BASE:-http://localhost:8000}
+COMPOSE=${COMPOSE:-docker compose}
+
+code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/flows")
+[ "$code" = 401 ] || { echo "Expected the API to ask for sign-in (401), got $code"; exit 1; }
+if [ -z "${EASYCHAIN_KEY:-}" ]; then
+  email="smoke-$(date +%s)@example.com"
+  echo "a smoke test password" \
+    | $COMPOSE exec -T easychain easychain users add "$email" --role owner --password-stdin
+  EASYCHAIN_KEY=$($COMPOSE exec -T easychain easychain keys create "$email" --name "smoke test" | tr -d '\r')
+fi
+curl() { command curl -H "Authorization: Bearer $EASYCHAIN_KEY" "$@"; }
 flow=$(curl -sf -X POST "$BASE/api/flows" -H 'Content-Type: application/json' -d '{
   "spec": {
     "name": "Compose smoke test",
@@ -31,6 +44,7 @@ print("Compose stack ran the flow:", run["output"])'
 # With docker-compose.sandbox.yml, Code steps run in a sandbox container as an unprivileged
 # user with no network; check that a step really ran there.
 if [ "${EXPECT_SANDBOX:-0}" = 1 ]; then
+  curl -sf "$BASE/api/sandbox/status" | grep -q '"effective":"docker"'
   flow=$(curl -sf -X POST "$BASE/api/flows" -H 'Content-Type: application/json' -d '{
     "spec": {
       "name": "Compose sandbox test",

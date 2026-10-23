@@ -73,7 +73,8 @@ async def test_a_database_made_before_migrations_is_upgraded_in_place(tmp_path: 
     )
     await db.close()
     # The baseline is stamped, not run again over the old tables; later migrations run.
-    assert [m.split()[0] for m in db.migrated] == ["0002"]
+    ran = [m.split()[0] for m in db.migrated]
+    assert ran[0] == "0002" and ran[-1] == migrations.head()
     again = await Database.connect(url)
     assert (await again.get_run(run_id))["inputs"] == {"q": 1}
     await again.close()

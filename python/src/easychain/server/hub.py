@@ -19,6 +19,7 @@ from ..runtime.resources import Resources
 from ..runtime.runner import compile_cached
 from ..spec import FlowSpec, parse_spec, spec_json
 from ..steps.flow_control import subflow_ids
+from .accounts import Accounts
 from .db import FINISHED, Database
 from .store import FlowNotFound, FlowStore
 
@@ -80,6 +81,7 @@ class Hub:
         self.flows = flows
         self.vault = vault
         self.bus = EventBus()
+        self.accounts = Accounts(db)
 
     # ── flow versions ────────────────────────────────────────────────────────
 

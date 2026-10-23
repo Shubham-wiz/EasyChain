@@ -15,17 +15,26 @@ export { readSse } from "./sse.js";
 export class EasyChainError extends Error {
   status: number;
   kind?: string;
-  constructor(status: number, message: string, kind?: string) {
+  /** What to do about it: "sign_in" (401: no key, or it was revoked), "role" (403: the key's role is too low). */
+  action?: string;
+  constructor(status: number, message: string, kind?: string, action?: string) {
     super(message);
     this.name = "EasyChainError";
     this.status = status;
     this.kind = kind;
+    this.action = action;
   }
 }
 
 export interface ClientOptions {
   /** Where the Easy Chain server is, e.g. http://localhost:8000. Empty means this site. */
   baseUrl?: string;
+  /**
+   * An API key (eck_…), when the server has sign-in on: make one under Settings → Keys for
+   * scripts, or with `easychain keys create`. Keep it on a server, not in a web page. In a
+   * browser signed in to Easy Chain itself, leave it out: the sign-in is used.
+   */
+  apiKey?: string;
   /** Extra headers for every request (for example a reverse proxy's auth header). */
   headers?: Record<string, string>;
   fetch?: typeof fetch;
@@ -50,7 +59,7 @@ export class EasyChainClient {
 
   constructor(options: ClientOptions = {}) {
     this.base = (options.baseUrl ?? "").replace(/\/$/, "");
-    this.headers = options.headers ?? {};
+    this.headers = { ...(options.apiKey ? { Authorization: `Bearer ${options.apiKey}` } : {}), ...(options.headers ?? {}) };
     this.fetcher = options.fetch ?? ((...args) => globalThis.fetch(...args));
   }
 
@@ -60,8 +69,8 @@ export class EasyChainClient {
       headers: { "Content-Type": "application/json", ...this.headers, ...((init.headers as Record<string, string>) ?? {}) },
     });
     if (!res.ok) {
-      const detail = (await res.json().catch(() => ({}))) as { message?: string; kind?: string };
-      throw new EasyChainError(res.status, detail.message ?? `${res.status} ${res.statusText}`, detail.kind);
+      const detail = (await res.json().catch(() => ({}))) as { message?: string; kind?: string; action?: string };
+      throw new EasyChainError(res.status, detail.message ?? `${res.status} ${res.statusText}`, detail.kind, detail.action);
     }
     return res;
   }
@@ -189,7 +198,11 @@ export class EasyChainClient {
     return this.json(`/api/inbox/${encodeURIComponent(inboxId)}/answer`, { method: "POST", body: JSON.stringify(answer) });
   }
 
-  /** A WebSocket that sends every event of a run as JSON; send {"type": "cancel"} to stop it. */
+  /**
+   * A WebSocket that sends every event of a run as JSON; send {"type": "cancel"} to stop it.
+   * WebSockets can't carry an API key, so with sign-in on this works in a signed-in browser;
+   * elsewhere use follow().
+   */
   socket(runId: string, after = 0): WebSocket {
     const base = this.base || (typeof location !== "undefined" ? location.origin : "");
     const url = `${base.replace(/^http/, "ws")}/api/runs/${encodeURIComponent(runId)}/ws?after=${after}`;

@@ -38,6 +38,19 @@ describe("EasyChainClient", () => {
     expect(init.headers["X-Team"]).toBe("a");
   });
 
+  it("sends an API key, and says when sign-in or a higher role is needed", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(json({ run_id: "r1", thread_id: "t1" }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ message: "Sign in first.", action: "sign_in" }), { status: 401 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ message: "Your role (Viewer) can't do this.", action: "role" }), { status: 403 }));
+    const client = new EasyChainClient({ baseUrl: "http://easy:8000", fetch, apiKey: "eck_abc_secret" });
+    await client.start({ flowId: "hello" });
+    expect(fetch.mock.calls[0][1].headers.Authorization).toBe("Bearer eck_abc_secret");
+    await expect(client.start({ flowId: "hello" })).rejects.toMatchObject({ status: 401, action: "sign_in" });
+    await expect(client.cancel("r1")).rejects.toMatchObject({ status: 403, action: "role", message: "Your role (Viewer) can't do this." });
+  });
+
   it("answers waiting steps and reports API errors plainly", async () => {
     const fetch = vi
       .fn()

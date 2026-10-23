@@ -603,3 +603,57 @@ export interface SkillSummary {
 export interface Skill extends Omit<SkillSummary, "files"> {
   files: Record<string, string>;
 }
+
+// ── people (Phase 5.6) ───────────────────────────────────────────────────────
+
+export type Role = "viewer" | "runner" | "editor" | "owner";
+
+/** Who is signed in. With sign-in off, everyone is the Owner (via "local"). */
+export interface Me {
+  id: string | null;
+  email: string | null;
+  name: string;
+  role: Role;
+  role_label: string;
+  via: "local" | "session" | "key";
+  workspace: string;
+}
+
+export interface AuthStatus {
+  mode: "on" | "off";
+  signed_in: boolean;
+  /** Sign-in is on and nobody has an account yet: the first one is made with the code from the server's log. */
+  setup_needed: boolean;
+  me: Me | null;
+  roles: { id: Role; label: string }[];
+}
+
+export interface Person {
+  id: string;
+  email: string;
+  name: string;
+  role: Role;
+  role_label: string;
+  disabled: boolean;
+  created_at: number;
+  last_login_at: number | null;
+}
+
+export interface ApiKeyInfo {
+  id: string;
+  user_id: string;
+  name: string;
+  role: Role;
+  created_at: number;
+  last_used_at: number | null;
+  mine: boolean;
+}
+
+/** A key just made: `key` is shown this once. */
+export interface NewApiKey {
+  id: string;
+  name: string;
+  role: Role;
+  key: string;
+  created_at: number;
+}

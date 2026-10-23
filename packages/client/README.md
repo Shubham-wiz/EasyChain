@@ -32,6 +32,15 @@ for await (const _ of easy.resume(run_id, { [final.interrupts![0].id]: { action:
 | `inbox()`, `answer(inboxId, answer)` | Everything waiting for a person, and answering it. |
 | `socket(runId)` | A WebSocket with every event as JSON; send `{"type": "cancel"}` to stop the run. |
 
+When the server has sign-in on (it is on by default when it answers the network, as in
+Docker), pass an API key: `new EasyChainClient({ baseUrl, apiKey: process.env.EASYCHAIN_KEY })`.
+Make one in the app under Settings → Keys for scripts, or with
+`easychain keys create you@example.com --role runner`. A key acts as its person, with at most
+the role it was made with; a Runner key can start, follow, answer and stop runs of saved flows.
+Keep keys on a server: in a web page anyone can read them. A page served by Easy Chain itself
+uses the browser's sign-in and needs no key. A 401 error has `action` `"sign_in"`; a 403 has
+`"role"`.
+
 Leaving a `for await` loop early (`break`) closes the connection; the run carries on on the
 server, and `follow(runId, after)` picks it up again. A waiting request has `kind` `approve`,
 `edit`, `answer` or `choose` (Ask a Human), or `approve_tool`: an Agent asks before using a tool,

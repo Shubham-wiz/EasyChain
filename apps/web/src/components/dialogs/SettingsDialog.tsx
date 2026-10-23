@@ -2,11 +2,13 @@ import { CheckCircle2, ChevronDown, ChevronRight, ExternalLink, KeyRound, Plus, 
 import { useEffect, useState } from "react";
 import { api } from "../../lib/api";
 import type { ProviderInfo, SecretInfo } from "../../lib/types";
+import { useAuth } from "../../state/auth";
 import { useCatalog } from "../../state/catalog";
 import { useUi, type SettingsTab } from "../../state/ui";
 import { Badge, Button, Dialog, Input, Tabs, TabsContent, TabsList, TabsTrigger } from "../ui";
 import { McpSection } from "./McpServers";
 import { NotificationsSection } from "./Notifications";
+import { ApiKeysSection, PeopleSection } from "./People";
 import { SandboxSection } from "./Sandbox";
 
 function KeyRow({
@@ -229,6 +231,8 @@ export function SettingsDialog() {
   const settings = useUi((s) => s.settings);
   const close = useUi((s) => s.closeSettings);
   const [tab, setTab] = useState<SettingsTab>("keys");
+  const signIn = useAuth((s) => s.status?.mode === "on");
+  const owner = useAuth((s) => s.status?.me?.role === "owner");
   useEffect(() => {
     if (settings.open) setTab(settings.tab ?? "keys");
   }, [settings.open, settings.tab]);
@@ -241,6 +245,8 @@ export function SettingsDialog() {
           <TabsTrigger value="mcp">MCP servers</TabsTrigger>
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
           <TabsTrigger value="sandbox">Sandbox</TabsTrigger>
+          {signIn && owner && <TabsTrigger value="people">People</TabsTrigger>}
+          {signIn && <TabsTrigger value="api-keys">Keys for scripts</TabsTrigger>}
         </TabsList>
         <TabsContent value="keys" className="pt-4">
           {settings.open && tab === "keys" && <KeysSection />}
@@ -253,6 +259,12 @@ export function SettingsDialog() {
         </TabsContent>
         <TabsContent value="sandbox" className="pt-4">
           {settings.open && tab === "sandbox" && <SandboxSection />}
+        </TabsContent>
+        <TabsContent value="people" className="pt-4">
+          {settings.open && tab === "people" && <PeopleSection />}
+        </TabsContent>
+        <TabsContent value="api-keys" className="pt-4">
+          {settings.open && tab === "api-keys" && <ApiKeysSection />}
         </TabsContent>
       </Tabs>
     </Dialog>

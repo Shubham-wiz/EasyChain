@@ -12,6 +12,7 @@ import { KnowledgeLink } from "./Knowledge";
 import { SkillsLink } from "./Skills";
 import { IssueList } from "./inspector/Inspector";
 import { Button, Tooltip } from "./ui";
+import { UserMenu } from "./UserMenu";
 
 function SaveIndicator() {
   const state = useFlow((s) => s.saveState);
@@ -153,6 +154,7 @@ export function TopBar({ onHome }: { onHome: () => void }) {
             {running ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />} Run
           </Button>
         </Tooltip>
+        <UserMenu />
       </div>
     </header>
   );

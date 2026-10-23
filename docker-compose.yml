@@ -1,5 +1,6 @@
 # One command starts Easy Chain with Postgres and a worker:  docker compose up
-# Then open http://localhost:8000
+# Then open http://localhost:8000. Sign-in is on: the first account (an Owner) needs the code
+# that `docker compose logs easychain` shows.
 #
 # - db:        Postgres 16 (runs, events, the job queue, the Inbox, Save Points).
 # - easychain: the API and the web app.
@@ -48,7 +49,8 @@ services:
     build: .
     image: easychain:0.4.0
     ports:
-      # Localhost only: there is no login yet (Phase 5), so do not publish it on a public interface.
+      # Localhost by default. Sign-in is on in Docker (the log prints a code for the first
+      # account); to open it to others, put it behind HTTPS and publish it there.
       - "127.0.0.1:${EASYCHAIN_PORT:-8000}:8000"
     environment:
       <<: *easychain-env

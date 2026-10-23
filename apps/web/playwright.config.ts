@@ -8,7 +8,11 @@ import { join } from "node:path";
 const port = Number(process.env.E2E_PORT ?? 8123);
 const fakePort = Number(process.env.E2E_FAKE_PORT ?? 8124);
 const mcpPort = Number(process.env.E2E_MCP_PORT ?? 8125);
+const authPort = Number(process.env.E2E_AUTH_PORT ?? 8126);
 const home = mkdtempSync(join(tmpdir(), "easychain-e2e-"));
+// The server with sign-in on keeps its accounts here. Set once, in the main process: workers
+// inherit it, so tests can make a setup code for that server (e2e/auth.spec.ts).
+process.env.E2E_AUTH_HOME ??= mkdtempSync(join(tmpdir(), "easychain-e2e-auth-"));
 const python = "uv run --project ../../python";
 
 export const FAKE_URL = `http://127.0.0.1:${fakePort}`;
@@ -54,6 +58,20 @@ export default defineConfig({
         OPENAI_API_KEY: "sk-e2e-test-key",
         OPENAI_BASE_URL: `${FAKE_URL}/v1`,
         E2E_FAKE_URL: FAKE_URL,
+      },
+    },
+    {
+      // The same app with sign-in on, as when it answers the network (Docker).
+      command: `${python} easychain dev --port ${authPort}`,
+      url: `http://127.0.0.1:${authPort}/api/health`,
+      reuseExistingServer: false,
+      timeout: 120_000,
+      env: {
+        EASYCHAIN_HOME: process.env.E2E_AUTH_HOME,
+        EASYCHAIN_WEB_DIST: join(process.cwd(), "dist"),
+        EASYCHAIN_AUTH: "on",
+        OPENAI_API_KEY: "sk-e2e-test-key",
+        OPENAI_BASE_URL: `${FAKE_URL}/v1`,
       },
     },
   ],

@@ -9,6 +9,7 @@ import { KnowledgeLink } from "./Knowledge";
 import { SkillsLink } from "./Skills";
 import { InboxLink } from "./TopBar";
 import { Badge, Button } from "./ui";
+import { UserMenu } from "./UserMenu";
 
 export function Home({ open }: { open: (flowId: string, opts?: { tryIt?: boolean }) => void }) {
   const [flows, setFlows] = useState<FlowListItem[] | null>(null);
@@ -52,6 +53,7 @@ export function Home({ open }: { open: (flowId: string, opts?: { tryIt?: boolean
             <Button variant="ghost" size="icon-sm" aria-label="Toggle theme" onClick={toggleTheme}>
               {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
             </Button>
+            <UserMenu />
           </div>
         </div>
       </header>

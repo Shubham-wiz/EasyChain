@@ -39,6 +39,8 @@ on :5173.
 | `easychain dev [--port N]` | Start the app: API, web app and a worker in one process. |
 | `easychain worker` | Run queued runs. Start more of them to scale out. |
 | `easychain db status` / `upgrade` | Show which migrations the run database has, or run the missing ones. Easy Chain also upgrades the database itself when it starts. |
+| `easychain users list` / `add` / `role` / `disable` / `enable` / `password` / `remove` / `setup-code` | People who can sign in, and their roles, when sign-in is on ([docs/people.md](../docs/people.md)). `--password-stdin` reads a password from a script. |
+| `easychain keys list` / `create EMAIL` / `revoke ID` | Keys for scripts and other apps. `create` prints only the key. |
 
 `--stand-in` uses the clearly labelled stand-in AI, so no API key is needed.
 
