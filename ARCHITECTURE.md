@@ -411,9 +411,29 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
   `{secret:NAME}`.
 - **MCP servers** started as local commands (stdio) run only if the command is on an
   allow-list that can be edited in Pro mode. Tokens go in headers as `{secret:NAME}`.
-- **Fetching on the server.** Adding a web page to a Knowledge Base and reading an OpenAPI
-  address make the server fetch that URL. That is fine for a single-user local install; a
-  shared deployment needs an egress allow-list (Phase 5).
+- **Which addresses Easy Chain may reach** (Phase 5.6f, `egress.py`, `server/network.py`,
+  [docs/network.md](docs/network.md)). The egress policy has three modes:
+  - `open`: the default with sign-in off;
+  - `public`: public addresses, plus internal ones on the allow-list; the default with sign-in on;
+  - `allow-list`: only the listed sites.
+
+  It is a context variable, set from Settings → Network (or `EASYCHAIN_EGRESS`):
+  - for runs, through `RunOptions.egress`;
+  - for Knowledge Base reading, in the worker;
+  - for previews and imports, in the API.
+
+  What it covers:
+  - Easy Chain's own fetches (`fetch.py`).
+  - Web request steps: the loader swaps the module's `httpx` for `GuardedHttpx`, while
+    exported code keeps plain httpx.
+  - MCP HTTP servers, via an httpx client factory.
+
+  How it checks:
+  - every request and redirect, by URL (an event hook);
+  - the address connected to, for direct connections: `GuardedBackend` wraps httpcore's
+    network backend, and connects to the address it checked, which stops DNS rebinding.
+
+  Model providers and notifications aren't checked.
 
 ## 8. Testing
 
@@ -435,6 +455,7 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
 | `test_migrations.py` | The migrations build exactly the tables `db.py` describes (SQLite and Postgres); a database made by 0.4.0 is upgraded in place with its data; a newer one is refused; every migration can be undone and redone; `easychain db` |
 | `test_auth.py` | Every route declares who may use it (a new one fails the test); sign-in off by default only on this computer; the first Owner needs the code from the log, and guessing it is stopped; each role gets what it should and no more (through keys); the last Owner can't be demoted, switched off or removed; switching someone off signs them out and stops their keys; a new password signs out other browsers; wrong passwords lock sign-in; keys are capped, shown once and revocable; live run streams need sign-in, webhooks need only their token; the Inbox records who answered; `easychain users` / `keys` |
 | `test_audit.py` | Every route that changes something is recorded or says why not; who did what (sessions, keys, webhooks, the command line, sign-in off); refused and invalid changes and secret values are never recorded; a burst of saves is one entry; failed sign-ins are; filters and pages; only Owners read it; the table refuses UPDATE, DELETE (and TRUNCATE on Postgres); a failure writing the log doesn't undo the change; `easychain audit` |
+| `test_egress.py` | The policy's modes and allow-list (names, endings, addresses, networks; IPv4 written as IPv6); Easy Chain's fetches and their redirects; a name that changes address between the check and the connection is refused, and connections go to the checked address; async clients; on a server with sign-in on, a Web request step, a Knowledge Base page, an OpenAPI document and an MCP server can't reach inside until allowed; who may change it; the environment wins; nothing changes on this computer |
 | `test_listen.py` | On Postgres, a run's new events wake a follower in another process at once (median about 2 ms), a queued job wakes a waiting worker, and a listener whose connection is killed reconnects |
 | `test_knowledge_queue.py` | Knowledge Base documents wait for a worker and survive a restart; a worker with its own disk reads uploads from the database; a worker that dies mid-document is replaced without doubling chunks; a removed document leaves nothing; an unexpected problem shows on the document and isn't retried |
 | `apps/web/src/**/*.test.ts` | Editing helpers, undo grouping, SSE parsing, formatting, the copilot's changes and panel |

@@ -94,10 +94,10 @@ describe("roles in the web app", () => {
     open("runner");
     expect(tabs()).toEqual(["Keys for scripts"]);
     open("editor");
-    expect(tabs()).toEqual(["Keys and providers", "MCP servers", "Notifications", "Sandbox", "Keys for scripts"]);
+    expect(tabs()).toEqual(["Keys and providers", "MCP servers", "Notifications", "Sandbox", "Network", "Keys for scripts"]);
     expect(screen.getByRole("note")).toHaveTextContent("Your role (Editor) can't change these; that needs Owner or above.");
     open("owner");
-    expect(tabs()).toEqual(["Keys and providers", "MCP servers", "Notifications", "Sandbox", "People", "Keys for scripts", "Audit log"]);
+    expect(tabs()).toEqual(["Keys and providers", "MCP servers", "Notifications", "Sandbox", "Network", "People", "Keys for scripts", "Audit log"]);
     expect(screen.queryByRole("note")).toBeNull();
   });
 });

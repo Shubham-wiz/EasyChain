@@ -14,8 +14,11 @@ import re
 import shlex
 from typing import Any
 
+import httpx
 from langchain_core.tools import BaseTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
+
+from .. import egress
 
 
 async def mcp_tools(servers: dict[str, list[str]]) -> list[BaseTool]:
@@ -157,8 +160,32 @@ def connections(settings: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def guarded(conn: dict[str, Any]) -> dict[str, Any]:
+    """An HTTP connection that keeps to the egress policy in force (egress.py): the address is
+    checked now, for a clear message, and again on connecting."""
+    policy = egress.current()
+    if policy is None or policy.mode == "open" or conn.get("transport") == "stdio":
+        return conn
+    egress.check_url(conn.get("url") or "", policy)
+
+    def factory(
+        headers: dict[str, str] | None = None,
+        timeout: httpx.Timeout | None = None,
+        auth: httpx.Auth | None = None,
+    ) -> httpx.AsyncClient:
+        return egress.async_client(
+            policy,
+            headers=headers,
+            timeout=timeout or httpx.Timeout(30, read=300),
+            auth=auth,
+            follow_redirects=True,
+        )
+
+    return {**conn, "httpx_client_factory": factory}
+
+
 async def list_tools(server: dict[str, Any], allowed_commands: list[str]) -> list[dict[str, Any]]:
-    client = MultiServerMCPClient({"server": connection(server, allowed_commands)})
+    client = MultiServerMCPClient({"server": guarded(connection(server, allowed_commands))})
     tools = await client.get_tools(server_name="server")
     return [
         {

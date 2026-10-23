@@ -67,9 +67,9 @@ phases:
       "5.6a Sign-in, people, roles on every endpoint, keys for scripts": done   # server/auth.py (PERMISSIONS), accounts.py, auth_api.py, migration 0003, easychain users/keys, SignIn/UserMenu/People in the web app, tests/test_auth.py, e2e/auth.spec.ts, docs/people.md
       "5.6b Role-aware web app": done   # state/auth.ts useCan/useRoleNote, flow.readOnly, view-only editor, Runner runs by flow id, Settings by role, src/components/roles.test.tsx, e2e/auth.spec.ts (roles)
       "5.6c Audit log": done   # server/audit.py (AUDITED/NOT_AUDITED, AuditMiddleware), migration 0004 (append-only triggers), GET /api/audit, easychain audit, Settings -> Audit log, tests/test_audit.py, docs/audit.md
-      "5.6d Workspaces and per-workspace vaults": next
-      "5.6e OIDC single sign-on (local test provider)": pending
-      "5.6f Egress allow-list": pending
+      "5.6d Workspaces and per-workspace vaults": pending   # last in 5.6 (decision 5.13)
+      "5.6e OIDC single sign-on (local test provider)": next
+      "5.6f Egress allow-list": done   # egress.py (policy, GuardedBackend, GuardedHttpx), server/network.py, RunOptions.egress, Settings -> Network, tests/test_egress.py, docs/network.md
       "5.1 Test Sets editor and Checks": pending
       "5.2 Test Runs and baselines": pending
       "5.3 CI gate": pending
@@ -89,8 +89,8 @@ waiting_for_review: false
 open_questions: []
 
 tests:
-  measured_at: 2026-10-23, 5.6c
-  python: {passed: 554, skipped: 0, on: "Linux with SQLite, Postgres and Docker (the sandbox tests); Windows and Linux in CI"}
+  measured_at: 2026-10-23, 5.6f
+  python: {passed: 566, skipped: 0, on: "Linux with SQLite, Postgres and Docker (the sandbox tests); Windows and Linux in CI"}
   web_unit: {passed: 103}
   client: {passed: 12}
   e2e: {passed: 41, skipped_unless_SCREENSHOTS: 3, on: "Linux (CI)"}

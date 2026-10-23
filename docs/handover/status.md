@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-10-23 (Phase 5: 5.8 is done; 5.6a–c are done: sign-in, people, roles, keys, a role-aware web app and the audit log; 5.6d, workspaces, is next)._
+_Last updated: 2026-10-23 (Phase 5: 5.8 is done; 5.6a–c and 5.6f are done: sign-in, people, roles, keys, a role-aware web app, the audit log and the egress allow-list; 5.6e, single sign-on, is next)._
 
 ## In one paragraph
 
@@ -33,9 +33,9 @@ issues under *Fix later* (decision 5.6).
 3. **Phase 5** follows [ROADMAP.md](../ROADMAP.md#phase-5-platform) in this order: 5.8 (migrations,
    Knowledge Base ingestion on the queue, optional LISTEN/NOTIFY), then 5.6, 5.1, 5.2, 5.3, 5.4,
    5.5 and 5.7. The README's build tracker shows which steps are done.
-4. **Two review items are left on purpose** ([review.md](review.md)). The address filter for
-   server-side fetches comes with the egress allow-list in Phase 5. Before a release, run the
-   agent templates' Test Sets with a real model (`--real-model`).
+4. **One review item is left on purpose** ([review.md](review.md)): before a release, run the
+   agent templates' Test Sets with a real model (`--real-model`). The address filter for
+   server-side fetches is done (5.6f).
 
 ## Phases
 
@@ -56,7 +56,7 @@ issues under *Fix later* (decision 5.6).
 
 | Suite | Result (2026-10-21, end of Phase 4) |
 |---|---|
-| Python on Linux (`pnpm test`, and CI) | 554 pass (2026-10-23, 5.6c), with SQLite, Postgres (+ pgvector in CI) and Docker (the sandbox escape tests; skipped without Docker); compiler and steps coverage 94% |
+| Python on Linux (`pnpm test`, and CI) | 566 pass (2026-10-23, 5.6f), with SQLite, Postgres (+ pgvector in CI) and Docker (the sandbox escape tests; skipped without Docker); compiler and steps coverage 94% |
 | Python on Windows 11 (CI) | all pass |
 | Web unit (vitest) | 103 passed |
 | Client package (vitest) | 11 passed |
@@ -76,9 +76,10 @@ Compose, and **Windows** (Python suite, CLI and worker, web checks, the app serv
    - Done: ~~5.6a, sign-in, people, roles on every endpoint and keys for scripts~~,
      ~~5.6b, the role-aware web app~~ ([people.md](../people.md)), and ~~5.6c, the audit
      log~~ ([audit.md](../audit.md)).
-   - Next: workspaces and per-workspace vaults (5.6d).
-   - Then: OIDC single sign-on against a local test provider (5.6e), and the egress allow-list
-     (5.6f).
+   - Done: ~~5.6f, the egress allow-list~~ ([network.md](../network.md)).
+   - Next: OIDC single sign-on against a local test provider (5.6e).
+   - Then: workspaces and per-workspace vaults (5.6d). This is last because a per-run view of
+     the secrets is the same piece 5.4's environments need (decision 5.13).
 3. Then 5.1–5.3 (Test Sets, Test Runs, CI gate), 5.4–5.5 (environments, Publish, model gateway)
    and 5.7 (dashboards and tracing).
 
@@ -102,7 +103,9 @@ These are listed in full in the phase reports and review.md. The ones that matte
 - Sign-in and roles are in (5.6a and 5.6b, [people.md](../people.md)). Sign-in is on when the
   server answers the network (Docker), and off for `easychain dev` on this computer. The web app
   shows each role what it can do. The audit log ([audit.md](../audit.md)) records every change.
-  There's still only one workspace (5.6d) and no single sign-on (5.6e).
+  On a shared server, flows reach internal addresses only when an Owner allows them
+  ([network.md](../network.md)). There's still only one workspace (5.6d) and no single
+  sign-on (5.6e).
 - Knowledge Base documents are read by workers from the job queue (5.8); no OCR yet.
 - Schema migrations are in place (Alembic, 5.8); every schema change needs one
   (`python/src/easychain/server/migrations/`).

@@ -123,10 +123,10 @@ Done:
 
 Open:
 
-- Server-side fetches (Knowledge Base web pages, OpenAPI import) have no address filter, so they
-  can reach internal addresses, and `/api/knowledge-preview` returns what it fetched. This is
-  planned with the egress allow-list in Phase 5 (milestone 5.6), because blocking internal
-  addresses by default would also block intranet documentation people want to add.
+- ~~Server-side fetches (Knowledge Base web pages, OpenAPI import) have no address filter~~.
+  Done in 5.6f ([network.md](../network.md)): on a server with sign-in on, internal addresses
+  need to be on the allow-list (so intranet documentation can still be added). Web request
+  steps and MCP servers are covered too.
 
 ### Web app and client
 

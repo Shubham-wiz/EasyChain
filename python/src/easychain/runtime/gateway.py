@@ -113,7 +113,7 @@ async def gateway_mcp_tools(servers: dict[str, list[str]]) -> list[Any]:
     """MCP tools with the connections from Settings → MCP servers."""
     from langchain_mcp_adapters.client import MultiServerMCPClient
 
-    from ..integrations.mcp import McpNotAllowed
+    from ..integrations.mcp import McpNotAllowed, guarded
     from ..integrations.mcp import mcp_tools as from_environment
 
     known = current_settings().mcp
@@ -128,7 +128,7 @@ async def gateway_mcp_tools(servers: dict[str, list[str]]) -> list[Any]:
             )
         if "error" in conn:
             raise McpNotAllowed(conn["error"])
-        picked[name] = conn
+        picked[name] = guarded(conn)
     client = MultiServerMCPClient(picked)
     tools: list[Any] = []
     for name, wanted in servers.items():

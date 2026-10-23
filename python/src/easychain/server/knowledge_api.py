@@ -18,6 +18,7 @@ from typing import Annotated, Any
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
+from .. import egress
 from ..knowledge.ingest import build_embeddings
 from ..knowledge.loaders import Loaded, LoadError, Section, load_bytes, load_url, split
 from ..knowledge.search import search_knowledge
@@ -25,6 +26,7 @@ from ..knowledge.store import KnowledgeStore
 from ..providers import EMBEDDING_MODELS, default_embedding_model
 from ..runtime.errors import explain
 from .audit import note
+from .network import policy as network_policy
 
 log = logging.getLogger("easychain.knowledge")
 
@@ -233,7 +235,8 @@ def add_knowledge_routes(app: FastAPI, home: Path) -> None:
                 loaded = await asyncio.to_thread(load_bytes, name, data, file.content_type)
                 source = name
             elif url:
-                loaded = await asyncio.to_thread(load_url, url)
+                with egress.using(await network_policy(app)):
+                    loaded = await asyncio.to_thread(load_url, url)
                 source = url
             elif text:
                 loaded, source = Loaded("text", "Text", [Section(text)]), "text"

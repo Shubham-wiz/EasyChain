@@ -7,6 +7,7 @@ import { useCatalog } from "../../state/catalog";
 import { useUi, type SettingsTab } from "../../state/ui";
 import { Badge, Button, Dialog, Input, Locked, Tabs, TabsContent, TabsList, TabsTrigger } from "../ui";
 import { McpSection } from "./McpServers";
+import { NetworkSection } from "./Network";
 import { NotificationsSection } from "./Notifications";
 import { AuditSection } from "./Audit";
 import { ApiKeysSection, PeopleSection } from "./People";
@@ -256,7 +257,7 @@ export function SettingsDialog() {
   // What each role sees: Editors the server's settings (read only), Owners people too, and
   // everyone signed in their own keys for scripts.
   const tabs: SettingsTab[] = [
-    ...(editor ? (["keys", "mcp", "notifications", "sandbox"] as const) : []),
+    ...(editor ? (["keys", "mcp", "notifications", "sandbox", "network"] as const) : []),
     ...(signIn && owner ? (["people"] as const) : []),
     ...(signIn ? (["api-keys"] as const) : []),
     ...(owner ? (["audit"] as const) : []),
@@ -278,6 +279,7 @@ export function SettingsDialog() {
               <TabsTrigger value="mcp">MCP servers</TabsTrigger>
               <TabsTrigger value="notifications">Notifications</TabsTrigger>
               <TabsTrigger value="sandbox">Sandbox</TabsTrigger>
+              <TabsTrigger value="network">Network</TabsTrigger>
             </>
           )}
           {signIn && owner && <TabsTrigger value="people">People</TabsTrigger>}
@@ -309,6 +311,13 @@ export function SettingsDialog() {
           {shown("sandbox") && (
             <OwnerOnly>
               <SandboxSection />
+            </OwnerOnly>
+          )}
+        </TabsContent>
+        <TabsContent value="network" className="pt-4">
+          {shown("network") && (
+            <OwnerOnly>
+              <NetworkSection />
             </OwnerOnly>
           )}
         </TabsContent>

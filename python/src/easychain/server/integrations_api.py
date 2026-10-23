@@ -10,8 +10,10 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from .. import egress
 from ..integrations import mcp as mcp_module
 from ..integrations import openapi
+from .network import policy as network_policy
 from .secrets import MASK, masked, masked_url, unmasked_url
 
 # Parts of an MCP server's settings that can hold tokens: never shown by the API.
@@ -123,10 +125,13 @@ def add_integration_routes(app: FastAPI, hub: Callable[[], Any]) -> None:
         if server is None:
             raise HTTPException(404, detail={"message": "That MCP server isn't set up here."})
         try:
-            tools = await asyncio.wait_for(
-                mcp_module.list_tools(server, settings["allowed_commands"]), 30
-            )
+            with egress.using(await network_policy(app)):
+                tools = await asyncio.wait_for(
+                    mcp_module.list_tools(server, settings["allowed_commands"]), 30
+                )
         except mcp_module.McpNotAllowed as exc:
+            raise HTTPException(403, detail={"message": str(exc)}) from exc
+        except egress.EgressBlocked as exc:
             raise HTTPException(403, detail={"message": str(exc)}) from exc
         except Exception as exc:
             reason = re.sub(r"\s+", " ", str(exc))[:300] or type(exc).__name__
@@ -138,7 +143,8 @@ def add_integration_routes(app: FastAPI, hub: Callable[[], Any]) -> None:
     @app.post("/api/openapi/inspect")
     async def openapi_inspect(req: OpenApiRequest) -> dict[str, Any]:
         try:
-            doc = await asyncio.to_thread(openapi.load, req.source)
+            with egress.using(await network_policy(app)):
+                doc = await asyncio.to_thread(openapi.load, req.source)
         except openapi.OpenApiError as exc:
             raise HTTPException(422, detail={"message": str(exc)}) from exc
         info = doc.get("info") or {}
@@ -151,7 +157,8 @@ def add_integration_routes(app: FastAPI, hub: Callable[[], Any]) -> None:
     @app.post("/api/openapi/steps")
     async def openapi_steps(req: OpenApiStepsRequest) -> dict[str, Any]:
         try:
-            doc = await asyncio.to_thread(openapi.load, req.source)
+            with egress.using(await network_policy(app)):
+                doc = await asyncio.to_thread(openapi.load, req.source)
         except openapi.OpenApiError as exc:
             raise HTTPException(422, detail={"message": str(exc)}) from exc
         return openapi.to_steps(

@@ -45,6 +45,7 @@ from langgraph.errors import GraphRecursionError
 from langgraph.graph import END
 from langgraph.types import Command
 
+from .. import egress
 from ..compiler import CompileError, compile_flow
 from ..compiler.analysis import EACH_ITEM, WHEN_DONE, FlowAnalysis, Resolver
 from ..compiler.codegen import DEFAULT_MAX_STEPS, CompiledFlow, exit_targets
@@ -226,6 +227,9 @@ class RunOptions:
     mcp: dict[str, Any] | None = None
     # How Code steps are sandboxed (Settings → Sandbox); None reads EASYCHAIN_SANDBOX.
     sandbox: Any = None
+    # Which addresses Web requests and MCP servers may reach (Settings → Network, egress.py);
+    # None: no check.
+    egress: Any = None
 
 
 def _now() -> float:
@@ -707,6 +711,7 @@ async def stream_run(
     token = use_settings(
         RunSettings(stand_in=opts.stand_in, script=opts.script, mcp=opts.mcp, sandbox=opts.sandbox)
     )
+    egress_token = egress.use(opts.egress)
     producer = asyncio.create_task(produce())
     stop_wait = asyncio.create_task(opts.cancel.wait()) if opts.cancel else None
     cancelled = False
@@ -929,6 +934,8 @@ async def stream_run(
                 await producer
         with contextlib.suppress(ValueError):  # generator closed from another context
             reset_settings(token)
+        with contextlib.suppress(ValueError):
+            egress.reset(egress_token)
 
     if failure is not None:
         errors = list(task_errors.values())

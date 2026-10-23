@@ -67,6 +67,7 @@ from .hub import Busy, Hub, Invalid, NotFound
 from .integrations_api import add_integration_routes
 from .knowledge_api import CUT_OFF, add_knowledge_routes, use_database
 from .listen import listen
+from .network import add_network_routes
 from .secrets import SecretStore, VaultLocked, masked, unmasked
 from .store import FlowNotFound, FlowStore
 from .worker import Worker, sandbox_settings
@@ -276,6 +277,7 @@ def create_app(
     app.state.flows, app.state.vault = flows, vault
     add_auth_routes(app)
     add_audit_routes(app)
+    add_network_routes(app)
     app.add_middleware(AuditMiddleware)
     add_knowledge_routes(app, home_path)
     origins = os.environ.get(

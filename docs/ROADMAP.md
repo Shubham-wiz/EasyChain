@@ -147,7 +147,7 @@ These are scheduled inside the phases above, or kept here until they are.
 | One vector store (Easy Chain's tables) | backlog: Qdrant / Chroma / Pinecone adapters if needed |
 | MCP: tools only, no OAuth, reconnect per run | backlog: MCP prompts and resources, OAuth, connection pooling |
 | OpenAPI import: optional query params not sent | backlog: optional params as optional tool arguments |
-| Server-side fetches have no egress allow-list | 5.6 |
+| Server-side fetches have no egress allow-list | Done in 5.6f (Settings → Network) |
 | `docker compose up` not run end to end by the builder | Step 0 (CI) |
 | Real models never called in CI | Step 0 (manual check per release); 5.2 (repeat runs with real models) |
 

@@ -2,6 +2,7 @@
 
 The response is read as it arrives and reading stops past a size limit, so a huge (or
 endless) response can't fill the memory. Compressed responses count at their full size.
+Addresses keep to the egress policy in force (egress.py), redirects included.
 """
 
 from __future__ import annotations
@@ -9,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import httpx
+
+from . import egress
 
 
 class FetchError(ValueError):
@@ -41,9 +44,10 @@ def fetch(
     """GET a URL (following redirects), reading at most ``limit`` bytes of it."""
     too_large = TooLarge(f"{url} is larger than {size_text(limit)}, so I stopped reading it.")
     try:
-        with httpx.stream(
-            "GET", url, timeout=timeout, follow_redirects=True, headers=headers
-        ) as response:
+        with (
+            egress.client(timeout=timeout, follow_redirects=True) as client,
+            client.stream("GET", url, headers=headers) as response,
+        ):
             response.raise_for_status()
             declared = response.headers.get("content-length", "")
             if declared.isdigit() and int(declared) > limit:
@@ -58,5 +62,7 @@ def fetch(
             return Fetched(
                 str(response.url), b"".join(chunks), response.headers.get("content-type")
             )
+    except egress.EgressBlocked as exc:
+        raise FetchError(str(exc)) from exc
     except (httpx.HTTPError, httpx.InvalidURL) as exc:
         raise FetchError(f"Couldn't fetch {url}: {exc}") from exc

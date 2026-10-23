@@ -649,6 +649,15 @@ export interface ApiKeyInfo {
   mine: boolean;
 }
 
+/** Settings → Network: which addresses Easy Chain may reach (egress.py). */
+export interface NetworkSettings {
+  mode: "open" | "public" | "allow-list";
+  allow: string[];
+  /** "environment": EASYCHAIN_EGRESS sets it, so it can't be changed in the app. */
+  source: "settings" | "environment" | "default";
+  modes?: string[];
+}
+
 /** One entry of the audit log (server/audit.py): who changed what, and when. */
 export interface AuditEntry {
   id: number;

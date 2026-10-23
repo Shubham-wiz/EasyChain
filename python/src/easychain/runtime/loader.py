@@ -15,6 +15,7 @@ import types
 from collections import OrderedDict
 from typing import Any
 
+from ..egress import guarded_httpx
 from .gateway import (
     current_sandbox,
     gateway_init_chat_model,
@@ -51,6 +52,9 @@ def load_module(
         module.__dict__["init_embeddings"] = gateway_init_embeddings
     if "mcp_tools" in module.__dict__:
         module.__dict__["mcp_tools"] = gateway_mcp_tools
+    if "httpx" in module.__dict__:
+        # Web requests keep to the server's egress policy (exported code uses plain httpx).
+        module.__dict__["httpx"] = guarded_httpx
     # Before build_graph() takes the functions: each call then asks the run's settings
     # whether to use the sandbox.
     for fn_name, info in (code_functions or {}).items():

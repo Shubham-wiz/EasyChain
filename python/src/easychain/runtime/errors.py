@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from ..egress import EgressBlocked
 from ..providers import PROVIDERS, split_model
 from .gateway import MissingAPIKey, MissingPackage
 
@@ -126,6 +127,17 @@ def explain(exc: BaseException, step: Any = None) -> dict[str, Any]:
         )
         return out
 
+    if isinstance(exc, EgressBlocked):
+        out.update(
+            kind="address_not_allowed",
+            message=str(exc),
+            hint="Internal addresses (and, with an allow-list, every site) need to be allowed "
+            "on a shared server, so flows can't reach what they shouldn't.",
+            fixes=[
+                {"kind": "open_settings", "label": "Network settings", "params": {"tab": "network"}}
+            ],
+        )
+        return out
     if isinstance(exc, httpx.HTTPStatusError):
         code = exc.response.status_code
         reason = exc.response.reason_phrase

@@ -71,6 +71,7 @@ AUDITED: dict[tuple[str, str], str] = {
     ("PUT", "/api/settings/sandbox"): "settings.sandbox",
     ("POST", "/api/sandbox/prepare"): "settings.sandbox_prepare",
     ("PUT", "/api/settings/notifications"): "settings.notifications",
+    ("PUT", "/api/settings/network"): "settings.network",
     ("POST", "/api/settings/notifications/test"): "settings.notifications_test",
 }
 
@@ -129,6 +130,7 @@ LABELS: dict[str, str] = {
     "settings.sandbox": "changed the sandbox settings",
     "settings.sandbox_prepare": "prepared the sandbox",
     "settings.notifications": "changed the notifications",
+    "settings.network": "changed which addresses Easy Chain may reach",
     "settings.notifications_test": "sent test notifications",
 }
 

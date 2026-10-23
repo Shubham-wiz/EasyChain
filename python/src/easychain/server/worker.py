@@ -21,6 +21,7 @@ import time
 import uuid
 from typing import Any
 
+from .. import egress
 from ..runtime import RunOptions, stream_run
 from ..runtime.loader import load_graph
 from ..runtime.runner import compile_cached
@@ -190,6 +191,14 @@ class Worker:
             if cancel:
                 stop.set()
 
+    async def _egress(self) -> egress.EgressPolicy:
+        """What runs and Knowledge Base pages may reach (Settings → Network)."""
+        from .auth import auth_mode
+
+        return egress.policy_from(
+            await self.db.get_setting("network", {}), signed_in=auth_mode() == "on"
+        )
+
     async def _ingest(self, job: dict[str, Any], lost: asyncio.Event) -> None:
         """Read one Knowledge Base document (queued by the API). The job's ``run_id`` is the
         document's id. Run again after a crash, it replaces what the first try wrote."""
@@ -204,9 +213,10 @@ class Worker:
             if upload is not None:
                 data = upload["data"]
                 source.update(name=upload["name"], content_type=upload["content_type"])
-        status = await asyncio.to_thread(
-            lambda: read_document(KnowledgeStore().setup(), job["run_id"], source, data)
-        )
+        with egress.using(await self._egress()):
+            status = await asyncio.to_thread(
+                lambda: read_document(KnowledgeStore().setup(), job["run_id"], source, data)
+            )
         if lost.is_set():
             return  # another worker took the job over; it finishes it
         log.info("Read document %s: %s", job["run_id"], status)
@@ -332,6 +342,7 @@ class Worker:
         opts = RunOptions(
             mcp=mcp,
             sandbox=sandbox_settings(await self.db.get_setting("sandbox", {})),
+            egress=await self._egress(),
             thread_id=run["thread_id"],
             run_id=run["id"],
             stand_in=bool(options.get("stand_in")),

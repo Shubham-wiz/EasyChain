@@ -1,5 +1,5 @@
 import type { Proposal, TestCase } from "./copilot";
-import type { ApiKeyInfo, AuditPage, AuthStatus, Me, NewApiKey, Person, Role, Catalog, CheckResult, ChunkPreview, CompileResult, DataField, FlowListItem, FlowSpec, FlowVersion, InboxItem, Issue, KnowledgeBase, KnowledgeDocument, KnowledgeHit, McpServer, McpSettings, McpTool, NotificationSettings, OpenApiInspection, RunEvent, RunSummary, SandboxSettings, SandboxStatus, SavePoint, SecretInfo, Skill, SkillSummary, Step, TemplateInfo, ThreadInfo, Trigger, TriggerKind } from "./types";
+import type { ApiKeyInfo, AuditPage, AuthStatus, NetworkSettings, Me, NewApiKey, Person, Role, Catalog, CheckResult, ChunkPreview, CompileResult, DataField, FlowListItem, FlowSpec, FlowVersion, InboxItem, Issue, KnowledgeBase, KnowledgeDocument, KnowledgeHit, McpServer, McpSettings, McpTool, NotificationSettings, OpenApiInspection, RunEvent, RunSummary, SandboxSettings, SandboxStatus, SavePoint, SecretInfo, Skill, SkillSummary, Step, TemplateInfo, ThreadInfo, Trigger, TriggerKind } from "./types";
 
 export class ApiError extends Error {
   status: number;
@@ -85,6 +85,9 @@ export const api = {
   apiKeys: () => request<{ keys: ApiKeyInfo[] }>("/api/keys").then((r) => r.keys),
   createApiKey: (body: { name: string; role?: Role }) => request<NewApiKey>("/api/keys", { method: "POST", ...json(body) }),
   revokeApiKey: (id: string) => request<{ revoked: string }>(`/api/keys/${id}`, { method: "DELETE" }),
+  network: () => request<NetworkSettings>("/api/settings/network"),
+  saveNetwork: (body: { mode: NetworkSettings["mode"]; allow: string[] }) =>
+    request<NetworkSettings>("/api/settings/network", { method: "PUT", ...json(body) }),
   audit: (filters: { kind?: string; person?: string; before?: number; limit?: number } = {}) => {
     const params = new URLSearchParams(Object.entries(filters).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => [k, String(v)]));
     return request<AuditPage>(`/api/audit?${params}`);

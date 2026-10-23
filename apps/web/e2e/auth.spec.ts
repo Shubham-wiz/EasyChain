@@ -5,6 +5,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { execFileSync } from "node:child_process";
 import { expect, test, type Browser, type Page } from "@playwright/test";
+import { FAKE_URL } from "./helpers";
 
 const BASE = `http://127.0.0.1:${process.env.E2E_AUTH_PORT ?? 8126}`;
 const PASSWORD = "correct horse battery";
@@ -198,7 +199,39 @@ test("roles: a Viewer looks, a Runner runs and answers, an Editor sees settings 
   await expect(editor.getByTestId("library-ai_model")).toBeVisible();
   await expect(editor.getByTestId("view-only")).toHaveCount(0);
   await editor.getByRole("button", { name: "Settings" }).click();
-  await expect(editor.getByRole("tab")).toHaveText(["Keys and providers", "MCP servers", "Notifications", "Sandbox", "Keys for scripts"]);
+  await expect(editor.getByRole("tab")).toHaveText(["Keys and providers", "MCP servers", "Notifications", "Sandbox", "Network", "Keys for scripts"]);
   await expect(editor.getByRole("dialog").getByRole("note")).toContainText("Your role (Editor) can't change these; that needs Owner or above");
   await expect(editor.getByLabel("Secret name")).toBeDisabled();
+  await editor.keyboard.press("Escape");
+
+  // On a shared server, a Web request step can't reach an internal address until an Owner
+  // allows it; the run says so, and the fix opens Settings → Network.
+  const fetchFlow = {
+    name: "Fetch inside",
+    steps: [
+      { id: "input", type: "input", name: "Input", settings: { fields: [{ name: "q" }] } },
+      { id: "fetch", type: "http_request", name: "Fetch", settings: { url: `${FAKE_URL}/health`, response: "text", save_as: "page" } },
+      { id: "output", type: "output", name: "Output", settings: { fields: ["page"] } },
+    ],
+    connections: [
+      { from: "input", to: "fetch" },
+      { from: "fetch", to: "output" },
+    ],
+    canvas: { steps: { input: { x: 0, y: 120 }, fetch: { x: 300, y: 120 }, output: { x: 600, y: 120 } }, notes: [] },
+  };
+  const fetchId = (await (await owner.post("/api/flows", { data: { spec: fetchFlow } })).json()).id;
+  await editor.goto(`/#/flows/${fetchId}`);
+  await editor.getByTestId("open-run").click();
+  await editor.getByLabel("q").fill("x");
+  await editor.getByTestId("run-submit").click();
+  const failed = editor.getByTestId("run-error");
+  await expect(failed).toContainText("Easy Chain didn't connect to 127.0.0.1");
+  await failed.getByRole("button", { name: "Network settings" }).click();
+  await expect(editor.getByRole("tab", { name: "Network" })).toHaveAttribute("aria-selected", "true");
+  await expect(editor.getByRole("radio", { name: /Public sites/ })).toBeChecked();
+  await editor.keyboard.press("Escape");
+  const allowed = await owner.put("/api/settings/network", { data: { mode: "public", allow: ["127.0.0.1"] } });
+  expect(allowed.status()).toBe(200);
+  await editor.getByTestId("run-submit").click();
+  await expect(editor.getByTestId("run-output")).toContainText("ok");
 });

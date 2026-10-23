@@ -280,7 +280,7 @@ updated in the same commit as the work (decision 5.6). Each phase's report has t
 
 - [x] ✅ 13 "fix first" findings fixed, each with a test
 - [x] ✅ Windows support, tested in CI on every push
-- [x] ⚠️ Two items left on purpose: the egress allow-list (5.6) and real-model checks before a release (5.2)
+- [x] ⚠️ One item left on purpose: real-model checks before a release (5.2). The egress allow-list is done (5.6f)
 
 ### Phase 4: Autopilot and teams ✅ ([report](docs/phases/phase-4.md))
 
@@ -309,7 +309,7 @@ updated in the same commit as the work (decision 5.6). Each phase's report has t
 - [ ] ⬜ OIDC single sign-on, tested against a local test provider; setup docs for Okta, Google, Entra
 - [ ] ⬜ Per-workspace secret vaults
 - [x] ✅ 5.6c Audit log: every change with who, when and what (a test fails for a change that isn't recorded); append-only in the database; Settings → Audit log, `GET /api/audit`, `easychain audit` ([docs](docs/audit.md)). Publishing joins it in 5.4
-- [ ] ⬜ Egress allow-list for fetches made by the server
+- [x] ✅ 5.6f Egress allow-list: a shared server reaches public sites, and internal addresses only when allowed (or only an allow-list); Web request steps, Knowledge Base pages, OpenAPI documents and MCP servers; checked again at connect time against DNS rebinding; Settings → Network ([docs](docs/network.md))
 
 **5.1 Test Sets editor and Checks**
 
@@ -371,7 +371,7 @@ yet.
 | # | Issue | Where it came from | Where it's handled |
 |---|---|---|---|
 | F1 | ~~No login, roles or audit log~~ | Phase 1 | ✅ Fixed in 5.6a–c (sign-in, roles, the audit log) |
-| F2 | No egress allow-list for fetches the server makes (pages, OpenAPI documents, Web request tools) | Review | 5.6 |
+| F2 | ~~No egress allow-list for fetches the server makes (pages, OpenAPI documents, Web request tools)~~ | Review | ✅ Fixed in 5.6f (Settings → Network) |
 | F3 | Real models are never called in CI; agent templates need a real-model check before a release | Phase 1 | 5.2 (manual CI workflow) |
 | F4 | ~~No database migrations (`create_all` plus a version number)~~ | Phase 2 | ✅ Fixed in 5.8 (Alembic) |
 | F5 | ~~Knowledge Base ingestion runs in the API server; a restart fails documents mid-way~~ | Phase 3 | ✅ Fixed in 5.8 (workers, from the job queue) |
@@ -396,6 +396,7 @@ yet.
 | F24 | A live-run WebSocket closed by the client mid-run can leave a database connection for the garbage collector (a warning in tests) | 5.6a | backlog |
 | F25 | Wrong-password counts live in each API process's memory: with several API servers, each counts on its own, and a restart forgets them | 5.6a | backlog (count in the database) |
 | F26 | ~~The web app shows every button to every role~~ | 5.6a | ✅ Fixed in 5.6b |
+| F28 | The egress policy doesn't cover AI model endpoints (an AI Model step's custom endpoint can point anywhere) or notification addresses; through a proxy only the URL is checked | 5.6f | backlog (an option to check model endpoints too) |
 | F27 | The audit log is protected by database triggers: someone with direct database access could drop them; nothing removes old entries | 5.6c | backlog (a hash chain, or shipping entries to a log service) |
 
 ## Licence

@@ -242,6 +242,7 @@ PERMISSIONS: dict[tuple[str, str], str] = {
     ("GET", "/api/settings/mcp"): "editor",
     ("GET", "/api/settings/sandbox"): "editor",
     ("GET", "/api/settings/notifications"): "editor",
+    ("GET", "/api/settings/network"): "editor",
     # the server and its secrets
     ("PUT", "/api/secrets/{name}"): "owner",
     ("DELETE", "/api/secrets/{name}"): "owner",
@@ -249,6 +250,7 @@ PERMISSIONS: dict[tuple[str, str], str] = {
     ("PUT", "/api/settings/sandbox"): "owner",
     ("POST", "/api/sandbox/prepare"): "owner",
     ("PUT", "/api/settings/notifications"): "owner",
+    ("PUT", "/api/settings/network"): "owner",
     ("POST", "/api/settings/notifications/test"): "owner",
 }
 
