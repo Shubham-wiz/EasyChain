@@ -4,7 +4,8 @@ It speaks enough of ``/v1/chat/completions`` (streaming and not, with tool calls
 and JSON-schema replies) and ``/v1/embeddings`` for ``langchain-openai`` to work
 unchanged, and serves sample web pages under ``/pages/<name>``. Point
 ``OPENAI_BASE_URL`` at it and set any ``OPENAI_API_KEY`` (the key ``sk-bad`` is
-rejected, to test error handling). Replies come from the stand-in AI;
+rejected, to test error handling; a model whose name ends in ``-down`` always answers 503, to
+test fallbacks). Replies come from the stand-in AI;
 ``POST /__script`` with a list of turns scripts them (see ``standin.Script``).
 
     python -m easychain.testing.fake_openai --port 8765
@@ -250,6 +251,10 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(401, json.dumps(err).encode())
             return
         model = body.get("model", "gpt-4o-mini")
+        if str(model).endswith("-down"):
+            err = {"error": {"message": "The server is overloaded.", "type": "server_error"}}
+            self._send(503, json.dumps(err).encode())
+            return
         message = fake_message(body)
         reply = message.get("content") or json.dumps(message.get("tool_calls"))
         finish_reason = "tool_calls" if message.get("tool_calls") else "stop"

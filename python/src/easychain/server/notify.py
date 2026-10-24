@@ -1,4 +1,5 @@
-"""Tell people when a run waits for them: a webhook, a Slack message or an email.
+"""Tell people when a run waits for them, or a budget runs low (Phase 5.5): a webhook, a Slack
+message or an email.
 
 Settings live in the database (``notifications``); passwords and webhook URLs that are
 secrets can be given as ``{secret:NAME}`` so they stay in the encrypted vault.
@@ -113,6 +114,25 @@ async def send_all(config: dict[str, Any], item: dict[str, Any]) -> list[dict[st
     return results
 
 
+async def send_alert(config: dict[str, Any], alert: dict[str, Any]) -> list[dict[str, Any]]:
+    """Send a budget alert (server/gateway.py) through every enabled channel."""
+    cfg = merged(config)
+    link = cfg.get("public_url") or os.environ.get("EASYCHAIN_PUBLIC_URL", "")
+    msg = {"text": f"Easy Chain: {alert['text']}", "link": link, "action": "Open Easy Chain"}
+    results: list[dict[str, Any]] = []
+    if cfg["webhook"]["enabled"] and cfg["webhook"]["url"]:
+        keys = ("workspace", "budget", "level", "spent", "limit", "period", "stops", "text")
+        payload = {"event": "budget", **{k: alert.get(k) for k in keys}, "url": link}
+        results.append(await _post("webhook", _secret(cfg["webhook"]["url"]), payload))
+    if cfg["slack"]["enabled"] and cfg["slack"]["webhook_url"]:
+        text = msg["text"] + (f"\n<{link}|Open Easy Chain>" if link else "")
+        results.append(await _post("slack", _secret(cfg["slack"]["webhook_url"]), {"text": text}))
+    email = cfg["email"]
+    if email["enabled"] and email["smtp_host"] and email["to"]:
+        results.append(await asyncio.to_thread(_send_email, email, msg))
+    return results
+
+
 async def _post(channel: str, url: str, payload: dict[str, Any]) -> dict[str, Any]:
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -137,7 +157,8 @@ def _send_email(email: dict[str, Any], msg: dict[str, Any]) -> dict[str, Any]:
         message["From"] = email["sender"] or email["username"] or "easychain@localhost"
         recipients = email["to"] if isinstance(email["to"], list) else [email["to"]]
         message["To"] = ", ".join(recipients)
-        body = msg["text"] + (f"\n\nAnswer it here: {msg['link']}\n" if msg["link"] else "\n")
+        action = msg.get("action") or "Answer it here"
+        body = msg["text"] + (f"\n\n{action}: {msg['link']}\n" if msg["link"] else "\n")
         message.set_content(body)
         with smtplib.SMTP(email["smtp_host"], int(email["smtp_port"]), timeout=15) as smtp:
             if email.get("starttls"):

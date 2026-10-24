@@ -156,7 +156,10 @@ async def run_case(
             )
         )
     if expect.get("judge"):
-        checks.append(await judge(expect["judge"], facts, judge_model, stand_in=stand_in))
+        gateway = (options or {}).get("gateway")
+        checks.append(
+            await judge(expect["judge"], facts, judge_model, stand_in=stand_in, gateway=gateway)
+        )
     failures = [f"{c.name}: {c.message}" for c in checks if c.passed is False]
     return CaseResult(name, not failures, failures, final.get("output"), checks, facts.metrics())
 

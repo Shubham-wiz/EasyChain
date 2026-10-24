@@ -1,5 +1,5 @@
 import type { Proposal, TestCase } from "./copilot";
-import type { AccessKey, EnvironmentId, EnvironmentInfo, Publication, PublishState, TestRunDetail, TestRunResult, TestRunSummary, TestSetInfo, WorkspaceInfo, ApiKeyInfo, AuditPage, AuthStatus, NetworkSettings, SsoProvider, SsoSettings, Me, NewApiKey, Person, Role, Catalog, CheckResult, ChunkPreview, CompileResult, DataField, FlowListItem, FlowSpec, FlowVersion, InboxItem, Issue, KnowledgeBase, KnowledgeDocument, KnowledgeHit, McpServer, McpSettings, McpTool, NotificationSettings, OpenApiInspection, RunEvent, RunSummary, SandboxSettings, SandboxStatus, SavePoint, SecretInfo, Skill, SkillSummary, Step, TemplateInfo, ThreadInfo, Trigger, TriggerKind } from "./types";
+import type { AccessKey, EnvironmentId, EnvironmentInfo, GatewaySettings, GatewayState, Spending, SpendingBy, SpendingPeriod, Publication, PublishState, TestRunDetail, TestRunResult, TestRunSummary, TestSetInfo, WorkspaceInfo, ApiKeyInfo, AuditPage, AuthStatus, NetworkSettings, SsoProvider, SsoSettings, Me, NewApiKey, Person, Role, Catalog, CheckResult, ChunkPreview, CompileResult, DataField, FlowListItem, FlowSpec, FlowVersion, InboxItem, Issue, KnowledgeBase, KnowledgeDocument, KnowledgeHit, McpServer, McpSettings, McpTool, NotificationSettings, OpenApiInspection, RunEvent, RunSummary, SandboxSettings, SandboxStatus, SavePoint, SecretInfo, Skill, SkillSummary, Step, TemplateInfo, ThreadInfo, Trigger, TriggerKind } from "./types";
 
 export class ApiError extends Error {
   status: number;
@@ -253,6 +253,10 @@ export const api = {
     request<{ saved: boolean }>(`/api/environments/${id}/secrets/${encodeURIComponent(name)}`, { method: "PUT", ...json({ value }) }),
   deleteEnvironmentSecret: (id: EnvironmentId, name: string) =>
     request<{ deleted: boolean }>(`/api/environments/${id}/secrets/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  gateway: () => request<GatewayState>("/api/gateway"),
+  saveGateway: (settings: GatewaySettings) => request<GatewayState>("/api/gateway", { method: "PUT", ...json(settings) }),
+  forgetAnswers: () => request<{ forgotten: number }>("/api/gateway/cache", { method: "DELETE" }),
+  spending: (period: SpendingPeriod, by: SpendingBy) => request<Spending>(`/api/spending?period=${period}&by=${by}`),
   publishState: (flowId: string) => request<PublishState>(`/api/flows/${encodeURIComponent(flowId)}/publish`),
   publish: (flowId: string, body: { environment: EnvironmentId; version_id?: string; test_run_id?: string }) =>
     request<Publication>(`/api/flows/${encodeURIComponent(flowId)}/publish`, { method: "POST", ...json(body) }),

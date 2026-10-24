@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-10-24 (Phase 5: 5.8, 5.6, 5.1, 5.2, 5.3 and 5.4 are done: sign-in, single sign-on, people, roles, keys, a role-aware web app, the audit log, the egress allow-list, workspaces, and Test Sets edited and run in the app with every kind of check, kept Test Runs with baselines, the `easychain eval` CI gate, and environments with Publish; 5.5, the model gateway, is next)._
+_Last updated: 2026-10-24 (Phase 5: 5.8, 5.6, 5.1, 5.2, 5.3 and 5.4 are done: sign-in, single sign-on, people, roles, keys, a role-aware web app, the audit log, the egress allow-list, workspaces, and Test Sets edited and run in the app with every kind of check, kept Test Runs with baselines, the `easychain eval` CI gate, environments with Publish, and the model gateway; 5.7, dashboards and tracing, is next)._
 
 ## In one paragraph
 
@@ -54,13 +54,13 @@ issues under *Fix later* (decision 5.6).
 
 ## Tests
 
-| Suite | Result (2026-10-24, 5.4) |
+| Suite | Result (2026-10-24, 5.5) |
 |---|---|
-| Python on Linux (`pnpm test`, and CI) | 621 pass, with SQLite, Postgres (+ pgvector in CI) and Docker (the sandbox escape tests; skipped without Docker); compiler and steps coverage 94% |
+| Python on Linux (`pnpm test`, and CI) | 638 pass, with SQLite, Postgres (+ pgvector in CI) and Docker (the sandbox escape tests; skipped without Docker); compiler and steps coverage 94% |
 | Python on Windows 11 (CI) | all pass |
-| Web unit (vitest) | 108 passed |
+| Web unit (vitest) | 111 passed |
 | Client package (vitest) | 14 passed |
-| Playwright e2e | 45 passed (Linux), three on a second server with sign-in on (sign-in, each role, single sign-on), one making and switching workspaces, one writing and running a Test Set case and comparing kept Test Runs with a baseline, one publishing a chat flow and chatting on its chat page; the screenshot spec runs only with `SCREENSHOTS=1` |
+| Playwright e2e | 46 passed (Linux), three on a second server with sign-in on (sign-in, each role, single sign-on), one making and switching workspaces, one writing and running a Test Set case and comparing kept Test Runs with a baseline, one publishing a chat flow and chatting on its chat page, one where a budget stops a run and the spending page shows its cost; the screenshot spec runs only with `SCREENSHOTS=1` |
 | Template Test Sets | all 13 pass (`tests/test_templates.py`), with the stand-in AI and scripted turns; research-assistant 10/10, inbox-triage 10/10 |
 | Lint | ruff check + format clean; tsc clean for web and client |
 
@@ -96,8 +96,12 @@ real-model workflow is started by hand and needs API keys as repository secrets.
    secrets and swaps, promotion through a passing Test Run in staging, access keys with rate
    limits, chat links with a hosted page and widget, `easychain publish` and `easychain
    deploy` ([publish.md](../publish.md), decision 5.19).
-7. **Next: 5.5, the model gateway**, then 5.7 (dashboards and tracing) and the Phase 5
-   report.
+7. ~~**5.5, the model gateway**~~ (done): every model call recorded with its cost
+   (`model_calls`), budgets per workspace, drafts and environment that alert and stop, cached
+   answers, fallbacks, retries, smoothing, own prices, and spending per flow, person,
+   environment, model and run ([gateway.md](../gateway.md), decision 5.20).
+8. **Next: 5.7, dashboards and tracing** (runs, errors, latency, tokens and cost over time from
+   `runs` and `model_calls`; OpenTelemetry; LangSmith), then the Phase 5 report.
 
 ## GitHub
 

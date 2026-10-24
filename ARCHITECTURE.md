@@ -170,7 +170,12 @@ what exports:
    (raising `MissingAPIKey`, which becomes "Add your API key" on the step) and its package
    (`MissingPackage`: "… isn't installed, run `pip install 'easychain[providers]'`"), returns the
    **stand-in AI** (which can call tools and fill structured replies) when the run asks for it,
-   and hands MCP tool loading the server connections from Settings. Exported code keeps
+   and hands MCP tool loading the server connections from Settings. On a server, a run's
+   `GatewayPolicy` (`runtime/model_policy.py`, Phase 5.5) adds LangChain's own pieces to each
+   chat model it builds: a `BaseCache` (answers in the run database), an `InMemoryRateLimiter`
+   (smoothing), the provider's `max_retries`, a `RunnableWithFallbacks` inside a chat model
+   that keeps each model's callbacks (fallbacks), and a callback that checks budgets before a
+   call and records it in `model_calls` after (budgets, alerts, spending). Exported code keeps
    LangChain's own functions and reads MCP servers from `EASYCHAIN_MCP_SERVERS`.
 3. `stream_run()` starts, **resumes** (`Command(resume=…)`), **continues** (`None` input) or
    **forks** (`update_state` at a checkpoint, then continue) a run, with breakpoints
@@ -403,6 +408,15 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
     every API server. A chat link counts per visitor's address too.
   - Runs started this way carry `trigger` `api` or `chat` and the key as `trigger_id`. The
     calls aren't in the audit log (each is a run); publishing, unpublishing and keys are.
+- **The model gateway** (Phase 5.5, `server/gateway.py`, [docs/gateway.md](docs/gateway.md)).
+  - Budgets are checked from `model_calls`, which every process writes, so they hold across
+    workers. Model calls run in worker threads; the meter hands its database work to the
+    event loop that made it, and never waits for itself on that loop's own thread.
+  - Cached answers are keyed by a hash of the workspace, the model with its settings and the
+    messages, so one workspace never gets another's. They are stored as LangChain message
+    dicts, never as pickled objects.
+  - Alerts are sent once per budget, period and level (`budget_alerts`, an insert that only
+    one process wins).
 - **The audit log** (Phase 5.6c, `server/audit.py`, [docs/audit.md](docs/audit.md)).
   - `AuditMiddleware` writes one row to `audit_log` (migration 0004) when the response to a
     change starts with a success status. The row holds who (the principal `authorize` found),
@@ -509,6 +523,7 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
 | `test_testruns.py` | Repeats give a pass rate and mark flaky cases; an unknown cost stays unknown; each case is compared with the baseline (better, worse, same, new, not run) with time and cost changes; through the API on the inline worker: a kept run against the saved version, a baseline, a regression after the flow changes, the old run keeping its cases, one baseline per flow, nothing seen from another workspace |
 | `test_evaluate.py` | The CI gate: with no baseline every case must pass; with one, only a regression fails it (a known failure doesn't), and so does a run that got too slow; the budget stops starting cases; the baseline file and the Markdown report; `easychain eval` exit codes, `--save-baseline`, `--summary` (appended) and `--json` |
 | `test_publish.py` | An environment swaps models and Knowledge Bases, and its secrets win over the workspace's (in Test Runs in it); promotion: dev as saved, staging only after a passing Test Run in staging, production only the staging version, and only Owners; access keys run what is published (their environment's secrets), are refused for another environment, after revoking and when nothing is published, and are rate limited with `Retry-After`; chat links serve the chat page (with `frame-ancestors`), chat through the fake model and keep the conversation; `easychain publish` runs the Test Run first; `easychain deploy` writes a Compose bundle and builds an image |
+| `test_gateway.py` | Each model call is recorded with its tokens and cost; own prices win and price unknown models (an unknown price stays unknown); a budget used up stops the call before the provider is asked and doesn't fall back; cached answers are free, per workspace and keyed by the settings; a failing model falls back (plain, with tools, structured output and streaming), and a fallback with no key is left out; retries and one smoothing limiter per workspace and provider; on the server, budgets alert (webhook) and then stop runs with a fix, drafts' cache and forgetting it, a fallback in a run, and spending per flow, person, environment, model and run for runs, Test Runs, the Tests tab and published runs; the ledger's queries on SQLite and Postgres |
 | `test_egress.py` | The policy's modes and allow-list (names, endings, addresses, networks; IPv4 written as IPv6); Easy Chain's fetches and their redirects; a name that changes address between the check and the connection is refused, and connections go to the checked address; async clients; on a server with sign-in on, a Web request step, a Knowledge Base page, an OpenAPI document and an MCP server can't reach inside until allowed; who may change it; the environment wins; nothing changes on this computer |
 | `test_sso.py` | Single sign-on against the test identity provider: an existing account signs in and stays linked by the provider's id; new people get the provider's role only for allowed domains, or are told to ask an Owner; a wrong nonce, audience, issuer, signing key, an expired token, an unverified email, a refusal at the provider, the wrong client secret, a sign-in from another browser and a reused state are all refused with a message; a switched-off account can't; Owners set it up, the secret goes to the vault; the environment wins; it's in the audit log |
 | `test_scoped_env.py` | Secrets reach the work in hand through `os.environ` but aren't exported into the process (child processes don't see them); work running at the same time sees only its own layer, threads included; a layer wins over the server's environment, and the server's keys apply everywhere |

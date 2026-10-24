@@ -15,6 +15,7 @@ Start with the [project README](../README.md). This page lists every document.
 | [people.md](people.md) | People and sign-in: when it's on, the first account, roles, adding people, keys for scripts, the API |
 | [testing.md](testing.md) | Test Sets and Checks: the Tests tab, the file, every check (values, the run, budgets, the AI judge), the command line, the API |
 | [publish.md](publish.md) | Environments and Publish: dev, staging and production, promotion, access keys and rate limits, chat links and the widget, `easychain deploy` and `easychain publish`, the API |
+| [gateway.md](gateway.md) | The model gateway: what model calls cost (per flow, person, environment, model, run), budgets and alerts, caching answers, fallbacks, retries, smoothing, prices, the API |
 | [ci.md](ci.md) | Checking flows in CI: `easychain eval` and baselines, the GitHub Action, real models before a release, other CI systems |
 | [workspaces.md](workspaces.md) | Workspaces: what each keeps apart, the server's Owners, making and switching, people and keys in several, the API, Knowledge Bases and memory |
 | [knowledge.md](knowledge.md) | Knowledge Bases: adding documents, search modes, citations, storage, the API |

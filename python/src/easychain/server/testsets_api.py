@@ -15,6 +15,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from .. import current_workspace as context
 from ..integrations.mcp import connections as mcp_connections
 from ..spec import FlowSpec, SpecError, parse_spec
 from ..testsets import (
@@ -26,6 +27,7 @@ from ..testsets import (
 )
 from .audit import note
 from .auth import require
+from .gateway import policy_for
 from .integrations_api import mcp_setting
 from .network import policy as network_policy
 from .spaces import space_of
@@ -182,6 +184,13 @@ def add_testset_routes(app: FastAPI) -> None:
             "resolve": resolve,
             "flow_id": flow_id,
             "redact": space.vault.values() if space.vault is not None else [],
+            "gateway": await policy_for(
+                app.state.hub,
+                kind="test_set",
+                flow_id=flow_id,
+                flow_name=spec.name,
+                by=context.person.get(),
+            ),
         }
         sandbox = sandbox_settings(await db.get_setting("sandbox", {}))
         results = [

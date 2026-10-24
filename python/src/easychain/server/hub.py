@@ -152,10 +152,11 @@ class Hub:
         payload: dict[str, Any] | None = None,
         environment: str | None = None,
         version_id: str | None = None,
+        by: tuple[str | None, str] | None = None,
     ) -> str:
         """Queue a run of ``spec``. ``version_id``: run that saved version as it is (a
         published one) instead of saving the flow; ``environment``: with its secrets and
-        swaps."""
+        swaps; ``by``: who started it (else the person of the request)."""
         thread = thread_id or uuid.uuid4().hex
         payload = dict(payload or {})
         if thread_id and await self.db.thread_elsewhere(thread_id):
@@ -184,6 +185,7 @@ class Hub:
             parent_run_id=parent_run_id,
             flow_limit=spec.settings.max_concurrent_runs,
             environment=environment,
+            by=by,
         )
         self.bus.job_added()
         return run_id

@@ -11,6 +11,7 @@ import httpx
 from ..egress import EgressBlocked
 from ..providers import PROVIDERS, split_model
 from .gateway import MissingAPIKey, MissingPackage
+from .model_policy import BudgetReached
 
 
 def _host(url: Any) -> str:
@@ -53,6 +54,21 @@ def explain(exc: BaseException, step: Any = None) -> dict[str, Any]:
                     "params": {"provider": exc.provider, "env": exc.env_var},
                 },
                 {"kind": "use_stand_in", "label": "Try with the stand-in AI", "params": {}},
+            ],
+        )
+        return out
+
+    if isinstance(exc, BudgetReached):
+        out.update(
+            kind="budget",
+            message=str(exc),
+            hint="An Owner can raise the budget in Settings → Model gateway.",
+            fixes=[
+                {
+                    "kind": "open_settings",
+                    "label": "Model gateway settings",
+                    "params": {"tab": "gateway"},
+                }
             ],
         )
         return out

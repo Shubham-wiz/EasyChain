@@ -77,6 +77,8 @@ AUDITED: dict[tuple[str, str], str] = {
     ("PUT", "/api/settings/copilot"): "settings.copilot",
     ("PUT", "/api/secrets/{name}"): "secret.set",
     ("PUT", "/api/environments/{environment}"): "environment.change",
+    ("PUT", "/api/gateway"): "settings.gateway",
+    ("DELETE", "/api/gateway/cache"): "settings.gateway_cache",
     ("PUT", "/api/environments/{environment}/secrets/{name}"): "secret.set",
     ("DELETE", "/api/environments/{environment}/secrets/{name}"): "secret.delete",
     ("DELETE", "/api/secrets/{name}"): "secret.delete",
@@ -162,6 +164,8 @@ LABELS: dict[str, str] = {
     "settings.notifications": "changed the notifications",
     "settings.network": "changed which addresses Easy Chain may reach",
     "settings.sso": "changed single sign-on",
+    "settings.gateway": "changed the model gateway (budgets, caching, fallbacks)",
+    "settings.gateway_cache": "forgot the cached answers",
     "settings.notifications_test": "sent test notifications",
 }
 

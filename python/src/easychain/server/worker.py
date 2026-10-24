@@ -30,6 +30,7 @@ from ..spec import FlowSpec
 from . import notify
 from .cron import CronError, next_fire
 from .db import FINISHED
+from .gateway import policy_for
 from .hub import Hub
 
 log = logging.getLogger("easychain.worker")
@@ -266,6 +267,15 @@ class Worker:
             "resolve": children.get,
             "flow_id": row["flow_id"],
             "redact": hub.space.vault.values() if hub.space.vault is not None else [],
+            "gateway": await policy_for(
+                hub,
+                kind="test_run",
+                run_id=row["id"],
+                flow_id=row["flow_id"],
+                flow_name=spec.name,
+                environment=row.get("environment"),
+                by=(None, row["created_by"]) if row.get("created_by") else None,
+            ),
         }
         sandbox = sandbox_settings(await db.get_setting("sandbox", {}))
         results, done = [], 0
@@ -443,6 +453,17 @@ class Worker:
             cancel=stop,
             finish_if_done=action == "continue",
             metadata={"worker": self.name},
+            gateway=await policy_for(
+                hub,
+                kind="run",
+                run_id=run["id"],
+                flow_id=run["flow_id"],
+                flow_name=run["flow_name"],
+                environment=run.get("environment"),
+                by=(run.get("started_by"), run["started_by_name"])
+                if run.get("started_by_name")
+                else None,
+            ),
         )
         writer = EventWriter(hub, run["id"])
         final: dict[str, Any] | None = None

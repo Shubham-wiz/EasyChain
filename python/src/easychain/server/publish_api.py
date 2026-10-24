@@ -289,6 +289,8 @@ def add_publish_routes(app: FastAPI) -> None:
             trigger_id=row["id"],
             version_id=pub["version_id"],
             environment=row["environment"],
+            # Its model calls show up under the key on the spending page.
+            by=(None, f"{'Chat link' if row['kind'] == 'chat' else 'Access key'} “{row['name']}”"),
         )
         await hub().db.touch_access_key(row["id"])
         run = await hub().db.get_run(run_id)

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 export type Mode = "beginner" | "pro";
-export type SettingsTab = "keys" | "mcp" | "notifications" | "sandbox" | "people" | "api-keys" | "audit" | "network" | "sso" | "workspaces" | "environments";
+export type SettingsTab = "keys" | "mcp" | "notifications" | "sandbox" | "people" | "api-keys" | "audit" | "network" | "sso" | "workspaces" | "environments" | "gateway";
 type Theme = "light" | "dark";
 export type RightTab = "inspect" | "run" | "tests" | "copilot";
 

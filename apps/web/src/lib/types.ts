@@ -348,6 +348,10 @@ export interface RunSummary {
   thread_id?: string;
   status: RunStatus;
   trigger?: string;
+  /** dev, staging or production for a published flow's run (Phase 5.4) */
+  environment?: string | null;
+  /** who started it (an access key's runs show the key); none for triggers */
+  started_by?: string | null;
   parent_run_id?: string | null;
   inputs: Record<string, unknown>;
   output?: Record<string, unknown> | null;
@@ -816,6 +820,84 @@ export interface EnvironmentInfo {
   models: Record<string, string>;
   knowledge: Record<string, string>;
   secrets: string[];
+}
+
+/** What a budget covers: the whole workspace, drafts, or one environment (server/gateway.py). */
+export type BudgetScope = "workspace" | "drafts" | EnvironmentId;
+
+export interface Budget {
+  limit: number;
+  period: "day" | "month";
+  alert_at: number;
+  stop: boolean;
+}
+
+/** Settings → Model gateway (Phase 5.5). */
+export interface GatewaySettings {
+  budgets: Partial<Record<BudgetScope, Budget>>;
+  cache: { scopes: Exclude<BudgetScope, "workspace">[]; hours: number };
+  fallbacks: Record<string, string[]>;
+  retries: number | null;
+  per_second: Record<string, number>;
+  prices: Record<string, { input: number; output: number }>;
+}
+
+export interface BudgetStatus {
+  scope: BudgetScope;
+  label: string;
+  budget: Budget | null;
+  period: string;
+  since: number;
+  until: number;
+  spent: number;
+  share: number | null;
+}
+
+export interface BudgetAlert {
+  budget: BudgetScope;
+  period: string;
+  level: number;
+  spent: number;
+  amount: number;
+  at: number;
+}
+
+export interface GatewayState {
+  settings: GatewaySettings;
+  budgets: BudgetStatus[];
+  alerts: BudgetAlert[];
+}
+
+export type SpendingPeriod = "today" | "7d" | "30d" | "month";
+export type SpendingBy = "flow" | "person" | "environment" | "model" | "run";
+
+export interface SpendingTotals {
+  calls: number;
+  cached: number;
+  errors: number;
+  unpriced: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost: number;
+}
+
+export interface SpendingRow extends SpendingTotals {
+  key: string | null;
+  label: string;
+  first: number;
+  last: number;
+  kind?: string;
+  flow_id?: string | null;
+  environment?: string | null;
+  by?: string | null;
+}
+
+export interface Spending {
+  period: SpendingPeriod;
+  by: SpendingBy;
+  since: number;
+  total: SpendingTotals;
+  rows: SpendingRow[];
 }
 
 /** A flow version published to an environment (server/publish_api.py). */

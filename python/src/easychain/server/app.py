@@ -65,6 +65,8 @@ from .cron import CronError, next_fire
 from .cron import describe as describe_cron
 from .db import Database, checkpoint_url
 from .environments_api import add_environment_routes
+from .gateway import policy_for
+from .gateway_api import add_gateway_routes
 from .hostguard import HostGuard, allowed_hosts
 from .hub import Busy, Hub, Invalid, NotFound
 from .integrations_api import add_integration_routes
@@ -299,6 +301,7 @@ def create_app(
     add_testrun_routes(app)
     add_environment_routes(app)
     add_publish_routes(app)
+    add_gateway_routes(app)
     app.add_middleware(AuditMiddleware)
     add_knowledge_routes(app, home_path)
     origins = os.environ.get(
@@ -774,6 +777,8 @@ def create_app(
             "thread_id": run["thread_id"],
             "status": run["status"],
             "trigger": run["trigger"],
+            "environment": run.get("environment"),
+            "started_by": run.get("started_by_name"),
             "parent_run_id": run["parent_run_id"],
             "inputs": run["inputs"],
             "options": run["options"],
@@ -1162,6 +1167,8 @@ def create_app(
         current = _spec_or_422(body["spec"]) if body.get("spec") else None
         model = body.get("model") or await _copilot_choice()
         stand_in = bool(body.get("stand_in")) or copilot_model(model) is None
+        # Its model calls count toward the workspace's and drafts' budgets (Phase 5.5).
+        gateway = await policy_for(hub(), kind="copilot", by=context.person.get())
         try:
             proposal = await asyncio.to_thread(
                 propose,
@@ -1171,6 +1178,7 @@ def create_app(
                 stand_in=stand_in,
                 resolve=resolve_flow,
                 issue=issue,
+                gateway=gateway,
             )
         except (MissingAPIKey, MissingPackage) as exc:
             raise HTTPException(422, detail={"message": str(exc)}) from None

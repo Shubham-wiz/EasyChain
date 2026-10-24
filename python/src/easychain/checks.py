@@ -347,7 +347,12 @@ def judge_model(chosen: str | None = None) -> str | None:
 
 
 async def judge(
-    rule: Any, facts: RunFacts, model: str | None = None, *, stand_in: bool = False
+    rule: Any,
+    facts: RunFacts,
+    model: str | None = None,
+    *,
+    stand_in: bool = False,
+    gateway: Any = None,
 ) -> Check:
     """An AI model grades the output against the rubric. Skipped when no model has a key, and
     when the case ran with the stand-in AI (its answers are made up, and offline runs stay
@@ -383,8 +388,9 @@ async def judge(
         f"Rubric:\n{rubric}\n\nInput:\n{json.dumps(facts.inputs, ensure_ascii=False, default=str)}"
         f"\n\nOutput:\n{json.dumps(output, ensure_ascii=False, default=str)}"
     )
-    # Always a real model: the judge's grade is never made up by the stand-in.
-    token = use_settings(RunSettings(stand_in=False))
+    # Always a real model: the judge's grade is never made up by the stand-in. On a server
+    # its calls count toward the budgets like the case's own.
+    token = use_settings(RunSettings(stand_in=False, gateway=gateway))
     try:
         chat = gateway_init_chat_model(chosen).with_structured_output(JUDGE_SCHEMA)
         verdict = await chat.ainvoke([SystemMessage(JUDGE_PROMPT), HumanMessage(message)])

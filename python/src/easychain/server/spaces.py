@@ -39,7 +39,7 @@ from .store import FlowStore
 
 ID_RE = re.compile(r"^[a-z][a-z0-9-]{1,39}$")
 # Settings kept per workspace; the others (sandbox, network, single sign-on) are the server's.
-WORKSPACE_SETTINGS = ("mcp", "notifications", "copilot")
+WORKSPACE_SETTINGS = ("mcp", "notifications", "copilot", "gateway")
 
 _current = context.workspace
 
@@ -161,6 +161,7 @@ async def in_workspace(connection: HTTPConnection) -> None:
     principal = principal_of(connection)
     workspace = principal.workspace if principal else DEFAULT_WORKSPACE
     spaces_of(connection).enter_now(workspace)
+    context.person.set((principal.user_id, principal.label) if principal else None)
 
 
 def spaces_of(connection: HTTPConnection) -> Spaces:

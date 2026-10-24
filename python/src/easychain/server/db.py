@@ -69,6 +69,10 @@ runs = sa.Table(
     sa.Column("environment", sa.String(20), index=True, nullable=True),
     sa.Column("version_id", sa.String(40)),
     sa.Column("thread_id", sa.String(100), index=True),
+    # Who started it: their user id (None with sign-in off, or a trigger) and how they show up
+    # (an access key's runs show the key). Phase 5.5, migration 0009.
+    sa.Column("started_by", sa.String(40), nullable=True),
+    sa.Column("started_by_name", sa.String(200), nullable=True),
     # queued, running, paused, ok, error, cancelled
     sa.Column("status", sa.String(20), index=True),
     sa.Column("trigger", sa.String(40), default="manual"),
@@ -347,6 +351,67 @@ key_usage = sa.Table(
     sa.Column("count", sa.Integer),
 )
 
+# ── the model gateway (Phase 5.5, migration 0009) ───────────────────────────
+
+# Every model call of a run, a Test Run, a Test Set run in the app or the copilot, with its
+# tokens and cost (None: no price is known). Budgets, alerts and the spending pages add these
+# up (server/gateway.py).
+model_calls = sa.Table(
+    "model_calls",
+    metadata,
+    sa.Column(
+        "id",
+        sa.BigInteger().with_variant(sa.Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    ),
+    sa.Column("at", sa.Float),
+    sa.Column("workspace_id", sa.String(40)),
+    # run, test_run, test_set or copilot
+    sa.Column("kind", sa.String(20)),
+    sa.Column("run_id", sa.String(40), nullable=True, index=True),
+    sa.Column("flow_id", sa.String(100), nullable=True),
+    sa.Column("flow_name", sa.String(200), nullable=True),
+    sa.Column("environment", sa.String(20), nullable=True),
+    sa.Column("user_id", sa.String(40), nullable=True),
+    sa.Column("user_name", sa.String(200), nullable=True),
+    sa.Column("step", sa.String(100), nullable=True),
+    sa.Column("provider", sa.String(40), nullable=True),
+    sa.Column("model", sa.String(200), nullable=True),
+    sa.Column("input_tokens", sa.Integer),
+    sa.Column("output_tokens", sa.Integer),
+    sa.Column("cost", sa.Float, nullable=True),
+    sa.Column("cached", sa.Boolean),
+    sa.Column("error", sa.String(300), nullable=True),
+    sa.Column("duration_ms", sa.Float, nullable=True),
+    sa.Index("ix_model_calls_spend", "workspace_id", "at"),
+)
+
+# One row per alert sent: a budget's level (80, 100) in a period ("2026-10" or "2026-10-24").
+budget_alerts = sa.Table(
+    "budget_alerts",
+    metadata,
+    sa.Column("workspace_id", sa.String(40), primary_key=True),
+    sa.Column("budget", sa.String(20), primary_key=True),
+    sa.Column("period", sa.String(10), primary_key=True),
+    sa.Column("level", sa.Integer, primary_key=True),
+    sa.Column("spent", sa.Float),
+    sa.Column("amount", sa.Float),
+    sa.Column("at", sa.Float),
+)
+
+# Answers kept by the gateway's cache (runtime/model_policy.py AnswerCache), by a hash of the
+# workspace, the model with its settings, and the messages.
+answer_cache = sa.Table(
+    "answer_cache",
+    metadata,
+    sa.Column("key", sa.String(64), primary_key=True),
+    sa.Column("workspace_id", sa.String(40)),
+    sa.Column("value", sa.Text),
+    sa.Column("created_at", sa.Float),
+    sa.Column("expires_at", sa.Float, index=True),
+)
+
 # ── the audit log (Phase 5.6c, migration 0004) ──────────────────────────────
 
 # What people changed, newest last. Append-only: database triggers refuse UPDATE and DELETE
@@ -555,9 +620,11 @@ class Database:
         flow_limit: int | None = None,
         run_id: str | None = None,
         environment: str | None = None,
+        by: tuple[str | None, str] | None = None,
     ) -> str:
         run_id = run_id or new_id()
         now = time.time()
+        by = by or context.person.get()
         async with self._tx() as conn:
             await conn.execute(
                 runs.insert().values(
@@ -568,6 +635,8 @@ class Database:
                     environment=environment,
                     version_id=version_id,
                     thread_id=thread_id,
+                    started_by=by[0] if by else None,
+                    started_by_name=by[1] if by else None,
                     status="queued",
                     trigger=trigger,
                     trigger_id=trigger_id,
@@ -1135,6 +1204,134 @@ class Database:
             # Old minutes are of no use any more.
             await conn.execute(key_usage.delete().where(key_usage.c.minute < minute - 5))
         return int(count or 0)
+
+    # ── the model gateway (Phase 5.5) ────────────────────────────────────────
+
+    async def add_model_call(self, row: dict[str, Any]) -> None:
+        async with self._tx() as conn:
+            await conn.execute(model_calls.insert().values(**row))
+
+    @staticmethod
+    def _scope(query: Any, scope: str) -> Any:
+        """Model calls of a budget's scope: all of the workspace's, drafts' (no environment),
+        or one environment's."""
+        if scope == "drafts":
+            return query.where(model_calls.c.environment.is_(None))
+        if scope != "workspace":
+            return query.where(model_calls.c.environment == scope)
+        return query
+
+    async def spent(self, workspace_id: str, scope: str, since: float) -> float:
+        """What the model calls of ``scope`` in the workspace cost since ``since``."""
+        query = sa.select(sa.func.coalesce(sa.func.sum(model_calls.c.cost), 0.0)).where(
+            model_calls.c.workspace_id == workspace_id, model_calls.c.at >= since
+        )
+        async with self.reader.connect() as conn:
+            return float((await conn.execute(self._scope(query, scope))).scalar() or 0.0)
+
+    async def spending(
+        self,
+        workspace_id: str,
+        *,
+        since: float,
+        until: float | None = None,
+        by: str = "flow",
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Model calls added up per flow, person, environment, model or run, the costliest
+        first."""
+        c = model_calls.c
+        keys = {
+            "flow": [c.flow_id, c.flow_name, c.kind],
+            "person": [c.user_id, c.user_name],
+            "environment": [c.environment],
+            "model": [c.provider, c.model],
+            "run": [c.run_id, c.kind, c.flow_id, c.flow_name, c.environment, c.user_name],
+            "total": [],
+        }[by]
+        cost = sa.func.coalesce(sa.func.sum(c.cost), 0.0)
+        query = (
+            sa.select(
+                *keys,
+                sa.func.count().label("calls"),
+                sa.func.sum(sa.case((c.cached == sa.true(), 1), else_=0)).label("cached"),
+                sa.func.sum(sa.case((c.error.is_not(None), 1), else_=0)).label("errors"),
+                sa.func.sum(sa.case((c.cost.is_(None), 1), else_=0)).label("unpriced"),
+                sa.func.coalesce(sa.func.sum(c.input_tokens), 0).label("input_tokens"),
+                sa.func.coalesce(sa.func.sum(c.output_tokens), 0).label("output_tokens"),
+                cost.label("cost"),
+                sa.func.min(c.at).label("first"),
+                sa.func.max(c.at).label("last"),
+            )
+            .where(c.workspace_id == workspace_id, c.at >= since)
+            .group_by(*keys)
+            .order_by(cost.desc(), sa.func.count().desc())
+            .limit(limit)
+        )
+        if until is not None:
+            query = query.where(c.at < until)
+        async with self.reader.connect() as conn:
+            rows = await conn.execute(query)
+            return [dict(r._mapping) for r in rows]
+
+    async def mark_alert(
+        self, workspace_id: str, budget: str, period: str, level: int, spent: float, amount: float
+    ) -> bool:
+        """Note that an alert is sent; False if it was already (any process)."""
+        sql = sa.text(
+            "INSERT INTO budget_alerts (workspace_id, budget, period, level, spent, amount, at) "
+            "VALUES (:ws, :budget, :period, :level, :spent, :amount, :at) ON CONFLICT DO NOTHING"
+        )
+        values = {
+            "ws": workspace_id,
+            "budget": budget,
+            "period": period,
+            "level": level,
+            "spent": spent,
+            "amount": amount,
+            "at": time.time(),
+        }
+        async with self._tx() as conn:
+            result = await conn.execute(sql, values)
+            return result.rowcount == 1
+
+    async def alerts(self, workspace_id: str, limit: int = 20) -> list[dict[str, Any]]:
+        async with self.reader.connect() as conn:
+            rows = await conn.execute(
+                sa.select(budget_alerts)
+                .where(budget_alerts.c.workspace_id == workspace_id)
+                .order_by(budget_alerts.c.at.desc())
+                .limit(limit)
+            )
+            return [dict(r._mapping) for r in rows]
+
+    async def cache_get(self, key: str, now: float | None = None) -> str | None:
+        query = sa.select(answer_cache.c.value).where(
+            answer_cache.c.key == key, answer_cache.c.expires_at > (now or time.time())
+        )
+        async with self.reader.connect() as conn:
+            return (await conn.execute(query)).scalar()
+
+    async def cache_put(self, key: str, workspace_id: str, value: str, expires_at: float) -> None:
+        now = time.time()
+        sql = sa.text(
+            'INSERT INTO answer_cache ("key", workspace_id, value, created_at, expires_at) '
+            'VALUES (:key, :ws, :value, :now, :expires) ON CONFLICT ("key") DO UPDATE SET '
+            "value = excluded.value, created_at = excluded.created_at, "
+            "expires_at = excluded.expires_at"
+        )
+        values = {"key": key, "ws": workspace_id, "value": value, "now": now}
+        async with self._tx() as conn:
+            await conn.execute(sql, {**values, "expires": expires_at})
+            # Answers past their time are of no use any more.
+            await conn.execute(answer_cache.delete().where(answer_cache.c.expires_at < now))
+
+    async def clear_cache(self, workspace_id: str) -> int:
+        async with self._tx() as conn:
+            result = await conn.execute(
+                answer_cache.delete().where(answer_cache.c.workspace_id == workspace_id)
+            )
+            return int(result.rowcount or 0)
 
     async def get_upload(self, upload_id: str) -> dict[str, Any] | None:
         async with self.reader.connect() as conn:

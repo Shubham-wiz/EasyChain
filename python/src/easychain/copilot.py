@@ -444,15 +444,19 @@ def propose(
     script: Script | None = None,
     resolve: Resolver | None = None,
     issue: dict[str, Any] | None = None,
+    gateway: Any = None,
 ) -> Proposal:
-    """A proposal for the request (and, with ``issue``, a fix for that problem)."""
+    """A proposal for the request (and, with ``issue``, a fix for that problem). ``gateway``:
+    the server's GatewayPolicy (budgets, a record of each call)."""
     if not stand_in and model is None:
         model = copilot_model()
     if stand_in or model is None:
         if script is None:
             return canned(request, current, issue)
         model = model or "stand-in"
-    token = use_settings(RunSettings(stand_in=stand_in or model == "stand-in", script=script))
+    token = use_settings(
+        RunSettings(stand_in=stand_in or model == "stand-in", script=script, gateway=gateway)
+    )
     try:
         chat = gateway_init_chat_model(model)
         messages: list[Any] = [

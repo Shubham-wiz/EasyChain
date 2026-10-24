@@ -337,11 +337,11 @@ updated in the same commit as the work (decision 5.6). Each phase's report has t
 - [x] ✅ Access keys and rate limits per key (per minute, counted in the database for every API server; chat links per visitor too)
 - [x] ⚠️ `easychain deploy`: a Docker image or Compose bundle (self-hosted, decision 5.3); builds on a locally built Easy Chain image (F37)
 
-**5.5 Model gateway**
+**5.5 Model gateway** ✅
 
-- [ ] ⬜ Budgets and alerts per environment
-- [ ] ⬜ Response caching, provider fallbacks and retries, rate-limit smoothing
-- [ ] ⬜ Cost per flow, run and user
+- [x] ⚠️ Budgets and alerts per environment (and for the workspace and drafts), a day or a month: alerts through Notifications, and a budget can stop model calls; checked before each call, so calls under way can go a little over (F39) ([docs](docs/gateway.md))
+- [x] ⚠️ Response caching (exact, per workspace, for drafts and chosen environments), provider fallbacks and retries, rate-limit smoothing (per server process: F38)
+- [x] ✅ Cost per flow, run and user (and per environment and model): every model call recorded with its tokens and cost; Settings → Model gateway; your own prices for any model (fixes F13)
 
 **5.7 Dashboards and tracing**
 
@@ -381,7 +381,7 @@ yet.
 | F10 | MCP: tools only, no OAuth, servers reconnected each run | Phase 3 | backlog |
 | F11 | OpenAPI import doesn't send optional query parameters | Phase 3 | backlog |
 | F12 | No OCR for scanned PDFs; one vector store (no Qdrant, Chroma, Pinecone) | Phase 3 | backlog |
-| F13 | Model prices known for listed models only | Phase 1 | 5.5 (model gateway cost tracking) |
+| F13 | ~~Model prices known for listed models only~~ | Phase 1 | ✅ Fixed in 5.5 (your own prices in Settings → Model gateway) |
 | F14 | The Code sandbox needs Docker; the Compose overlay gives the worker the Docker socket; a container per call adds start-up time | Phase 4 | backlog (warm pool, sidecar sandbox service, hosted sandboxes) |
 | F15 | Exported code runs Code steps in its own process (no sandbox) | Phase 4 | backlog (documented in the export) |
 | F16 | Deep Agent files live in the run's state: very large files make Save Points bigger | Phase 4 | backlog (store-backed `/memories/`) |
@@ -406,6 +406,11 @@ yet.
 | F35 | A chat link's per-visitor limit counts the address the server sees: behind a proxy, every visitor shares the proxy's | 5.4 | backlog (trust the proxy's forwarded address when configured) |
 | F36 | The hosted chat page shows replies as plain text: no Markdown, citations or Ask a Human answers | 5.4 | backlog |
 | F37 | `easychain deploy` builds on an Easy Chain image you build yourself; there's no published image yet | 5.4 | backlog (publish images to a registry with releases) |
+| F38 | Smoothing (requests a second per provider) is per server process: with several workers, a provider sees up to that many times the rate | 5.5 | backlog (a shared limiter in the database or Redis) |
+| F39 | Budgets are checked before each model call, so calls already under way (parallel steps, several workers) can take spending a little past the limit | 5.5 | by design; documented |
+| F40 | `model_calls` keeps every call: nothing removes old rows | 5.5 | backlog (a retention setting, or rolling old rows up per day) |
+| F41 | Embedding calls (reading and searching Knowledge Bases) aren't recorded or budgeted; only chat models are | 5.5 | backlog |
+| F42 | The answer cache is exact: a question worded differently is a new call (no semantic cache) | 5.5 | backlog |
 
 ## Licence
 

@@ -3,7 +3,9 @@
 Generated code calls ``init_chat_model`` and ``init_embeddings``. When Easy Chain
 runs a flow it swaps those names for the gateway versions below, so it can check
 for API keys and packages before calling a provider (and say so in plain words),
-or hand back the stand-in AI. Exported code keeps LangChain's own functions.
+or hand back the stand-in AI. On a server, a run's ``GatewayPolicy`` (model_policy.py) adds
+budgets, caching, smoothing, retries, fallbacks and a record of every call. Exported code
+keeps LangChain's own functions.
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ from langchain.embeddings import init_embeddings as _init_embeddings
 from ..environments import model_for
 from ..knowledge.embeddings import KeywordEmbeddings
 from ..providers import EMBEDDING_MODELS, PROVIDERS, split_model
+from .model_policy import FallbackChatModel, GatewayCallback, GatewayPolicy, limiter_for
 from .sandbox import SandboxSettings, settings_from_env
 from .standin import Script, StandInChatModel
 
@@ -49,6 +52,8 @@ class RunSettings:
     mcp: dict[str, Any] | None = None
     # How Code steps are sandboxed (None: EASYCHAIN_SANDBOX, by default "auto").
     sandbox: SandboxSettings | None = None
+    # Budgets, caching, smoothing, retries, fallbacks and metering (None: none of them).
+    gateway: GatewayPolicy | None = None
 
 
 _DEFAULT = RunSettings()
@@ -95,9 +100,49 @@ def gateway_init_chat_model(model: str | None = None, **kwargs: Any) -> Any:
     model = model_for(model or "")
     if settings.stand_in:
         return StandInChatModel(model_name=model or "stand-in", script=settings.script)
+    policy = settings.gateway
+    chat = _make(model, kwargs, policy)
+    if policy is None or not policy.fallbacks.get(model):
+        return chat
+    others = []
+    for other in policy.fallbacks[model]:
+        try:
+            others.append(_make(other, _portable(kwargs), policy))
+        except (MissingAPIKey, MissingPackage):
+            continue  # a fallback with no key (or package) here is left out
+    return FallbackChatModel(models=[chat, *others]) if others else chat
+
+
+# Settings of a step's model that mean the same to any provider, so its fallbacks get them.
+PORTABLE = ("temperature", "max_tokens", "top_p", "timeout")
+
+
+def _portable(kwargs: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in kwargs.items() if k in PORTABLE}
+
+
+def _make(model: str, kwargs: dict[str, Any], policy: GatewayPolicy | None) -> Any:
     provider_id, _ = split_model(model)
     _check_provider(provider_id, kwargs)
-    return _init_chat_model(model, **kwargs)
+    if policy is None:
+        return _init_chat_model(model, **kwargs)
+    kwargs = dict(kwargs)
+    if policy.cache is not None:
+        kwargs.setdefault("cache", policy.cache)
+    rate = policy.per_second.get(provider_id or "")
+    if rate:
+        kwargs.setdefault("rate_limiter", limiter_for(provider_id or "", rate))
+    if policy.meter is not None:
+        kwargs["callbacks"] = [*(kwargs.get("callbacks") or []), GatewayCallback(policy, model)]
+    chat = _init_chat_model(model, **kwargs)
+    if (
+        policy.retries is not None
+        and "max_retries" not in kwargs
+        and "max_retries" in type(chat).model_fields
+    ):
+        # The provider package retries with back-off (its client is made with the number).
+        chat = _init_chat_model(model, **kwargs, max_retries=policy.retries)
+    return chat
 
 
 def gateway_init_embeddings(model: str, **kwargs: Any) -> Any:

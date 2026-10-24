@@ -49,13 +49,14 @@ from .. import egress
 from ..compiler import CompileError, compile_flow
 from ..compiler.analysis import EACH_ITEM, WHEN_DONE, FlowAnalysis, Resolver
 from ..compiler.codegen import DEFAULT_MAX_STEPS, CompiledFlow, exit_targets
-from ..providers import PROVIDERS, estimate_cost
+from ..providers import PROVIDERS
 from ..spec.models import FlowSpec
 from ..steps.flow_control import index_field
 from .errors import explain
-from .gateway import RunSettings, reset_settings, use_settings
+from .gateway import RunSettings, current_settings, reset_settings, use_settings
 from .inputs import InputError, prepare_inputs
 from .loader import load_graph
+from .model_policy import call_usage
 from .resources import Resources, memory_resources
 
 MAX_STRING = 20_000
@@ -143,30 +144,21 @@ class UsageTracker(BaseCallbackHandler):
             key, provider, model = self._calls.pop(run_id, (None, None, None))
         if key is None:
             return
-        usage: dict[str, int] = {}
-        try:
-            message = response.generations[0][0].message
-            usage = dict(getattr(message, "usage_metadata", None) or {})
-            model = model or (message.response_metadata or {}).get("model_name")
-        except (AttributeError, IndexError):
-            pass
-        if not usage and response.llm_output:
-            tu = response.llm_output.get("token_usage") or {}
-            usage = {
-                "input_tokens": tu.get("prompt_tokens", 0),
-                "output_tokens": tu.get("completion_tokens", 0),
-            }
-        inp, out = int(usage.get("input_tokens", 0) or 0), int(usage.get("output_tokens", 0) or 0)
-        stand_in = "stand-in" in (provider or "") or model == "stand-in"
-        cost = (
-            0.0
-            if stand_in
-            else (estimate_cost(f"{provider}:{model}", inp, out) if provider and model else None)
-        )
+        found = call_usage(response, provider, model, current_settings().gateway)
         with self._lock:
             entry = self.by_task.setdefault(key, _empty_usage())
-            _add_usage(entry, {"input_tokens": inp, "output_tokens": out, "cost": cost, "calls": 1})
-            entry["model"] = model if not stand_in else "stand-in"
+            _add_usage(
+                entry,
+                {
+                    "input_tokens": found["input_tokens"],
+                    "output_tokens": found["output_tokens"],
+                    "cost": found["cost"],
+                    "calls": 1,
+                },
+            )
+            entry["model"] = found["model"]
+            if found["cached"]:
+                entry["cached"] = entry.get("cached", 0) + 1
 
     def take(self, key: str) -> dict[str, Any] | None:
         with self._lock:
@@ -230,6 +222,9 @@ class RunOptions:
     # Which addresses Web requests and MCP servers may reach (Settings → Network, egress.py);
     # None: no check.
     egress: Any = None
+    # Budgets, caching, smoothing, retries, fallbacks and metering (Settings → Model gateway,
+    # runtime/model_policy.py); None: none of them.
+    gateway: Any = None
 
 
 def _now() -> float:
@@ -709,7 +704,13 @@ async def stream_run(
             await queue.put(("error", exc))
 
     token = use_settings(
-        RunSettings(stand_in=opts.stand_in, script=opts.script, mcp=opts.mcp, sandbox=opts.sandbox)
+        RunSettings(
+            stand_in=opts.stand_in,
+            script=opts.script,
+            mcp=opts.mcp,
+            sandbox=opts.sandbox,
+            gateway=opts.gateway,
+        )
     )
     egress_token = egress.use(opts.egress)
     producer = asyncio.create_task(produce())
