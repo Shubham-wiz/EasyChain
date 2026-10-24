@@ -173,7 +173,7 @@ class Worker:
             self.hub.bus.notify(job["run_id"])
 
     async def _workspace_of(self, job: dict[str, Any]) -> str:
-        if job["action"] == "ingest":
+        if job["action"] in ("ingest", "test"):
             return (job.get("payload") or {}).get("workspace") or "default"
         run = await self.db.get_run(job["run_id"])
         return (run or {}).get("workspace_id") or "default"
@@ -233,8 +233,69 @@ class Worker:
         if upload_id:
             await self.db.delete_upload(upload_id)
 
+    async def _test(self, job: dict[str, Any], lost: asyncio.Event) -> None:
+        """Run a kept Test Run (queued by the API): each case ``repeat`` times, against the
+        flow version it was started with. Run again after a crash, it starts the cases over."""
+        from ..integrations.mcp import connections as mcp_connections
+        from ..testruns import case_summary, summary
+        from ..testsets import run_case
+        from .integrations_api import mcp_setting
+
+        db, hub = self.db, self.hub
+        row = await db.get_test_run(job["run_id"])
+        if row is None or row["status"] in ("done", "error"):
+            await db.finish_job(job["id"], self.name, "done")
+            return
+        await db.update_test_run(row["id"], status="running", started_at=time.time(), done=0)
+        spec, children = await hub.flow_from_version(row["version_id"])
+        options = {
+            "mcp": mcp_connections(await mcp_setting(db, hub.space.setting("mcp"))),
+            "egress": await self._egress(),
+            "resolve": children.get,
+            "flow_id": row["flow_id"],
+            "redact": hub.space.vault.values() if hub.space.vault is not None else [],
+        }
+        sandbox = sandbox_settings(await db.get_setting("sandbox", {}))
+        results, done = [], 0
+        for case in row.get("cases") or []:
+            runs = []
+            for _ in range(int(row["repeat"] or 1)):
+                result = await run_case(
+                    spec,
+                    case,
+                    bool(row["stand_in"]),
+                    sandbox,
+                    judge_model=row.get("judge_model"),
+                    options=options,
+                )
+                runs.append(result.to_dict())
+                done += 1
+                if lost.is_set():
+                    return  # another worker took the job over; it runs it again
+                await db.update_test_run(row["id"], done=done)
+            results.append(case_summary(case.get("name") or "case", runs))
+        await db.update_test_run(
+            row["id"],
+            status="done",
+            results=results,
+            summary=summary(results),
+            finished_at=time.time(),
+        )
+        await db.finish_job(job["id"], self.name, "done")
+
     async def _failed(self, job: dict[str, Any]) -> None:
         """The job hit an unexpected problem: the run ends with an error, and says so."""
+        if job["action"] == "test":
+            # A Test Run says it didn't finish; a problem that repeats would repeat for ever.
+            with contextlib.suppress(Exception):
+                await self.db.update_test_run(
+                    job["run_id"],
+                    status="error",
+                    error="The Test Run hit an unexpected problem. Start it again.",
+                    finished_at=time.time(),
+                )
+            await self.db.finish_job(job["id"], self.name, "failed")
+            return
         if job["action"] == "ingest":
             # Not taken up again: a problem that repeats would repeat for ever. The document
             # says what happened.
@@ -302,6 +363,9 @@ class Worker:
     async def _run_job(self, job: dict[str, Any], stop: asyncio.Event, lost: asyncio.Event) -> None:
         if job["action"] == "ingest":
             await self._ingest(job, lost)
+            return
+        if job["action"] == "test":
+            await self._test(job, lost)
             return
         db, hub = self.db, self.hub
         run = await db.get_run(job["run_id"])

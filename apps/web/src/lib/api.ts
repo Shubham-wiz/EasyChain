@@ -1,5 +1,5 @@
 import type { Proposal, TestCase } from "./copilot";
-import type { TestRunResult, TestSetInfo, WorkspaceInfo, ApiKeyInfo, AuditPage, AuthStatus, NetworkSettings, SsoProvider, SsoSettings, Me, NewApiKey, Person, Role, Catalog, CheckResult, ChunkPreview, CompileResult, DataField, FlowListItem, FlowSpec, FlowVersion, InboxItem, Issue, KnowledgeBase, KnowledgeDocument, KnowledgeHit, McpServer, McpSettings, McpTool, NotificationSettings, OpenApiInspection, RunEvent, RunSummary, SandboxSettings, SandboxStatus, SavePoint, SecretInfo, Skill, SkillSummary, Step, TemplateInfo, ThreadInfo, Trigger, TriggerKind } from "./types";
+import type { TestRunDetail, TestRunResult, TestRunSummary, TestSetInfo, WorkspaceInfo, ApiKeyInfo, AuditPage, AuthStatus, NetworkSettings, SsoProvider, SsoSettings, Me, NewApiKey, Person, Role, Catalog, CheckResult, ChunkPreview, CompileResult, DataField, FlowListItem, FlowSpec, FlowVersion, InboxItem, Issue, KnowledgeBase, KnowledgeDocument, KnowledgeHit, McpServer, McpSettings, McpTool, NotificationSettings, OpenApiInspection, RunEvent, RunSummary, SandboxSettings, SandboxStatus, SavePoint, SecretInfo, Skill, SkillSummary, Step, TemplateInfo, ThreadInfo, Trigger, TriggerKind } from "./types";
 
 export class ApiError extends Error {
   status: number;
@@ -239,6 +239,12 @@ export const api = {
   /** Run the saved cases (or `cases`, by name) now; `spec` runs the flow as it is on the canvas. */
   runTestSet: (flowId: string, body: { cases?: string[]; stand_in?: boolean; variables?: Record<string, string>; spec?: FlowSpec }) =>
     request<TestRunResult>(`/api/flows/${encodeURIComponent(flowId)}/tests/run`, { method: "POST", ...json(body) }),
+  /** Kept Test Runs of a flow, newest first (5.2). */
+  testRuns: (flowId: string) => request<{ runs: TestRunSummary[] }>(`/api/flows/${encodeURIComponent(flowId)}/test-runs`).then((r) => r.runs),
+  startTestRun: (flowId: string, body: { repeat?: number; stand_in?: boolean; cases?: string[]; variables?: Record<string, string> }) =>
+    request<{ id: string; status: string }>(`/api/flows/${encodeURIComponent(flowId)}/test-runs`, { method: "POST", ...json(body) }),
+  testRun: (id: string) => request<TestRunDetail>(`/api/test-runs/${encodeURIComponent(id)}`),
+  makeBaseline: (id: string) => request<{ baseline: string }>(`/api/test-runs/${encodeURIComponent(id)}/baseline`, { method: "POST" }),
   addTestCases: (flowId: string, cases: TestCase[]) =>
     request<{ added: number; total: number }>(`/api/flows/${encodeURIComponent(flowId)}/tests`, { method: "POST", ...json({ cases }) }),
   skills: () => request<{ skills: SkillSummary[] }>("/api/skills").then((r) => r.skills),

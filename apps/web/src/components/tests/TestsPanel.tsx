@@ -7,6 +7,7 @@ import type { CaseRunResult, Step, TestSetInfo } from "../../lib/types";
 import { useCan, useRoleNote } from "../../state/auth";
 import { useFlow } from "../../state/flow";
 import { Badge, Button, Input, Locked, Select, Switch, Textarea } from "../ui";
+import { TestRuns } from "./TestRuns";
 
 interface InputField {
   name: string;
@@ -310,6 +311,7 @@ export function TestsPanel() {
     try {
       await api.saveTestSet(flowId, { cases, stand_in: standIn });
       setDirty(false);
+      setInfo((prev) => (prev ? { ...prev, exists: true } : prev));
       setError(null);
       return true;
     } catch (err) {
@@ -455,6 +457,7 @@ export function TestsPanel() {
           </Button>
         </div>
       )}
+      {info?.exists && <TestRuns flowId={flowId} disabled={dirty || cases.length === 0} variables={variables} />}
     </div>
   );
 }

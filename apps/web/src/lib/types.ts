@@ -759,3 +759,49 @@ export interface TestRunResult {
   total: number;
   stand_in: boolean;
 }
+
+/** One case of a kept Test Run, over its repeats (python/src/easychain/testruns.py). */
+export interface TestRunCase {
+  name: string;
+  runs: number;
+  passed: number;
+  pass_rate: number;
+  flaky: boolean;
+  failures: string[];
+  skipped: string[];
+  seconds: number;
+  tokens: number;
+  cost: number | null;
+}
+
+export interface TestRunSummary {
+  id: string;
+  flow_id: string;
+  version_id: string;
+  status: "queued" | "running" | "done" | "error";
+  stand_in: boolean;
+  repeat: number;
+  by: string | null;
+  baseline: boolean;
+  created_at: number;
+  finished_at: number | null;
+  error: string | null;
+  progress: { done: number; total: number };
+  summary: { total: number; passed: number; failed: number; flaky: number; skipped: number; seconds: number; tokens: number; cost: number | null } | null;
+}
+
+export interface CaseChange {
+  name: string;
+  change: "better" | "worse" | "same" | "new" | "gone";
+  before?: number;
+  after?: number;
+  seconds?: number | null;
+  tokens?: number | null;
+  cost?: number | null;
+}
+
+export interface TestRunDetail extends TestRunSummary {
+  cases: TestRunCase[];
+  baseline_id: string | null;
+  comparison: { cases: CaseChange[]; better: number; worse: number; same: number; new: number; gone: number; regressions: string[] } | null;
+}

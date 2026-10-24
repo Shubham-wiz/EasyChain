@@ -317,12 +317,12 @@ updated in the same commit as the work (decision 5.6). Each phase's report has t
 - [x] ✅ AI judge with a rubric (any model with a key; skipped without one, and with the stand-in AI)
 - [x] ✅ Trajectory checks (the order of tool calls: in order, exact, any order)
 
-**5.2 Test Runs and baselines**
+**5.2 Test Runs and baselines** 🚧
 
-- [ ] ⬜ Run a Test Set against a flow version and keep the results
-- [ ] ⬜ Compare with a baseline: better, same or worse per case; cost and time changes
-- [ ] ⬜ Repeat runs to measure flakiness with real models
-- [ ] ⬜ Manual CI workflow for real-model checks before a release (decision 5.5)
+- [x] ✅ Run a Test Set against a flow version and keep the results: on a worker, with the cases copied in, under Kept Test Runs in the Tests tab ([docs](docs/testing.md#test-runs-and-baselines))
+- [x] ✅ Compare with a baseline: better, same or worse per case (new and not run too); time and cost changes
+- [x] ✅ Repeat runs to measure flakiness with real models (1 to 10 times; a pass rate per case, flaky cases marked)
+- [ ] ⬜ Manual CI workflow for real-model checks before a release (decision 5.5): comes with `easychain eval` in 5.3
 
 **5.3 CI gate**
 

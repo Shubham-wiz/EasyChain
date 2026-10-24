@@ -43,7 +43,20 @@ test("Test Sets: write a case, run it, read why it failed", async ({ page }) => 
   await expect(page.getByTestId("result-Shouts hello")).toContainText("expected 'HELLO!', got 'HELLO'");
   await expect(page.getByTestId("case-Shouts hello").getByText("Failed", { exact: true })).toBeVisible();
 
+  // A kept Test Run becomes the baseline; after the fix, the next one is better.
+  const kept = panel.getByRole("region", { name: "Kept Test Runs" });
+  await kept.getByRole("button", { name: "Run and keep", exact: true }).click();
+  await expect(kept.getByText("0/1 passed", { exact: true })).toBeVisible();
+  await kept.getByRole("button", { name: "Make this the baseline", exact: true }).click();
+  await expect(kept.getByText("Baseline", { exact: true })).toBeVisible();
+  await panel.getByLabel("Expected", { exact: true }).fill("HELLO");
+  await panel.getByRole("button", { name: "Save the Test Set", exact: true }).click();
+  await kept.getByRole("button", { name: "Run and keep", exact: true }).click();
+  await expect(kept.getByText("1/1 passed", { exact: true })).toBeVisible();
+  await expect(kept.getByText("Better", { exact: true })).toBeVisible();
+  await expect(kept.getByText("Against the baseline: 1 better, 0 worse, 0 the same.")).toBeVisible();
+
   // It's kept next to the flow, as YAML.
   const saved = await (await page.request.get(`/api/flows/${id}/tests`)).json();
-  expect(saved.cases[0]).toMatchObject({ name: "Shouts hello", inputs: { text: "hello" }, expect: { "output.loud": "HELLO!" } });
+  expect(saved.cases[0]).toMatchObject({ name: "Shouts hello", inputs: { text: "hello" }, expect: { "output.loud": "HELLO" } });
 });

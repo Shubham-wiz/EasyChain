@@ -153,6 +153,36 @@ which:
 The judge never makes up a grade (decision 5.4). The score and the judge's reason show with
 the result: "score 0.90 (needs 0.70) from openai:gpt-4.1: Gives the day."
 
+## Test Runs and baselines
+
+**Run all** shows how the cases do right now. A **Test Run** is kept: it runs the Test Set
+against the flow as it is saved (a version in the flow's history), on a worker, and keeps
+every case's result. Use it to compare one version of a flow with another.
+
+In the Tests tab, under **Kept Test Runs**:
+
+1. Choose how often to run each case, and press **Run and keep**. The run goes on while you
+   work, and shows how far it has got.
+2. Open a finished run and press **Make this the baseline**. Each flow has one baseline.
+3. Later runs are compared with it, case by case.
+
+| A case is | When |
+|---|---|
+| **Better** | it passes more often than in the baseline |
+| **Worse** | it passes less often: a regression |
+| **Same** | as often |
+| **New** | the baseline didn't have it |
+| **Not run** | only the baseline has it |
+
+Each case also shows the change in its average time and cost.
+
+**Repeats.** Real models don't answer the same way twice. Running each case 3, 5 or 10 times
+gives each case a pass rate ("2/3"). A case that passed some times and failed others is
+marked **Flaky**. With the stand-in AI, one run is enough.
+
+A Test Run keeps a copy of the cases it ran, so changing the Test Set afterwards doesn't
+change what an old run says.
+
 ## On the command line
 
 ```bash
@@ -172,6 +202,10 @@ GET  /api/flows/{id}/tests       (Viewers)  → {file, exists, flow, stand_in, j
 PUT  /api/flows/{id}/tests       (Editors)  ← {cases, stand_in?, judge_model?}
 POST /api/flows/{id}/tests/run   (Runners)  ← {cases?: [names], stand_in?, variables?, spec?}
                                             → {results: [{name, passed, failures, skipped, checks, metrics, output}], passed, total}
+POST /api/flows/{id}/test-runs   (Runners)  ← {repeat?: 1-10, stand_in?, cases?, variables?}  → 202 {id, version_id}
+GET  /api/flows/{id}/test-runs   (Viewers)  → {runs: [{id, status, progress, summary, baseline, …}]}
+GET  /api/test-runs/{run_id}     (Viewers)  → … cases: [{name, runs, passed, pass_rate, flaky, failures, seconds, cost}], comparison
+POST /api/test-runs/{run_id}/baseline  (Editors)
 ```
 
 - Saving checks every case first. A problem gets a `422` that says which case and what is

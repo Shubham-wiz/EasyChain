@@ -264,6 +264,37 @@ user_identities = sa.Table(
     sa.Column("last_used_at", sa.Float, nullable=True),
 )
 
+# ── Test Runs (Phase 5.2, migration 0007) ────────────────────────────────────
+
+# A Test Set run against one flow version on a worker (a "test" job), with its results; one
+# per flow can be its baseline (testruns.py compares the others with it).
+test_runs = sa.Table(
+    "test_runs",
+    metadata,
+    sa.Column("id", sa.String(40), primary_key=True),
+    sa.Column("workspace_id", sa.String(40), index=True),
+    sa.Column("flow_id", sa.String(100), index=True),
+    sa.Column("version_id", sa.String(40)),
+    # queued, running, done, error
+    sa.Column("status", sa.String(20)),
+    sa.Column("stand_in", sa.Boolean),
+    sa.Column("repeat", sa.Integer),
+    sa.Column("judge_model", sa.String(200), nullable=True),
+    # the cases as they were when it started
+    sa.Column("cases", sa.JSON),
+    # case runs finished so far
+    sa.Column("done", sa.Integer),
+    # one summary per case (testruns.case_summary), and the whole run's
+    sa.Column("results", sa.JSON, nullable=True),
+    sa.Column("summary", sa.JSON, nullable=True),
+    sa.Column("baseline", sa.Boolean),
+    sa.Column("created_by", sa.String(200), nullable=True),
+    sa.Column("error", sa.Text, nullable=True),
+    sa.Column("created_at", sa.Float),
+    sa.Column("started_at", sa.Float, nullable=True),
+    sa.Column("finished_at", sa.Float, nullable=True),
+)
+
 # ── the audit log (Phase 5.6c, migration 0004) ──────────────────────────────
 
 # What people changed, newest last. Append-only: database triggers refuse UPDATE and DELETE
@@ -810,6 +841,99 @@ class Database:
             return await self._enqueue(
                 conn, doc_id, "ingest", payload, f"kb:{kb_id}", None, None, now
             )
+
+    # ── Test Runs (Phase 5.2, migration 0007) ────────────────────────────────
+
+    async def create_test_run(
+        self,
+        flow_id: str,
+        version_id: str,
+        cases: list[dict[str, Any]],
+        *,
+        stand_in: bool,
+        repeat: int,
+        judge_model: str | None = None,
+        created_by: str | None = None,
+    ) -> str:
+        """Keep a Test Run and queue it for a worker (a ``test`` job)."""
+        run_id = new_id()
+        now = time.time()
+        workspace = context.current()
+        async with self._tx() as conn:
+            await conn.execute(
+                test_runs.insert().values(
+                    id=run_id,
+                    workspace_id=workspace,
+                    flow_id=flow_id,
+                    version_id=version_id,
+                    status="queued",
+                    stand_in=stand_in,
+                    repeat=repeat,
+                    judge_model=judge_model,
+                    cases=cases,
+                    done=0,
+                    baseline=False,
+                    created_by=created_by,
+                    created_at=now,
+                )
+            )
+            await self._enqueue(
+                conn,
+                run_id,
+                "test",
+                {"workspace": workspace},
+                f"test:{run_id}",
+                None,
+                None,
+                now,
+            )
+        return run_id
+
+    async def get_test_run(self, run_id: str) -> dict[str, Any] | None:
+        async with self.reader.connect() as conn:
+            row = (await conn.execute(sa.select(test_runs).where(test_runs.c.id == run_id))).first()
+            return _row(row)
+
+    async def list_test_runs(self, flow_id: str, limit: int = 20) -> list[dict[str, Any]]:
+        """The workspace's Test Runs of a flow, newest first (without their results)."""
+        cols = [c for c in test_runs.c if c.name != "results"]
+        query = (
+            sa.select(*cols)
+            .where(test_runs.c.flow_id == flow_id, test_runs.c.workspace_id == context.current())
+            .order_by(test_runs.c.created_at.desc())
+            .limit(limit)
+        )
+        async with self.reader.connect() as conn:
+            return [dict(r._mapping) for r in await conn.execute(query)]
+
+    async def update_test_run(self, run_id: str, **values: Any) -> None:
+        async with self._tx() as conn:
+            await conn.execute(test_runs.update().where(test_runs.c.id == run_id).values(**values))
+
+    async def set_baseline(self, run_id: str, flow_id: str) -> None:
+        """Make this the flow's baseline (in its workspace); the one before stops being it."""
+        async with self._tx() as conn:
+            await conn.execute(
+                test_runs.update()
+                .where(
+                    test_runs.c.flow_id == flow_id,
+                    test_runs.c.workspace_id == context.current(),
+                    test_runs.c.baseline.is_(True),
+                )
+                .values(baseline=False)
+            )
+            await conn.execute(
+                test_runs.update().where(test_runs.c.id == run_id).values(baseline=True)
+            )
+
+    async def baseline_of(self, flow_id: str) -> dict[str, Any] | None:
+        query = sa.select(test_runs).where(
+            test_runs.c.flow_id == flow_id,
+            test_runs.c.workspace_id == context.current(),
+            test_runs.c.baseline.is_(True),
+        )
+        async with self.reader.connect() as conn:
+            return _row((await conn.execute(query.limit(1))).first())
 
     async def get_upload(self, upload_id: str) -> dict[str, Any] | None:
         async with self.reader.connect() as conn:
