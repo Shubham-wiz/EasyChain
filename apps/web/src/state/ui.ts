@@ -3,7 +3,7 @@ import { create } from "zustand";
 export type Mode = "beginner" | "pro";
 export type SettingsTab = "keys" | "mcp" | "notifications" | "sandbox" | "people" | "api-keys" | "audit" | "network" | "sso" | "workspaces";
 type Theme = "light" | "dark";
-export type RightTab = "inspect" | "run" | "copilot";
+export type RightTab = "inspect" | "run" | "tests" | "copilot";
 
 function stored<T extends string>(key: string, fallback: T): T {
   try {

@@ -730,7 +730,11 @@ def cmd_test(args: argparse.Namespace) -> int:
         print(f"{'✓' if r.passed else '✗'} {r.name}")
         for failure in r.failures:
             print(f"    {failure}")
-    print(f"{passed}/{len(results)} passed")
+        for note in r.skipped:
+            print(f"    – {note}")
+    skipped = sum(bool(r.skipped) for r in results)
+    note = f" ({skipped} with checks skipped)" if skipped else ""
+    print(f"{passed}/{len(results)} passed{note}")
     return 0 if passed == len(results) else 1
 
 

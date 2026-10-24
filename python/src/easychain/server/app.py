@@ -74,6 +74,7 @@ from .secrets import SecretStore, VaultLocked, masked, unmasked
 from .spaces import Space, Spaces, in_workspace
 from .sso import add_sso_routes
 from .store import FlowNotFound, FlowStore
+from .testsets_api import add_testset_routes
 from .worker import Worker, sandbox_settings
 from .worker import fire as fire_trigger
 
@@ -291,6 +292,7 @@ def create_app(
     add_audit_routes(app)
     add_network_routes(app)
     add_sso_routes(app)
+    add_testset_routes(app)
     app.add_middleware(AuditMiddleware)
     add_knowledge_routes(app, home_path)
     origins = os.environ.get(

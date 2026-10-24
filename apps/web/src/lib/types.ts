@@ -723,3 +723,39 @@ export interface NewApiKey {
   key: string;
   created_at: number;
 }
+
+/** A flow's Test Set (server/testsets_api.py). Cases are as in the YAML file. */
+export interface TestSetInfo {
+  file: string;
+  exists: boolean;
+  flow: string;
+  stand_in: boolean;
+  judge_model: string | null;
+  cases: import("./copilot").TestCase[];
+  /** ${name} values the cases use, given when they're run. */
+  variables: string[];
+}
+
+/** One check of a case: passed, failed, or skipped (passed is null). */
+export interface CheckResult {
+  name: string;
+  passed: boolean | null;
+  message: string;
+}
+
+export interface CaseRunResult {
+  name: string;
+  passed: boolean;
+  failures: string[];
+  skipped: string[];
+  output: unknown;
+  checks: CheckResult[];
+  metrics: { seconds: number; tokens: number; cost: number | null; tools: string[] };
+}
+
+export interface TestRunResult {
+  results: CaseRunResult[];
+  passed: number;
+  total: number;
+  stand_in: boolean;
+}

@@ -70,7 +70,7 @@ phases:
       "5.6d Workspaces and per-workspace vaults": done   # scoped_env.py (secrets layered over os.environ), current_workspace.py, server/spaces.py (Space, in_workspace), migration 0006 (workspace_id), PERMISSIONS server_owner, Knowledge Base workspace_id + in_this_workspace, runtime/workspace_store.py, easychain workspaces, WorkspaceSwitcher + Settings -> Workspaces, tests/test_workspaces.py, e2e/workspaces.spec.ts, docs/workspaces.md
       "5.6e OIDC single sign-on (local test provider)": done   # server/sso.py, migration 0005 (user_identities), testing/oidc_provider.py, Settings -> Single sign-on, tests/test_sso.py, e2e/auth.spec.ts, docs/sso.md
       "5.6f Egress allow-list": done   # egress.py (policy, GuardedBackend, GuardedHttpx), server/network.py, RunOptions.egress, Settings -> Network, tests/test_egress.py, docs/network.md
-      "5.1 Test Sets editor and Checks": pending
+      "5.1 Test Sets editor and Checks": done   # checks.py, testsets.py (CaseResult.checks/metrics, case_problems), server/testsets_api.py, components/tests/TestsPanel.tsx, lib/checks.ts, tests/test_checks.py, e2e/tests.spec.ts, docs/testing.md, decision 5.16
       "5.2 Test Runs and baselines": pending
       "5.3 CI gate": pending
       "5.4 Environments and Publish": pending
@@ -89,11 +89,11 @@ waiting_for_review: false
 open_questions: []
 
 tests:
-  measured_at: 2026-10-23, 5.6d
-  python: {passed: 597, skipped: 0, on: "Linux with SQLite, Postgres and Docker (the sandbox tests); Windows and Linux in CI"}
-  web_unit: {passed: 104}
+  measured_at: 2026-10-24, 5.1
+  python: {passed: 606, skipped: 0, on: "Linux with SQLite, Postgres and Docker (the sandbox tests); Windows and Linux in CI"}
+  web_unit: {passed: 106}
   client: {passed: 13}
-  e2e: {passed: 43, skipped_unless_SCREENSHOTS: 3, on: "Linux (CI)"}
+  e2e: {passed: 44, skipped_unless_SCREENSHOTS: 3, on: "Linux (CI)"}
   template_test_sets: {support-bot: "12/12", sql-analyst: "10/10", supervisor-team: "10/10", handoff-chat: "10/10", plan-and-execute: "10/10", research-assistant: "10/10", inbox-triage: "10/10", others: all pass}
   compiler_coverage: 0.94
   python_end_of_phase_4: {passed: 513, compiler_coverage: 0.94}

@@ -310,12 +310,12 @@ updated in the same commit as the work (decision 5.6). Each phase's report has t
 - [x] ✅ 5.6e Single sign-on (OpenID Connect, PKCE, ID tokens checked), tested against a local test provider; new people get a role by domain; Settings → Single sign-on; setup for Okta, Google and Entra ([docs](docs/sso.md))
 - [x] ✅ 5.6f Egress allow-list: a shared server reaches public sites, and internal addresses only when allowed (or only an allow-list); Web request steps, Knowledge Base pages, OpenAPI documents and MCP servers; checked again at connect time against DNS rebinding; Settings → Network ([docs](docs/network.md))
 
-**5.1 Test Sets editor and Checks**
+**5.1 Test Sets editor and Checks** ✅
 
-- [ ] ⬜ Edit Test Set cases in the app (inputs, scripted answers, expected values)
-- [ ] ⬜ Checks: equals, contains, JSON schema, tool calls, route, cost and time budgets
-- [ ] ⬜ AI judge with a rubric (any model with a key; skipped without one)
-- [ ] ⬜ Trajectory checks (the order of tool calls)
+- [x] ✅ Edit Test Set cases in the app: a Tests tab with inputs, Ask a Human answers, scripted AI turns and checks; run all or one case and read why each check failed ([docs](docs/testing.md))
+- [x] ✅ Checks: equals, contains, matches, lengths, JSON schema, numbers, one of; steps, route, tools, tool calls; time, token and cost budgets over every part of a case
+- [x] ✅ AI judge with a rubric (any model with a key; skipped without one, and with the stand-in AI)
+- [x] ✅ Trajectory checks (the order of tool calls: in order, exact, any order)
 
 **5.2 Test Runs and baselines**
 

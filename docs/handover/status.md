@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-10-23 (Phase 5: 5.8 and 5.6 are done: sign-in, single sign-on, people, roles, keys, a role-aware web app, the audit log, the egress allow-list and workspaces; 5.1, Test Sets and Checks, is next)._
+_Last updated: 2026-10-24 (Phase 5: 5.8, 5.6 and 5.1 are done: sign-in, single sign-on, people, roles, keys, a role-aware web app, the audit log, the egress allow-list, workspaces, and Test Sets edited and run in the app with every kind of check; 5.2, Test Runs and baselines, is next)._
 
 ## In one paragraph
 
@@ -56,11 +56,11 @@ issues under *Fix later* (decision 5.6).
 
 | Suite | Result (2026-10-21, end of Phase 4) |
 |---|---|
-| Python on Linux (`pnpm test`, and CI) | 597 pass (2026-10-23, 5.6d), with SQLite, Postgres (+ pgvector in CI) and Docker (the sandbox escape tests; skipped without Docker); compiler and steps coverage 94% |
+| Python on Linux (`pnpm test`, and CI) | 606 pass (2026-10-24, 5.1), with SQLite, Postgres (+ pgvector in CI) and Docker (the sandbox escape tests; skipped without Docker); compiler and steps coverage 94% |
 | Python on Windows 11 (CI) | all pass |
-| Web unit (vitest) | 104 passed |
+| Web unit (vitest) | 106 passed |
 | Client package (vitest) | 13 passed |
-| Playwright e2e | 43 passed (Linux), three on a second server with sign-in on (sign-in, each role, single sign-on), one making and switching workspaces; the screenshot spec runs only with `SCREENSHOTS=1` |
+| Playwright e2e | 44 passed (Linux), three on a second server with sign-in on (sign-in, each role, single sign-on), one making and switching workspaces, one writing and running a Test Set case; the screenshot spec runs only with `SCREENSHOTS=1` |
 | Template Test Sets | all 13 pass (`tests/test_templates.py`), with the stand-in AI and scripted turns; research-assistant 10/10, inbox-triage 10/10 |
 | Lint | ruff check + format clean; tsc clean for web and client |
 
@@ -82,8 +82,11 @@ Compose, and **Windows** (Python suite, CLI and worker, web checks, the app serv
    - Done: ~~5.6d, workspaces and per-workspace vaults~~ ([workspaces.md](../workspaces.md),
      decision 5.15). Secrets reach runs through a per-run layer over `os.environ`
      (`scoped_env.py`), which 5.4's environments will reuse (decision 5.13).
-3. **Next: 5.1, Test Sets editor and Checks.** Then 5.2–5.3 (Test Runs, CI gate), 5.4–5.5
-   (environments, Publish, model gateway) and 5.7 (dashboards and tracing).
+3. ~~**5.1, Test Sets editor and Checks**~~ (done): the Tests tab, `checks.py` (values, JSON
+   schema, the run, the order of tool calls, budgets, the AI judge), and the Test Sets API
+   ([testing.md](../testing.md), decision 5.16).
+4. **Next: 5.2, Test Runs and baselines**, then 5.3 (CI gate), 5.4–5.5 (environments,
+   Publish, model gateway) and 5.7 (dashboards and tracing).
 
 ## GitHub
 

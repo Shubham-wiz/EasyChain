@@ -218,6 +218,7 @@ PERMISSIONS: dict[tuple[str, str], str] = {
     ("GET", "/api/flows/{flow_id}/yaml"): "viewer",
     ("GET", "/api/flows/{flow_id}/export"): "viewer",
     ("GET", "/api/flows/{flow_id}/versions"): "viewer",
+    ("GET", "/api/flows/{flow_id}/tests"): "viewer",
     ("GET", "/api/versions/{version_id}"): "viewer",
     ("POST", "/api/check"): "viewer",
     ("POST", "/api/compile"): "viewer",
@@ -246,11 +247,14 @@ PERMISSIONS: dict[tuple[str, str], str] = {
     ("POST", "/api/runs/{run_id}/continue"): "runner",
     ("POST", "/api/runs/{run_id}/fork"): "runner",
     ("POST", "/api/inbox/{item_id}/answer"): "runner",
+    # running a flow's Test Set (a flow given in full needs an Editor: see the route)
+    ("POST", "/api/flows/{flow_id}/tests/run"): "runner",
     # editing
     ("POST", "/api/flows"): "editor",
     ("PUT", "/api/flows/{flow_id}"): "editor",
     ("DELETE", "/api/flows/{flow_id}"): "editor",
     ("POST", "/api/flows/{flow_id}/tests"): "editor",
+    ("PUT", "/api/flows/{flow_id}/tests"): "editor",
     ("POST", "/api/triggers"): "editor",
     ("PATCH", "/api/triggers/{trigger_id}"): "editor",
     ("DELETE", "/api/triggers/{trigger_id}"): "editor",

@@ -96,7 +96,8 @@ step has the same builder (**Reply format**).
 ## Testing agents
 
 Agent runs aren't deterministic, so test what matters: which tools were called and what came
-out. Test Sets (Phase 5 brings the full editor) can already check that:
+out. Test Sets ([testing.md](testing.md) has every check, and the Tests tab edits them) check
+that:
 
 ```yaml
 flow: order-helper.flow.yaml

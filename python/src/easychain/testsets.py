@@ -1,7 +1,6 @@
-"""Minimal Test Sets: run a flow over example inputs and apply pass/fail checks.
-
-This is the Phase 1 groundwork for Test Sets + Checks (Phase 5 adds LLM-as-judge,
-trajectory checks, Test Runs and baselines). File format::
+"""Test Sets: run a flow over example cases and apply their checks (checks.py has every check;
+docs/testing.md describes them). A Test Set sits next to its flow, as
+``<flow id>.tests.yaml``. File format::
 
     flow: summarise-url.flow.yaml        # relative to this file
     cases:
@@ -44,20 +43,24 @@ from typing import Any
 
 import yaml
 
+from .checks import (
+    RUN_CHECKS,
+    VALUE_RULES,
+    Check,
+    RunFacts,
+    check_value,
+    evaluate,
+    judge,
+    lookup,
+)
 from .runtime import RunOptions, run_flow
 from .runtime.standin import Script
 from .spec import FlowSpec, load_spec
 
-CHECKS = (
-    "equals",
-    "contains",
-    "not_contains",
-    "matches",
-    "not_empty",
-    "max_length",
-    "min_length",
-    "count",
-)
+# Kept for older imports: the checks themselves are in checks.py.
+CHECKS = VALUE_RULES
+check_value = check_value
+_lookup = lookup
 
 
 @dataclass
@@ -66,6 +69,25 @@ class CaseResult:
     passed: bool
     failures: list[str] = field(default_factory=list)
     output: Any = None
+    # Every check, passed, failed or skipped (checks.Check), and the run's time, tokens, cost
+    # and tool calls.
+    checks: list[Check] = field(default_factory=list)
+    metrics: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def skipped(self) -> list[str]:
+        return [f"{c.name}: {c.message}" for c in self.checks if c.passed is None]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "passed": self.passed,
+            "failures": self.failures,
+            "skipped": self.skipped,
+            "output": self.output,
+            "checks": [c.to_dict() for c in self.checks],
+            "metrics": self.metrics,
+        }
 
 
 def _substitute(value: Any, variables: dict[str, str]) -> Any:
@@ -82,62 +104,27 @@ def _substitute(value: Any, variables: dict[str, str]) -> Any:
     return value
 
 
-def _lookup(event: dict[str, Any], path: str) -> Any:
-    node: Any = event
-    for part in path.split("."):
-        if isinstance(node, dict):
-            node = node.get(part)
-        elif isinstance(node, list) and part.lstrip("-").isdigit():
-            idx = int(part)
-            node = node[idx] if -len(node) <= idx < len(node) else None
-        else:
-            return None
-    return node
-
-
-def check_value(value: Any, rules: Any) -> list[str]:
-    if not isinstance(rules, dict):
-        rules = {"equals": rules}
-    failures = []
-    text = value if isinstance(value, str) else ("" if value is None else str(value))
-    for rule, expected in rules.items():
-        if rule == "equals" and value != expected:
-            failures.append(f"expected {expected!r}, got {value!r}")
-        elif rule == "contains":
-            for item in expected if isinstance(expected, list) else [expected]:
-                if str(item).lower() not in text.lower():
-                    failures.append(f"expected to contain {item!r}")
-        elif rule == "not_contains":
-            for item in expected if isinstance(expected, list) else [expected]:
-                if str(item).lower() in text.lower():
-                    failures.append(f"expected not to contain {item!r}")
-        elif rule == "matches" and not re.search(str(expected), text, re.S):
-            failures.append(f"expected to match /{expected}/")
-        elif rule == "not_empty" and expected and not value:
-            failures.append("expected a value, got nothing")
-        elif rule == "max_length" and len(text) > int(expected):
-            failures.append(f"expected at most {expected} characters, got {len(text)}")
-        elif rule == "min_length" and len(text) < int(expected):
-            failures.append(f"expected at least {expected} characters, got {len(text)}")
-        elif rule == "count" and (not isinstance(value, list) or len(value) != int(expected)):
-            got = len(value) if isinstance(value, list) else "no list"
-            failures.append(f"expected {expected} items, got {got}")
-        elif rule not in CHECKS:
-            failures.append(f"unknown check {rule!r}")
-    return failures
-
-
 async def run_case(
-    spec: FlowSpec, case: dict[str, Any], stand_in: bool, sandbox: Any = None
+    spec: FlowSpec,
+    case: dict[str, Any],
+    stand_in: bool,
+    sandbox: Any = None,
+    *,
+    judge_model: str | None = None,
+    options: dict[str, Any] | None = None,
 ) -> CaseResult:
+    """Run one case and apply its checks. ``options``: more RunOptions (MCP servers, the egress
+    policy, Sub-flows) for a run made by the server."""
     name = case.get("name") or "case"
-    options = RunOptions(
-        stand_in=stand_in, thread_id=case.get("thread") or uuid.uuid4().hex, sandbox=sandbox
+    run_options = RunOptions(
+        stand_in=stand_in,
+        thread_id=case.get("thread") or uuid.uuid4().hex,
+        sandbox=sandbox,
+        **(options or {}),
     )
     if stand_in and case.get("script"):
         # What the stand-in AI says, turn by turn (a real model ignores this).
-        options.script = Script(case["script"])
-    failures: list[str] = []
+        run_options.script = Script(case["script"])
     # Answers for Ask a Human steps, in the order the run asks.
     answers = list(case.get("answers") or [])
     # A chat case can have several turns in one conversation; checks apply to the last.
@@ -145,76 +132,33 @@ async def run_case(
     events: list[dict[str, Any]] = []
     final: dict[str, Any] = {}
     for turn in turns:
-        options.action, options.resume = "start", None
-        final, more = await run_flow(spec, turn, options)
+        run_options.action, run_options.resume = "start", None
+        final, more = await run_flow(spec, turn, run_options)
         events += more
         while final.get("status") == "paused" and final.get("reason") == "ask_human" and answers:
             waiting = final.get("interrupts") or []
             answer = answers.pop(0)
             resume = {waiting[0]["id"]: answer} if len(waiting) == 1 else answer
-            options.action, options.resume = "resume", resume
-            final, more = await run_flow(spec, None, options)
+            run_options.action, run_options.resume = "resume", resume
+            final, more = await run_flow(spec, None, run_options)
             events += more
+    facts = RunFacts(final, events, turns[-1] if len(turns) == 1 else turns)
+    expect = dict(case.get("expect") or {})
+    checks = evaluate(expect, facts)
     if answers:
         # Each answer stands for a pause the case expects; one left over means the run never
         # asked for it (it didn't pause, or paused fewer times).
-        failures.append(
-            f"answers: {len(answers)} answer(s) weren't used; the run didn't ask for them"
-        )
-    expect = dict(case.get("expect") or {})
-    expected_status = expect.pop("status", "ok")
-    if final.get("status") != expected_status:
-        message = (final.get("error") or {}).get("message", "")
-        failures.append(
-            f"status: expected {expected_status}, got {final.get('status')} {message}".strip()
-        )
-    if "steps" in expect:
-        ran = [e["step"] for e in events if e["type"] == "step_finished"]
-        for step in expect.pop("steps"):
-            if step not in ran:
-                failures.append(f"steps: expected {step!r} to run")
-    if "tools" in expect:
-        called = [e["tool"] for e in events if e["type"] == "tool_started"]
-        for tool in expect.pop("tools"):
-            if tool not in called:
-                failures.append(f"tools: expected the agent to call {tool!r} (called {called})")
-    if "tool_calls" in expect:
-        count = len([e for e in events if e["type"] == "tool_started"])
-        rule = expect.pop("tool_calls")
-        limit = rule.get("max") if isinstance(rule, dict) else None
-        if limit is not None and count > int(limit):
-            failures.append(f"tool_calls: expected at most {limit}, got {count}")
-        elif not isinstance(rule, dict) and count != int(rule):
-            failures.append(f"tool_calls: expected {rule}, got {count}")
-    if "not_tools" in expect:
-        called = [e["tool"] for e in events if e["type"] == "tool_started"]
-        for tool in expect.pop("not_tools"):
-            if tool in called:
-                failures.append(f"tools: expected the agent not to call {tool!r}")
-    if "helpers" in expect:
-        handed = [e["to_helper"] for e in events if e.get("to_helper") and "result" not in e]
-        for helper in expect.pop("helpers"):
-            if helper not in handed:
-                failures.append(f"helpers: expected a task for {helper!r} (got {handed})")
-    if "files" in expect:
-        # A Deep Agent's files, {path: text}, in whichever output field holds them.
-        output = final.get("output") or {}
-        for path, rules in expect.pop("files").items():
-            found = next(
-                (v[path] for v in output.values() if isinstance(v, dict) and path in v), None
+        checks.append(
+            Check(
+                "answers",
+                False,
+                f"{len(answers)} answer(s) weren't used; the run didn't ask for them",
             )
-            if found is None:
-                failures.append(f"files: expected the file {path!r}")
-                continue
-            failures += [f"files {path}: {msg}" for msg in check_value(found, rules)]
-    if "route" in expect:
-        routes = {e["step"]: e["exit"] for e in events if e["type"] == "route"}
-        for step, label in expect.pop("route").items():
-            if routes.get(step) != label:
-                failures.append(f"route {step}: expected {label!r}, got {routes.get(step)!r}")
-    for path, rules in expect.items():
-        failures += [f"{path}: {msg}" for msg in check_value(_lookup(final, path), rules)]
-    return CaseResult(name, not failures, failures, final.get("output"))
+        )
+    if expect.get("judge"):
+        checks.append(await judge(expect["judge"], facts, judge_model, stand_in=stand_in))
+    failures = [f"{c.name}: {c.message}" for c in checks if c.passed is False]
+    return CaseResult(name, not failures, failures, final.get("output"), checks, facts.metrics())
 
 
 async def run_test_set(
@@ -241,7 +185,75 @@ async def run_test_set(
         ensure_sample_knowledge()
     if stand_in is None:
         stand_in = bool(data.get("stand_in"))
-    return [await run_case(spec, case, stand_in, sandbox) for case in data.get("cases", [])]
+    model = data.get("judge_model")
+    return [
+        await run_case(spec, case, stand_in, sandbox, judge_model=model)
+        for case in data.get("cases", [])
+    ]
+
+
+# What a case may hold (anything else is a mistake worth saying).
+CASE_KEYS = ("name", "inputs", "turns", "answers", "script", "expect", "thread", "notes")
+
+
+def read_test_set(path: Path, flow_file: str) -> dict[str, Any]:
+    """A Test Set file as data (an empty one when there's no file yet)."""
+    if not path.exists():
+        return {"flow": flow_file, "cases": []}
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(data, dict):
+        raise ValueError(f"{path.name} isn't a Test Set: it should be a mapping with cases.")
+    data.setdefault("flow", flow_file)
+    data["cases"] = [c for c in data.get("cases") or [] if isinstance(c, dict)]
+    return data
+
+
+def write_test_set(path: Path, data: dict[str, Any]) -> None:
+    """Save a Test Set (YAML, cases in order; comments in a hand-written file aren't kept)."""
+    path.write_text(
+        yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8", newline="\n"
+    )
+
+
+def case_problems(cases: list[Any]) -> list[str]:
+    """What's wrong with cases before they are saved: each says which case and what."""
+    problems: list[str] = []
+    seen: set[str] = set()
+    for n, case in enumerate(cases, start=1):
+        if not isinstance(case, dict):
+            problems.append(f"Case {n} isn't a mapping.")
+            continue
+        name = str(case.get("name") or "").strip()
+        label = f"“{name}”" if name else f"Case {n}"
+        if not name:
+            problems.append(f"{label} needs a name.")
+        elif name in seen:
+            problems.append(f"Two cases are called {label}; give each its own name.")
+        seen.add(name)
+        unknown = sorted(set(case) - set(CASE_KEYS))
+        if unknown:
+            problems.append(f"{label}: unknown part {', '.join(unknown)}.")
+        for key, kind in (("inputs", dict), ("turns", list), ("answers", list), ("script", list)):
+            if key in case and case[key] is not None and not isinstance(case[key], kind):
+                what = "a mapping of field: value" if kind is dict else "a list"
+                problems.append(f"{label}: {key} should be {what}.")
+        expect = case.get("expect")
+        if expect is None:
+            continue
+        if not isinstance(expect, dict):
+            problems.append(f"{label}: expect should map what to check to what it should be.")
+            continue
+        for key, rule in expect.items():
+            if key in RUN_CHECKS or key == "status":
+                continue
+            rules = rule if isinstance(rule, dict) else {"equals": rule}
+            bad = sorted(set(rules) - set(VALUE_RULES))
+            if bad:
+                problems.append(
+                    f"{label}: {key} has an unknown check {', '.join(bad)} (use one of: "
+                    f"{', '.join(VALUE_RULES)})."
+                )
+    return problems
 
 
 def add_cases(path: Path, flow_file: str, cases: list[dict[str, Any]]) -> dict[str, int]:

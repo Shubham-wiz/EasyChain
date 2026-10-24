@@ -18,6 +18,11 @@ cases:
   expect:
     output.messages.-1.content: {contains: five working days}
     output.sources.0.source: returns.md
+    max_seconds: 30
+    # Graded by an AI model with --real-model and a key; skipped with the stand-in AI.
+    judge:
+      rubric: Says how long refunds take, in working days, and promises nothing the help
+        centre doesn't say.
 - name: Where the shop ships
   inputs:
     messages: [{role: user, content: "Which countries do you ship to?"}]

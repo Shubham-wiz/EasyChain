@@ -16,6 +16,7 @@ import { SettingsDialog } from "./dialogs/SettingsDialog";
 import { TriggersDialog } from "./dialogs/TriggersDialog";
 import { Inspector } from "./inspector/Inspector";
 import { CopilotPanel } from "./CopilotPanel";
+import { TestsPanel } from "./tests/TestsPanel";
 import { RunPanel } from "./run/RunPanel";
 import { StepLibrary } from "./StepLibrary";
 import { TopBar } from "./TopBar";
@@ -249,6 +250,7 @@ export function Editor({ flowId, tryIt, onHome }: { flowId: string; tryIt: boole
               <TabsList>
                 <TabsTrigger value="inspect">Inspect</TabsTrigger>
                 <TabsTrigger value="run">Run</TabsTrigger>
+                <TabsTrigger value="tests">Tests</TabsTrigger>
                 {canEdit && <TabsTrigger value="copilot">Copilot</TabsTrigger>}
               </TabsList>
               <TabsContent value="inspect" className="min-h-0 flex-1 overflow-hidden">
@@ -258,6 +260,9 @@ export function Editor({ flowId, tryIt, onHome }: { flowId: string; tryIt: boole
               </TabsContent>
               <TabsContent value="run" className="min-h-0 flex-1 overflow-hidden" forceMount hidden={rightTab !== "run"}>
                 <RunPanel />
+              </TabsContent>
+              <TabsContent value="tests" className="min-h-0 flex-1 overflow-hidden">
+                <TestsPanel />
               </TabsContent>
               <TabsContent value="copilot" className="min-h-0 flex-1 overflow-hidden" forceMount hidden={rightTab !== "copilot"}>
                 <CopilotPanel />
