@@ -52,6 +52,30 @@ jobs:
       - name: Compiler coverage is at least 90%
         run: uv run coverage report --include="src/easychain/compiler/*,src/easychain/steps/*" --fail-under=90
 
+  flows:
+    # The CI gate (docs/ci.md) over the templates' Test Sets, through this repository's own
+    # action: a case that passes less often than its committed baseline fails the job.
+    name: Flows (easychain eval)
+    runs-on: ubuntu-latest
+    env:
+      # The templates' own Code steps, run in the job's process (no Docker image to pull).
+      EASYCHAIN_SANDBOX: "off"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/easychain-eval
+        with:
+          install: ./python
+          stand-in: "true"
+          test-sets: >-
+            python/src/easychain/templates/approve-reply.tests.yaml
+            python/src/easychain/templates/chat-assistant.tests.yaml
+            python/src/easychain/templates/handoff-chat.tests.yaml
+            python/src/easychain/templates/inbox-triage.tests.yaml
+            python/src/easychain/templates/plan-and-execute.tests.yaml
+            python/src/easychain/templates/reply-to-feedback.tests.yaml
+            python/src/easychain/templates/supervisor-team.tests.yaml
+            python/src/easychain/templates/support-bot.tests.yaml
+
   web:
     name: Web (types, unit tests, build)
     runs-on: ubuntu-latest

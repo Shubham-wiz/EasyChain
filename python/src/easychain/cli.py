@@ -738,6 +738,71 @@ def cmd_test(args: argparse.Namespace) -> int:
     return 0 if passed == len(results) else 1
 
 
+def cmd_eval(args: argparse.Namespace) -> int:
+    """The CI gate: run a Test Set and compare it with its baseline (docs/ci.md)."""
+    from .evaluate import gate, load_baseline, markdown, run_evaluation, save_baseline
+
+    path = Path(args.file)
+    default = path.with_name(path.name.removesuffix(".tests.yaml") + ".baseline.json")
+    baseline_path = Path(args.baseline) if args.baseline else default
+    variables = dict(v.split("=", 1) for v in args.var or [])
+    stand_in = True if args.stand_in else False if args.real_model else None
+    try:
+        baseline = None if args.save_baseline else load_baseline(baseline_path)
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        return 2
+    evaluation = _platform.run(
+        run_evaluation(
+            path,
+            variables=variables,
+            stand_in=stand_in,
+            repeat=args.repeat,
+            budget=args.budget,
+            sandbox=_sandbox(args),
+        )
+    )
+    gate(evaluation, baseline, max_slower=args.max_slower, max_costlier=args.max_costlier)
+    changes = {r["name"]: r for r in (evaluation.comparison or {}).get("cases", [])}
+    for case in evaluation.cases:
+        mark = "✓" if case["passed"] == case["runs"] else "✗"
+        runs = f" ({case['passed']}/{case['runs']})" if case["runs"] > 1 else ""
+        change = changes.get(case["name"], {}).get("change")
+        print(f"{mark} {case['name']}{runs}" + (f"  [{change}]" if change else ""))
+        for failure in case["failures"]:
+            print(f"    {failure}")
+    s = evaluation.summary
+    against = f", against {baseline_path.name}" if baseline is not None else ", no baseline"
+    print(f"{s['passed']}/{s['total']} passed{against}")
+    for problem in evaluation.problems:
+        print(problem)
+    if args.summary:
+        with open(args.summary, "a", encoding="utf-8", newline="\n") as out:
+            out.write(markdown(evaluation) + "\n")
+    if args.json:
+        Path(args.json).write_text(
+            json.dumps(
+                {
+                    "ok": evaluation.ok,
+                    "problems": evaluation.problems,
+                    "summary": evaluation.summary,
+                    "cases": evaluation.cases,
+                    "not_run": evaluation.not_run,
+                    "comparison": evaluation.comparison,
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+    if args.save_baseline:
+        save_baseline(baseline_path, evaluation)
+        print(f"Saved the baseline to {baseline_path}")
+        return 0
+    return 0 if evaluation.ok else 1
+
+
 def cmd_schema(args: argparse.Namespace) -> int:
     from .spec.schema import flow_json_schema_text
 
@@ -851,6 +916,40 @@ def build_parser() -> argparse.ArgumentParser:
         "EASYCHAIN_SANDBOX), docker (always), off (in this process)",
     )
     p.set_defaults(func=cmd_test)
+
+    p = sub.add_parser(
+        "eval", help="the CI gate: run a Test Set and fail on a regression against its baseline"
+    )
+    p.add_argument("file", help="a Test Set (*.tests.yaml)")
+    p.add_argument(
+        "--baseline", help="the baseline file (default: <name>.baseline.json next to the file)"
+    )
+    p.add_argument(
+        "--save-baseline", action="store_true", help="save this run as the baseline (always passes)"
+    )
+    p.add_argument("--repeat", type=int, default=1, help="run each case this many times")
+    p.add_argument("--var", action="append", metavar="NAME=VALUE")
+    which = p.add_mutually_exclusive_group()
+    which.add_argument("--stand-in", action="store_true", help="use the stand-in AI (no keys)")
+    which.add_argument(
+        "--real-model", action="store_true", help="use the flows' real models (needs their keys)"
+    )
+    p.add_argument(
+        "--max-slower", type=float, metavar="PERCENT", help="fail when the run is this much slower"
+    )
+    p.add_argument(
+        "--max-costlier",
+        type=float,
+        metavar="PERCENT",
+        help="fail when the run costs this much more",
+    )
+    p.add_argument(
+        "--budget", type=float, metavar="DOLLARS", help="stop starting cases once this is spent"
+    )
+    p.add_argument("--summary", help="append a Markdown report here (e.g. $GITHUB_STEP_SUMMARY)")
+    p.add_argument("--json", help="write the results here as JSON")
+    p.add_argument("--sandbox", choices=["auto", "docker", "off"], help="where Code steps run")
+    p.set_defaults(func=cmd_eval)
 
     p = sub.add_parser("schema", help="print the flow spec JSON Schema")
     p.add_argument("-o", "--output")

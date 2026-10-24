@@ -120,8 +120,9 @@ def describe_change(row: dict[str, Any]) -> str:
     if row["change"] == "gone":
         return f"{row['name']}: not in this run (was {row['before']:.0%})"
     parts = [f"{row['name']}: {row['change']} ({row['before']:.0%} → {row['after']:.0%})"]
-    if row.get("seconds"):
+    # Only changes that show at this precision.
+    if abs(row.get("seconds") or 0) >= 0.05:
         parts.append(f"{row['seconds']:+.1f} s")
-    if row.get("cost"):
+    if abs(row.get("cost") or 0) >= 0.00005:
         parts.append(f"{row['cost']:+.4f} $")
     return ", ".join(parts)

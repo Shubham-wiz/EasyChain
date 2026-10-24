@@ -317,17 +317,17 @@ updated in the same commit as the work (decision 5.6). Each phase's report has t
 - [x] ✅ AI judge with a rubric (any model with a key; skipped without one, and with the stand-in AI)
 - [x] ✅ Trajectory checks (the order of tool calls: in order, exact, any order)
 
-**5.2 Test Runs and baselines** 🚧
+**5.2 Test Runs and baselines** ✅
 
 - [x] ✅ Run a Test Set against a flow version and keep the results: on a worker, with the cases copied in, under Kept Test Runs in the Tests tab ([docs](docs/testing.md#test-runs-and-baselines))
 - [x] ✅ Compare with a baseline: better, same or worse per case (new and not run too); time and cost changes
 - [x] ✅ Repeat runs to measure flakiness with real models (1 to 10 times; a pass rate per case, flaky cases marked)
-- [ ] ⬜ Manual CI workflow for real-model checks before a release (decision 5.5): comes with `easychain eval` in 5.3
+- [x] ✅ Manual CI workflow for real-model checks before a release (decision 5.5): `.github/workflows/real-models.yml`, keys as repository secrets, a budget per Test Set ([docs](docs/ci.md#real-models-before-a-release))
 
-**5.3 CI gate**
+**5.3 CI gate** ✅
 
-- [ ] ⬜ `easychain eval` fails on a regression against the baseline
-- [ ] ⬜ GitHub Action and a guide for other CI systems; results posted as a summary
+- [x] ✅ `easychain eval` fails on a regression against the baseline (a baseline file in git; known failures aren't regressions; optional time and cost limits; a budget) ([docs](docs/ci.md))
+- [x] ✅ GitHub Action (`.github/actions/easychain-eval`) and a guide for other CI systems; results posted as a summary; Easy Chain's own CI gates the templates with it (the Flows job)
 
 **5.4 Environments and Publish**
 
@@ -401,6 +401,8 @@ yet.
 | F30 | Workspaces are kept apart inside Easy Chain, but a Code step run without the sandbox runs in the server's process and could read another workspace's files | 5.6d | backlog (require the sandbox outside the default workspace when sign-in is on); docs say to set it to required |
 | F31 | Exported code, `easychain run` and `easychain test` use the default workspace's secrets | 5.6d | 5.4 (environments) |
 | F32 | In the default workspace, a long-term memory search over every namespace can return fewer than its limit (other workspaces' items are filtered out after the search) | 5.6d | backlog |
+| F33 | The real-model workflow hasn't been run yet: it needs API keys stored as repository secrets (with a spending limit) | 5.2 | the owner, before a release |
+| F34 | **Run all** in the Tests tab waits for every case in one request; a long Test Set with real models can outlast a proxy's timeout | 5.1 | backlog (stream results; kept Test Runs already run on a worker) |
 
 ## Licence
 

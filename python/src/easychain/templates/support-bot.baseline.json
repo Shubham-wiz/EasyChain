@@ -1,0 +1,166 @@
+{
+  "format": "easychain-test-run/1",
+  "test_set": "support-bot.tests.yaml",
+  "flow": "support-bot.flow.yaml",
+  "stand_in": true,
+  "repeat": 1,
+  "created_at": 1792802034.8166761,
+  "summary": {
+    "total": 12,
+    "passed": 12,
+    "failed": 0,
+    "flaky": 0,
+    "skipped": 1,
+    "seconds": 0.26,
+    "tokens": 2568.0,
+    "cost": 0.0
+  },
+  "cases": [
+    {
+      "name": "Password reset, cited from the account page",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.073,
+      "tokens": 183.0,
+      "cost": 0.0
+    },
+    {
+      "name": "Refund times",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [
+        "judge: skipped: the case ran with the stand-in AI; the judge grades real models' answers"
+      ],
+      "seconds": 0.016,
+      "tokens": 281.0,
+      "cost": 0.0
+    },
+    {
+      "name": "Where the shop ships",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.016,
+      "tokens": 308.0,
+      "cost": 0.0
+    },
+    {
+      "name": "Returns window",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.016,
+      "tokens": 319.0,
+      "cost": 0.0
+    },
+    {
+      "name": "Deleting an account",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.015,
+      "tokens": 300.0,
+      "cost": 0.0
+    },
+    {
+      "name": "Pausing a subscription",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.017,
+      "tokens": 303.0,
+      "cost": 0.0
+    },
+    {
+      "name": "Charged twice",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.016,
+      "tokens": 179.0,
+      "cost": 0.0
+    },
+    {
+      "name": "Tracking a parcel",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.015,
+      "tokens": 168.0,
+      "cost": 0.0
+    },
+    {
+      "name": "A follow-up question uses the same chat",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.036,
+      "tokens": 527.0,
+      "cost": 0.0
+    },
+    {
+      "name": "Off-topic question goes to a colleague",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.016,
+      "tokens": 0.0,
+      "cost": 0.0
+    },
+    {
+      "name": "The weather isn't in the help centre either",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.015,
+      "tokens": 0.0,
+      "cost": 0.0
+    },
+    {
+      "name": "Waits for the colleague without an answer",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.009,
+      "tokens": 0.0,
+      "cost": 0.0
+    }
+  ]
+}

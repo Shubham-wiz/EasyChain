@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-10-24 (Phase 5: 5.8, 5.6 and 5.1 are done, and 5.2's kept Test Runs and baselines: sign-in, single sign-on, people, roles, keys, a role-aware web app, the audit log, the egress allow-list, workspaces, and Test Sets edited and run in the app with every kind of check; 5.3, the CI gate, is next)._
+_Last updated: 2026-10-24 (Phase 5: 5.8, 5.6, 5.1, 5.2 and 5.3 are done: sign-in, single sign-on, people, roles, keys, a role-aware web app, the audit log, the egress allow-list, workspaces, and Test Sets edited and run in the app with every kind of check, kept Test Runs with baselines, and the `easychain eval` CI gate; 5.4, environments and Publish, is next)._
 
 ## In one paragraph
 
@@ -56,7 +56,7 @@ issues under *Fix later* (decision 5.6).
 
 | Suite | Result (2026-10-21, end of Phase 4) |
 |---|---|
-| Python on Linux (`pnpm test`, and CI) | 609 pass (2026-10-24, 5.2), with SQLite, Postgres (+ pgvector in CI) and Docker (the sandbox escape tests; skipped without Docker); compiler and steps coverage 94% |
+| Python on Linux (`pnpm test`, and CI) | 613 pass (2026-10-24, 5.3), with SQLite, Postgres (+ pgvector in CI) and Docker (the sandbox escape tests; skipped without Docker); compiler and steps coverage 94% |
 | Python on Windows 11 (CI) | all pass |
 | Web unit (vitest) | 108 passed |
 | Client package (vitest) | 13 passed |
@@ -65,7 +65,9 @@ issues under *Fix later* (decision 5.6).
 | Lint | ruff check + format clean; tsc clean for web and client |
 
 CI jobs: Python (Linux, Postgres + pgvector), Web, End-to-end (Playwright), Docker image and
-Compose, and **Windows** (Python suite, CLI and worker, web checks, the app serving its page).
+Compose, **Windows** (Python suite, CLI and worker, web checks, the app serving its page), and
+**Flows** (`easychain eval` over eight templates' Test Sets against their baselines). The
+real-model workflow is started by hand and needs API keys as repository secrets.
 
 ## Next
 
@@ -85,11 +87,13 @@ Compose, and **Windows** (Python suite, CLI and worker, web checks, the app serv
 3. ~~**5.1, Test Sets editor and Checks**~~ (done): the Tests tab, `checks.py` (values, JSON
    schema, the run, the order of tool calls, budgets, the AI judge), and the Test Sets API
    ([testing.md](../testing.md), decision 5.16).
-4. **5.2, Test Runs and baselines**: kept Test Runs on the job queue, repeats and flaky cases,
-   a baseline per flow and the comparison with it are done (decision 5.17). Left: the manual
-   real-model CI workflow, which comes with `easychain eval`.
-5. **Next: 5.3, the CI gate** (`easychain eval`, a GitHub Action, the summary), then 5.4–5.5
-   (environments, Publish, model gateway) and 5.7 (dashboards and tracing).
+4. ~~**5.2, Test Runs and baselines**~~ (done): kept Test Runs on the job queue, repeats and
+   flaky cases, a baseline per flow and the comparison with it (decision 5.17), and the manual
+   real-model workflow.
+5. ~~**5.3, the CI gate**~~ (done): `easychain eval` against baseline files in git, the GitHub
+   Action, the Flows job in CI ([ci.md](../ci.md), decision 5.18).
+6. **Next: 5.4, environments and Publish**, then 5.5 (model gateway) and 5.7 (dashboards and
+   tracing).
 
 ## GitHub
 

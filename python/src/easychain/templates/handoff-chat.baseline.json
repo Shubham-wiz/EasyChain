@@ -1,0 +1,140 @@
+{
+  "format": "easychain-test-run/1",
+  "test_set": "handoff-chat.tests.yaml",
+  "flow": "handoff-chat.flow.yaml",
+  "stand_in": true,
+  "repeat": 1,
+  "created_at": 1792802021.156678,
+  "summary": {
+    "total": 10,
+    "passed": 10,
+    "failed": 0,
+    "flaky": 0,
+    "skipped": 0,
+    "seconds": 0.662,
+    "tokens": 6352.0,
+    "cost": 0.0
+  },
+  "cases": [
+    {
+      "name": "The front desk hands a flight request to the flights desk",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.114,
+      "tokens": 530.0,
+      "cost": 0.0
+    },
+    {
+      "name": "The next message goes straight to the desk that is helping",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.071,
+      "tokens": 797.0,
+      "cost": 0.0
+    },
+    {
+      "name": "The flights desk hands over to the hotels desk",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.095,
+      "tokens": 1027.0,
+      "cost": 0.0
+    },
+    {
+      "name": "A general question stays at the front desk",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.028,
+      "tokens": 328.0,
+      "cost": 0.0
+    },
+    {
+      "name": "A hotel request goes to the hotels desk",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.047,
+      "tokens": 511.0,
+      "cost": 0.0
+    },
+    {
+      "name": "Picking the desk that is already helping doesn't hand over again",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.049,
+      "tokens": 482.0,
+      "cost": 0.0
+    },
+    {
+      "name": "A city with no flights says so",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.048,
+      "tokens": 468.0,
+      "cost": 0.0
+    },
+    {
+      "name": "Handovers stop after three rounds",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.059,
+      "tokens": 582.0,
+      "cost": 0.0
+    },
+    {
+      "name": "Back from hotels to flights in a later turn",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.099,
+      "tokens": 1006.0,
+      "cost": 0.0
+    },
+    {
+      "name": "Without a script the stand-in still hands a flight request over",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.052,
+      "tokens": 621.0,
+      "cost": 0.0
+    }
+  ]
+}

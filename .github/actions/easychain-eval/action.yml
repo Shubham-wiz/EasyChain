@@ -1,0 +1,76 @@
+name: Easy Chain eval
+description: >-
+  Run Easy Chain Test Sets and fail when a case got worse than its baseline (or, with no
+  baseline yet, when a case fails). Writes a report to the run's summary page. See docs/ci.md.
+
+inputs:
+  test-sets:
+    description: Test Set files (*.tests.yaml), one a line or separated by spaces; globs work.
+    required: true
+  stand-in:
+    description: >-
+      "file" (as each Test Set says), "true" (the stand-in AI: free, no keys) or "false" (the
+      flows' real models, with keys from the environment).
+    default: file
+  repeat:
+    description: Run each case this many times (real models answer differently each time).
+    default: "1"
+  variables:
+    description: ${name} values the cases use, NAME=VALUE, one a line or separated by spaces.
+    default: ""
+  budget:
+    description: Stop starting cases once this many dollars are spent (real models). Empty for no limit.
+    default: ""
+  max-slower:
+    description: Fail when the whole run takes more than this percent longer than the baseline. Empty for no limit.
+    default: ""
+  max-costlier:
+    description: Fail when the whole run costs more than this percent more than the baseline. Empty for no limit.
+    default: ""
+  install:
+    description: What pip installs to get the `easychain` command.
+    default: "easychain @ git+https://github.com/Shubham-wiz/EasyChain@main#subdirectory=python"
+  python-version:
+    description: The Python to install it with.
+    default: "3.12"
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+    - name: Install Easy Chain
+      shell: bash
+      run: python -m pip install --quiet "${{ inputs.install }}"
+    - name: Run the Test Sets against their baselines
+      shell: bash
+      env:
+        TEST_SETS: ${{ inputs.test-sets }}
+        STAND_IN: ${{ inputs.stand-in }}
+        REPEAT: ${{ inputs.repeat }}
+        BUDGET: ${{ inputs.budget }}
+        MAX_SLOWER: ${{ inputs.max-slower }}
+        MAX_COSTLIER: ${{ inputs.max-costlier }}
+        VARIABLES: ${{ inputs.variables }}
+      run: |
+        set -u
+        args=(--repeat "$REPEAT" --summary "$GITHUB_STEP_SUMMARY")
+        case "$STAND_IN" in
+          true) args+=(--stand-in) ;;
+          false) args+=(--real-model) ;;
+        esac
+        [ -n "$BUDGET" ] && args+=(--budget "$BUDGET")
+        [ -n "$MAX_SLOWER" ] && args+=(--max-slower "$MAX_SLOWER")
+        [ -n "$MAX_COSTLIER" ] && args+=(--max-costlier "$MAX_COSTLIER")
+        for variable in $VARIABLES; do args+=(--var "$variable"); done
+        failed=0
+        shopt -s nullglob
+        for pattern in $TEST_SETS; do
+          for file in $pattern; do
+            echo "::group::$file"
+            easychain eval "$file" "${args[@]}" || failed=1
+            echo "::endgroup::"
+          done
+        done
+        exit $failed

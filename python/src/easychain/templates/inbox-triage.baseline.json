@@ -1,0 +1,140 @@
+{
+  "format": "easychain-test-run/1",
+  "test_set": "inbox-triage.tests.yaml",
+  "flow": "inbox-triage.flow.yaml",
+  "stand_in": true,
+  "repeat": 1,
+  "created_at": 1792802024.2614233,
+  "summary": {
+    "total": 10,
+    "passed": 10,
+    "failed": 0,
+    "flaky": 0,
+    "skipped": 0,
+    "seconds": 0.7,
+    "tokens": 7386.0,
+    "cost": 0.0
+  },
+  "cases": [
+    {
+      "name": "An urgent double charge is looked up, answered, ticketed, and checked by a person",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.214,
+      "tokens": 1580.0,
+      "cost": 0.0
+    },
+    {
+      "name": "A question about an order gets a reply, with no ticket and no pause",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.065,
+      "tokens": 764.0,
+      "cost": 0.0
+    },
+    {
+      "name": "A thank-you needs nothing from the helpers",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.021,
+      "tokens": 224.0,
+      "cost": 0.0
+    },
+    {
+      "name": "A sender who isn't a customer is noted as such",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.05,
+      "tokens": 520.0,
+      "cost": 0.0
+    },
+    {
+      "name": "A password question is answered from the help centre",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.048,
+      "tokens": 759.0,
+      "cost": 0.0
+    },
+    {
+      "name": "The person rejects the reply to an urgent email",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.049,
+      "tokens": 721.0,
+      "cost": 0.0
+    },
+    {
+      "name": "A ticket is opened only once per call, with the priority given",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.049,
+      "tokens": 538.0,
+      "cost": 0.0
+    },
+    {
+      "name": "The supervisor stops after five rounds, whatever it picks",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.137,
+      "tokens": 1431.0,
+      "cost": 0.0
+    },
+    {
+      "name": "Sorting keeps to its choices",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.044,
+      "tokens": 580.0,
+      "cost": 0.0
+    },
+    {
+      "name": "Without a script the stand-in sorts the email, finishes within the round limit, and asks a person",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.023,
+      "tokens": 269.0,
+      "cost": 0.0
+    }
+  ]
+}

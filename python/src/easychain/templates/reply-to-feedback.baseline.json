@@ -1,0 +1,140 @@
+{
+  "format": "easychain-test-run/1",
+  "test_set": "reply-to-feedback.tests.yaml",
+  "flow": "reply-to-feedback.flow.yaml",
+  "stand_in": true,
+  "repeat": 1,
+  "created_at": 1792802029.6341772,
+  "summary": {
+    "total": 10,
+    "passed": 10,
+    "failed": 0,
+    "flaky": 0,
+    "skipped": 0,
+    "seconds": 0.164,
+    "tokens": 1561.0,
+    "cost": 0.0
+  },
+  "cases": [
+    {
+      "name": "Complaint: The app crashed and I lost my work, I wa",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.057,
+      "tokens": 169.0,
+      "cost": 0.0
+    },
+    {
+      "name": "Complaint: Terrible experience, the upload is broke",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.012,
+      "tokens": 166.0,
+      "cost": 0.0
+    },
+    {
+      "name": "Complaint: Your product has a bug: the button does ",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.012,
+      "tokens": 178.0,
+      "cost": 0.0
+    },
+    {
+      "name": "Complaint: I was charged twice and want a refund",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.013,
+      "tokens": 158.0,
+      "cost": 0.0
+    },
+    {
+      "name": "Praise: Thanks so much, I love the new design!",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.013,
+      "tokens": 150.0,
+      "cost": 0.0
+    },
+    {
+      "name": "Praise: Happy customer here, the team was great,",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.011,
+      "tokens": 158.0,
+      "cost": 0.0
+    },
+    {
+      "name": "Praise: I love this product, it saves me hours",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.011,
+      "tokens": 150.0,
+      "cost": 0.0
+    },
+    {
+      "name": "Question: How do I export my data to CSV?",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.012,
+      "tokens": 150.0,
+      "cost": 0.0
+    },
+    {
+      "name": "Question: Is there a dark mode?",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.011,
+      "tokens": 141.0,
+      "cost": 0.0
+    },
+    {
+      "name": "Question: Can I invite my team?",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.012,
+      "tokens": 141.0,
+      "cost": 0.0
+    }
+  ]
+}

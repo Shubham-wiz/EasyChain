@@ -192,8 +192,8 @@ easychain test web.tests.yaml --var base_url=http://127.0.0.1:8765
 ```
 
 Each case shows ✓ or ✗, what failed, and (with –) what was skipped. The exit code is 0 only
-when every case passed. That makes it a check for CI, until `easychain eval` compares against
-a baseline (5.3).
+when every case passed. For CI, `easychain eval` compares the run with a baseline instead, so
+only what got worse fails ([ci.md](ci.md)).
 
 ## The API
 

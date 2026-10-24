@@ -1,0 +1,51 @@
+# Real-model checks before a release (decision 5.5). Started by hand from the Actions tab: it
+# runs the templates' Test Sets with their real models, using API keys stored as repository
+# secrets, and stops spending at the budget. CI itself never calls a paid API.
+name: Real-model checks
+
+on:
+  workflow_dispatch:
+    inputs:
+      test-sets:
+        description: Test Sets to run (paths from the repository root; globs work)
+        default: python/src/easychain/templates/*.tests.yaml
+      repeat:
+        description: Run each case this many times
+        default: "3"
+      budget:
+        description: Stop starting cases after this many dollars, per Test Set
+        default: "2"
+
+permissions:
+  contents: read
+
+jobs:
+  real-models:
+    name: Templates with real models
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      EASYCHAIN_SANDBOX: "off"
+    steps:
+      - uses: actions/checkout@v4
+      - name: A model key is set
+        run: |
+          if [ -z "$OPENAI_API_KEY$ANTHROPIC_API_KEY" ]; then
+            echo "::error::Add OPENAI_API_KEY or ANTHROPIC_API_KEY under Settings → Secrets and variables → Actions, with a spending limit at the provider."
+            exit 1
+          fi
+      - name: Start the fake server some Test Sets fetch pages from
+        run: |
+          python3 -m pip install --quiet ./python
+          python3 -m easychain.testing.fake_openai --port 8765 &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8765/health && break; sleep 1; done
+      - uses: ./.github/actions/easychain-eval
+        with:
+          test-sets: ${{ inputs.test-sets }}
+          stand-in: "false"
+          repeat: ${{ inputs.repeat }}
+          budget: ${{ inputs.budget }}
+          variables: base_url=http://127.0.0.1:8765
+          install: ./python

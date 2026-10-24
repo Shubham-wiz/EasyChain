@@ -1,0 +1,140 @@
+{
+  "format": "easychain-test-run/1",
+  "test_set": "plan-and-execute.tests.yaml",
+  "flow": "plan-and-execute.flow.yaml",
+  "stand_in": true,
+  "repeat": 1,
+  "created_at": 1792802027.329592,
+  "summary": {
+    "total": 10,
+    "passed": 10,
+    "failed": 0,
+    "flaky": 0,
+    "skipped": 0,
+    "seconds": 0.799,
+    "tokens": 3371.0,
+    "cost": 0.0
+  },
+  "cases": [
+    {
+      "name": "Two cities, four steps, done in order",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.245,
+      "tokens": 733.0,
+      "cost": 0.0
+    },
+    {
+      "name": "A one-step plan",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.047,
+      "tokens": 233.0,
+      "cost": 0.0
+    },
+    {
+      "name": "The tool finds the right price for each step",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.071,
+      "tokens": 365.0,
+      "cost": 0.0
+    },
+    {
+      "name": "A step the tool can't answer says so",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.051,
+      "tokens": 228.0,
+      "cost": 0.0
+    },
+    {
+      "name": "A step that needs no tool",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.038,
+      "tokens": 162.0,
+      "cost": 0.0
+    },
+    {
+      "name": "A five-step plan runs every step",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.125,
+      "tokens": 530.0,
+      "cost": 0.0
+    },
+    {
+      "name": "An empty plan still gets an answer",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.018,
+      "tokens": 96.0,
+      "cost": 0.0
+    },
+    {
+      "name": "The write-up uses what the steps found",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.072,
+      "tokens": 367.0,
+      "cost": 0.0
+    },
+    {
+      "name": "Steps run one at a time, so the results keep the plan's order",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.077,
+      "tokens": 331.0,
+      "cost": 0.0
+    },
+    {
+      "name": "Without a script the stand-in plans, does and answers",
+      "runs": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "flaky": false,
+      "failures": [],
+      "skipped": [],
+      "seconds": 0.055,
+      "tokens": 326.0,
+      "cost": 0.0
+    }
+  ]
+}
