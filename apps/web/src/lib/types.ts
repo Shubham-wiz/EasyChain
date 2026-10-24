@@ -900,6 +900,60 @@ export interface Spending {
   rows: SpendingRow[];
 }
 
+/** The dashboard (Phase 5.7, server/dashboard.py): runs and model use per day, UTC. */
+export interface DashboardDay {
+  day: string;
+  start: number;
+  runs: number;
+  ok: number;
+  errors: number;
+  paused: number;
+  cancelled: number;
+  running: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost: number;
+  p50_ms: number | null;
+  p95_ms: number | null;
+}
+
+export type DashboardTotals = Omit<DashboardDay, "day" | "start"> & { error_rate: number | null };
+
+export interface DashboardFlow extends Omit<DashboardTotals, "p50_ms"> {
+  flow_id: string | null;
+  flow: string;
+}
+
+export interface DashboardError {
+  flow_id: string | null;
+  flow: string;
+  kind: string;
+  message: string;
+  step?: string | null;
+  count: number;
+  last_at: number;
+  last_run_id: string | null;
+}
+
+export interface Dashboard {
+  days: number;
+  since: number;
+  flow_id: string | null;
+  environment: string | null;
+  totals: DashboardTotals;
+  series: DashboardDay[];
+  flows: DashboardFlow[];
+  errors: DashboardError[];
+}
+
+/** Settings → Tracing (Phase 5.7, server/tracing.py). */
+export interface TracingSettings {
+  otlp: { enabled: boolean; endpoint: string; headers: Record<string, string>; service_name: string };
+  langsmith: { enabled: boolean; project: string; endpoint: string };
+}
+
+export type TracingState = TracingSettings & { langsmith_key: boolean };
+
 /** A flow version published to an environment (server/publish_api.py). */
 export interface Publication {
   id: string;

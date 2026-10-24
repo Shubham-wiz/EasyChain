@@ -1,11 +1,11 @@
 # Easy Chain: project report, all phases
 
-_As of 2026-10-23. Version 0.4.0, commit `d6d73be` on `main`. CI is green on all five jobs:
-Linux, Windows, Playwright, Docker and Compose, and the web build._
+_As of 2026-10-24, at the end of Phase 5: version 0.5.0, on `main`. CI is green on all six jobs: Linux,
+Windows, Playwright, Docker and Compose, the web build, and the Flows gate._
 
-This report covers the whole build in one place. Phases 0 to 4 are done; Phases 5 and 6 are
-planned. Each phase also has its own detailed report, linked in its section. The live status is
-in [handover/status.md](handover/status.md).
+This report covers the whole build in one place. Phases 0 to 5 are done; Phase 6 is planned.
+Each phase also has its own detailed report, linked in its section. The live status is in
+[handover/status.md](handover/status.md).
 
 ## Summary
 
@@ -14,9 +14,9 @@ people who don't write code every day. You draw a flow on a canvas, press Run an
 Every flow compiles to **plain LangGraph Python**: that same code runs when you press Run, and it
 is what you get when you export. An exported flow needs no Easy Chain to run.
 
-**Where it stands.** Five of the seven phases are done, and each met its "Done when". Work is
-paused for your review of Phase 4, as the build rules ask, and Phase 5 starts when you answer
-the questions at the end of this report.
+**Where it stands.** Six of the seven phases are done, and each met its "Done when". Work is
+paused for your review of Phase 5, as the build rules ask. Phase 6 starts when you answer the
+questions at the end of this report.
 
 | Phase | What it delivered | State |
 |---|---|---|
@@ -26,8 +26,8 @@ the questions at the end of this report.
 | 3. Agents and knowledge | Agents with tools, Knowledge Bases with citations, 14 model providers | ✅ Done |
 | (Review) | A full code review worked through, and Windows support | ✅ Done |
 | 4. Autopilot and teams | Deep Agents and Helpers, Skills, agent teams, a Code sandbox, the describe-it copilot | ✅ Done |
-| 5. Platform | Logins and roles, evaluation, publishing, environments, dashboards | Next, after your review |
-| 6. Ecosystem | JavaScript export, a step registry, collaboration, Kubernetes | Planned |
+| 5. Platform | Logins and roles, workspaces, evaluation and a CI gate, publishing, environments, a model gateway, dashboards and tracing | ✅ Done |
+| 6. Ecosystem | JavaScript export, a step registry, collaboration, Kubernetes | Next, after your review |
 
 **What works today.**
 
@@ -38,12 +38,20 @@ the questions at the end of this report.
   key.
 - **Durable runs:** runs survive crashes, wait for people as long as needed in the **Inbox**, and
   can be rewound to any **Save Point**.
-- **Tests on Linux and Windows:** 513 Python tests, 94 web unit tests, 11 client tests and 39
+- **A multi-user server:** sign-in, four roles, single sign-on, workspaces and an append-only
+  audit log.
+- **Evaluation:** Test Sets edited in the app, kept Test Runs with baselines, and `easychain
+  eval` as a CI gate.
+- **Publishing:** dev, staging and production; promotion only through a passing Test Run; an
+  API endpoint, a hosted chat page and a widget, with access keys and rate limits.
+- **Cost control:** every model call recorded, budgets that alert and stop, cached answers,
+  fallbacks, and the Dashboard with OpenTelemetry and LangSmith tracing.
+- **Tests on Linux and Windows:** 646 Python tests, 114 web unit tests, 14 client tests and 47
   browser journeys run on every push, with accessibility checks.
 
-**What it needs from you.** Five decisions about Phase 5 (see
-[Questions for you](#questions-for-you)), and, before any release, a check of the agent
-templates with a real model key.
+**What it needs from you.** Five decisions about Phase 6 (see
+[Questions for you](#questions-for-you)), and, before any release, a run of the real-model
+workflow, which needs your API keys as repository secrets.
 
 ## How it works
 
@@ -250,33 +258,40 @@ Detailed report: [phases/phase-4.md](phases/phase-4.md).
 **At the end:** 513 Python tests (none skipped), 94 web unit tests, 11 client tests and 39
 browser journeys; compiler coverage 94%; all 13 template Test Sets pass.
 
-## Phase 5 plan: Platform
+## Phase 5: platform
 
-This phase turns a single-user tool into a multi-user server. The full plan is in
-[ROADMAP.md](ROADMAP.md#phase-5-platform).
+Detailed report: [phases/phase-5.md](phases/phase-5.md).
 
-**Proposed "Done when":**
+| Done when | Evidence |
+|---|---|
+| A flow moves **draft → staging → production** only when its Test Run passes in CI | Staging is refused until a kept Test Run of that exact version, run in Staging, passes every case; Production takes only the Staging version. `easychain publish --to staging` does the same from CI, and `easychain eval` fails a CI job on a regression. |
+| A published flow serves an **API endpoint and a chat widget**, with per-key rate limits | Access keys run the published version (429 with `Retry-After` over the limit, counted in the database for every server); chat links serve a chat page and a widget; a browser journey chats on the page. |
+| **Roles** stop a Viewer from editing and an Editor from publishing to production | A test fails for any route without a declared role; a Viewer can change nothing; an Editor gets 403 for Production. A browser journey signs in as each role. |
+| **Every change and publish** is in the audit log | A test fails for any changing route that isn't recorded (or says why not); database triggers make the log append-only. |
 
-1. A flow moves **draft → staging → production** only when its Test Run passes in CI.
-2. A published flow serves an API endpoint and a chat widget, with per-key rate limits.
-3. Roles stop a Viewer from editing and an Editor from publishing to production.
-4. Every change and publish is in the audit log.
+**What was built**, in this order:
 
-| # | Milestone | What it delivers |
-|---|---|---|
-| 5.8 | Platform groundwork | Database migrations (Alembic). Knowledge Base ingestion moves onto the job queue. |
-| 5.6 | Users, roles, SSO, audit | Logins, roles (Owner, Editor, Runner, Viewer), single sign-on, per-workspace vaults, an audit log, and the egress allow-list. |
-| 5.1 | Test Sets editor and Checks | Edit cases in the app. Checks include exact values, JSON schema, tool calls, route, cost and time budgets, an AI judge with a rubric, and the order of tool calls. |
-| 5.2 | Test Runs and baselines | Compare a flow version against a baseline, case by case. Repeat runs to measure flakiness. |
-| 5.3 | CI gate | `easychain eval` fails CI on a regression; a GitHub Action is included. |
-| 5.4 | Environments and Publish | Dev, staging and prod environments. Publish gives an API endpoint, a chat page and a widget. `easychain deploy`. |
-| 5.5 | Model gateway | Budgets and alerts, caching, provider fallbacks, and cost per flow, run and user. |
-| 5.7 | Dashboards and tracing | Runs, errors, latency and cost over time; OpenTelemetry and LangSmith. |
+- **Groundwork:** database migrations (Alembic), Knowledge Base documents read by workers,
+  Postgres LISTEN/NOTIFY.
+- **People:** sign-in, four roles on every endpoint, keys for scripts, single sign-on (OIDC),
+  the audit log, an egress allow-list, and **workspaces** that keep everything apart.
+- **Evaluation:** the Tests tab with every kind of check (values, schema, route, tool calls and
+  their order, budgets, an AI judge); kept Test Runs with repeats and a baseline; `easychain
+  eval` and a GitHub Action.
+- **Publishing:** environments with their own secrets and swaps; promotion through Staging;
+  access keys and chat links; `easychain publish` and `easychain deploy`.
+- **The model gateway:** spending per flow, person, environment, model and run; budgets that
+  alert and stop; cached answers; fallbacks, retries and smoothing; your own prices.
+- **Dashboards and tracing:** runs, failures, time to finish, tokens and cost per day;
+  OpenTelemetry traces and LangSmith.
 
-The milestones are listed in the order they will be built (5.8 first). Each milestone includes
-its own security review.
+**At the end:** 646 Python tests, 114 web unit tests, 14 client tests and 47 browser journeys;
+compiler coverage 94%; all 13 template Test Sets pass; the CI gate passes on eight templates.
 
 ## Phase 6 plan: Ecosystem
+
+The plan, with the proposed order, is in the
+[Phase 5 report](phases/phase-5.md#phase-6-plan-ecosystem).
 
 **Proposed "Done when":**
 
@@ -302,13 +317,15 @@ its own security review.
 | Phase 2 | 259 | 19 | 4 | 23 | 6 of 6 |
 | Phase 3 | 320 | 32 | 4 | 31 | 8 of 8 |
 | Phase 4 | 513 | 94 | 11 | 39 | 13 of 13 |
+| Phase 5 | 646 | 114 | 14 | 47 | 13 of 13, and the CI gate on 8 |
 
-- **CI** runs five jobs on every push:
+- **CI** runs six jobs on every push:
   - Python on Linux, with Postgres and pgvector;
   - Windows: the Python suite, the command line and a worker, and the web checks;
   - the web build and unit tests;
   - the browser journeys against the real app;
-  - Docker and Compose, including a check that Code steps really run in containers.
+  - Docker and Compose, including a check that Code steps really run in containers;
+  - **Flows**: `easychain eval` gates eight templates against their baselines.
 - **Code checks:** compiler coverage must stay at 90% or more (it is 94%), and golden files pin
   the generated code.
 - **No paid APIs in tests:**
@@ -316,7 +333,8 @@ its own security review.
   - agent Test Sets script the model's turns;
   - tools, limits, approvals and routes stay real.
 - **Accessibility:** every browser journey runs axe WCAG 2.2 AA scans; no serious issues.
-- **Red runs on the way:** two CI runs failed during Phase 4 and were fixed in the next commit:
+- **Red runs on the way:** no CI run failed during Phase 5 (runs superseded by a newer push were
+  cancelled). Two failed during Phase 4 and were fixed in the next commit:
   - a browser test that matched two status messages;
   - a timing test on the slow Windows runner.
 
@@ -336,42 +354,38 @@ The main ones:
 | R.4–R.5 | Windows and Linux both supported. The code review was fixed before Phase 4. |
 | 4.1–4.3 | Phase 4's "Done when". Docker sandbox, with gVisor where installed. The copilot uses any model with a key. |
 | 4.4–4.10 | Deep Agent files live in the run's state; there is no shell; skills ship inside exports; agent teams are ordinary steps; the copilot writes the whole flow and it is checked; version 0.4.0. |
+| 5.1–5.6 | Phase 5's "Done when"; single sign-on tested locally; self-hosted publishing; the AI judge uses any model with a key; real-model checks in a manual CI workflow; the README's build tracker. |
+| 5.7–5.21 | Alembic migrations; workers read documents; LISTEN/NOTIFY; sign-in on for networks; the audit log by route table; the egress policy; OIDC; workspaces; Test Sets as files; kept Test Runs on the queue; the CI gate's baselines in git; environments and promotion; the model gateway's ledger; dashboards from runs and model calls, tracing from events. |
 
 ## Known gaps and risks now
 
-- **Security on a shared server:** there is no login yet, and no egress allow-list for fetches
-  the server makes. Keep the server on localhost or behind your own access control until Phase 5.
-- **The sandbox needs Docker.** Without Docker, Code steps run in Easy Chain's own process, with a
-  warning. In Compose, the sandbox needs the opt-in overlay, which gives the worker the Docker
-  socket. Exported code runs Code steps in its own process.
-- **Real models are not run in CI,** by design. Agent behaviour with real models must be checked
-  by hand before a release.
-- **The copilot's quality depends on the model.** It sends the whole flow each time, so very large
-  flows make long prompts.
-- **Dependencies:** `deepagents` moves quickly. It is pinned exactly, and golden files catch
-  changes.
-- **Platform debt** (all in Phase 5):
-  - database migrations are not set up yet;
-  - Knowledge Base ingestion runs in the API server;
-  - live events poll the database.
-- **Smaller gaps** (backlog):
-  - no OCR for scanned PDFs;
-  - one vector store;
-  - MCP supports tools only;
-  - OpenAPI import doesn't send optional query parameters.
+The full list is the README's [Fix later](../README.md#fix-later) table, and the Phase 5 report's
+[known gaps](phases/phase-5.md#known-gaps-and-risks). The main ones:
+
+- **Real models are not run in CI** by default. The manual real-model workflow needs your API
+  keys stored as repository secrets.
+- **Shared servers:** require the sandbox outside the default workspace, since a Code step
+  without it runs in the server's process. Wrong-password counts are per process.
+- **No published Easy Chain image yet:** `easychain deploy` builds on one you build yourself.
+- **Model-call records are kept for ever**, and the dashboard adds up a period's runs in the
+  server: very busy workspaces will need daily totals.
+- **Smaller gaps:** smoothing per process; budgets can go over by calls under way; exact (not
+  semantic) caching; OTLP over HTTP only; the hosted chat page shows plain text.
 
 ## Questions for you
 
-These decide how Phase 5 is built. My recommendation is in *italics*.
+These decide how Phase 6 is built. My recommendation is in *italics*.
 
-1. **Phase 5 "Done when":** are the four criteria above right?
-2. **Single sign-on:** which provider should the final check use: Okta, Google, Microsoft Entra,
-   or none for now? *None for now, with setup documented for all three.*
-3. **Publishing:** self-hosted only, or also a hosted cloud? *Self-hosted only in Phase 5.*
-4. **The AI judge in Checks:** which model grades answers? *Any model you have a key for; with no
-   key, those checks are skipped with a note.*
-5. **Real-model checks before a release:** by you, or by a manual CI job with a budgeted key? *A
-   manual CI job, so the result is recorded.*
+1. **Phase 6 "Done when":** are the four criteria above right?
+2. **Order:** *Helm and published images first, then the LangGraph.js export, the registry,
+   import, prompt optimisation, and collaboration last.*
+3. **Release images:** where should they go? *GitHub Container Registry, built by CI on each
+   version tag.*
+4. **Real-model check:** can you add `OPENAI_API_KEY` (and `ANTHROPIC_API_KEY`) as repository
+   secrets, with a spending limit, so the real-model workflow runs before the next release?
+   *Yes, with a $5 limit.*
+5. **Model-call records:** how long are they kept? *A year by default, as a setting; older
+   rows rolled up into daily totals.*
 
 Reply "go on" to accept all five recommendations, or change any of them.
 
@@ -380,7 +394,7 @@ Reply "go on" to accept all five recommendations, or change any of them.
 | What | Where |
 |---|---|
 | Live status and how to pick the project up | [handover/status.md](handover/status.md), [AGENTS.md](../AGENTS.md) |
-| Each phase's full report | [phase-0-1](phases/phase-0-1.md), [phase-2](phases/phase-2.md), [phase-3](phases/phase-3.md), [phase-4](phases/phase-4.md) |
+| Each phase's full report | [phase-0-1](phases/phase-0-1.md), [phase-2](phases/phase-2.md), [phase-3](phases/phase-3.md), [phase-4](phases/phase-4.md), [phase-5](phases/phase-5.md) |
 | The plan for what's left | [ROADMAP.md](ROADMAP.md) |
 | How it is designed | [ARCHITECTURE.md](../ARCHITECTURE.md) |
 | Every document | [docs/README.md](README.md) |

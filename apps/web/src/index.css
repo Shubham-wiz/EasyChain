@@ -24,6 +24,12 @@
   --canvas: #f3f4f9;
   --dot: #d4d6e2;
   --ring: #6366f1;
+  /* Charts (the dashboard): two validated series hues, the critical status for failures, and a
+     quiet gray for the rest (dataviz reference palette; checked for colour blindness). */
+  --chart-1: #2a78d6;
+  --chart-2: #eb6834;
+  --chart-critical: #d03b3b;
+  --chart-quiet: #c3c2b7;
   color-scheme: light;
 }
 
@@ -48,6 +54,10 @@
   --dot: #2a2e3d;
   --ring: #818cf8;
   color-scheme: dark;
+  --chart-1: #3987e5;
+  --chart-2: #d95926;
+  --chart-critical: #d03b3b;
+  --chart-quiet: #5f5e59;
 }
 
 @theme inline {

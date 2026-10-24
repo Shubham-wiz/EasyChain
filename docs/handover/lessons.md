@@ -37,6 +37,9 @@ whenever something takes more than a few minutes to understand.
 | A document stayed "processing" for ever | The API server restarted while reading it (ingestion runs in-process) | On startup, unfinished documents are marked failed with "The server restarted while reading this…" |
 | `easychain test sql-analyst.tests.yaml` gave 9/10 by hand | One case posts to `${base_url}/effects`; without `--var base_url` and the fake server the request fails | Start `python -m easychain.testing.fake_openai --port N` and pass `--var base_url=http://127.0.0.1:N` |
 | The "Tools" label sat on top of the tool lines | It was centred under the Agent's bottom handle, where the lines leave | It sits beside the handle now |
+| An error raised by a callback doesn't stop a sync `model.invoke` (a trap found reading LangChain, before it bit) | LangChain runs an *async* handler from sync code in a new event loop and only logs its errors | The gateway's callback is a sync `BaseCallbackHandler` with `raise_error = True`; it hands database work to the server's loop with `run_coroutine_threadsafe` (never waiting on the loop's own thread) |
+| A model call's span sat outside its step's span | A step's `step_started` time is when the run heard of it, which can be after a fast model call ended | Build spans in passes and widen each step to hold its model calls and children (`server/tracing.py`) |
+| A cost of `<$0.0001` matched `not.toContainText("$0.00")` | The text contains the substring | Give the model a price in tests that check costs (Settings → Model gateway → Prices) |
 
 ## GitHub access
 

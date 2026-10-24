@@ -6,6 +6,7 @@ import { timeAgo } from "../lib/utils";
 import { useCan, useRoleNote } from "../state/auth";
 import { useUi } from "../state/ui";
 import { SettingsDialog } from "./dialogs/SettingsDialog";
+import { DashboardLink } from "./Dashboard";
 import { KnowledgeLink } from "./Knowledge";
 import { SkillsLink } from "./Skills";
 import { InboxLink } from "./TopBar";
@@ -49,6 +50,7 @@ export function Home({ open }: { open: (flowId: string, opts?: { tryIt?: boolean
           <span className="text-base font-semibold">Easy Chain</span>
           <WorkspaceSwitcher />
           <div className="ml-auto flex items-center gap-1">
+            <DashboardLink />
             <KnowledgeLink />
             <SkillsLink />
             <InboxLink />

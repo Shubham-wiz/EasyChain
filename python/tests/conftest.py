@@ -157,6 +157,18 @@ def fake_openai(fake_server: FakeOpenAI, monkeypatch: pytest.MonkeyPatch) -> Fak
     return fake_server
 
 
+@pytest.fixture
+def fake(fake_openai: FakeOpenAI) -> FakeOpenAI:
+    """The fake OpenAI server (shared by the session) with its request and effect logs emptied,
+    for tests that count what reached it."""
+    from easychain.testing import fake_openai as fake_module
+
+    fake_module.requests_log.clear()
+    fake_module.effects["calls"].clear()
+    fake_module.effects["applied"].clear()
+    return fake_openai
+
+
 def make_spec(
     steps: list[dict], connections: list[tuple] | list[dict], name: str = "Test flow", **extra: Any
 ) -> FlowSpec:

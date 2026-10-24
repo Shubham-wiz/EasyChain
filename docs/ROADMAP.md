@@ -1,8 +1,8 @@
 # Roadmap: what's done, and the plan for what's left
 
-_Written at the end of Phase 3 (version 0.3.0) and updated at the end of Phase 4 (version
-0.4.0). The live status is in [handover/status.md](handover/status.md); this page is the plan.
-Update both as work lands._
+_Written at the end of Phase 3 (version 0.3.0) and updated at the ends of Phase 4 (0.4.0) and
+Phase 5 (0.5.0). The live status is in [handover/status.md](handover/status.md); this page is
+the plan. Update both as work lands._
 
 ## Where things stand
 
@@ -13,8 +13,11 @@ Update both as work lands._
 | 2. Real runtime | Durable runs, workers, Ask a Human, Inbox, Save Points, time travel, triggers | ✅ Done ([report](phases/phase-2.md)) |
 | 3. Agents and knowledge | Agent + add-ons, MCP, OpenAPI import, structured replies, Knowledge Bases, memory, 14 providers | ✅ Done ([report](phases/phase-3.md)) |
 | 4. Autopilot and teams | Sandboxes, Deep Agents, Helpers, Skills, multi-agent patterns, describe-it copilot | ✅ Done ([report](phases/phase-4.md)) |
-| 5. Platform | Test Sets and Checks, Test Runs, CI gate, dashboards, model gateway, Publish, environments, roles, SSO, audit, tracing | Next |
-| 6. Ecosystem | LangGraph.js export, custom step registry, import, collaboration, prompt optimisation, Helm | Planned |
+| 5. Platform | Test Sets and Checks, Test Runs, CI gate, dashboards, model gateway, Publish, environments, roles, SSO, audit, tracing | ✅ Done ([report](phases/phase-5.md)) |
+| 6. Ecosystem | LangGraph.js export, custom step registry, import, collaboration, prompt optimisation, Helm | Next, after the review of Phase 5 |
+
+At the end of Phase 5 the tests were: Python 646, web unit 114, client package 14, Playwright
+journeys 47, template Test Sets all 13, and the CI gate on eight templates.
 
 At the end of Phase 4 the tests were:
 
@@ -44,8 +47,9 @@ At the end of Phase 3 they were:
 3. ~~**Answer the three Phase 4 questions.**~~ Done: the recommended options (decisions 4.1–4.3).
 4. ~~**Fix the code review's serious findings first**~~ (decision R.5): done, see
    [handover/review.md](handover/review.md).
-5. **Answer the Phase 4 report's questions** ([phase-4.md](phases/phase-4.md#questions-for-you))
-   before Phase 5 starts.
+5. ~~**Answer the Phase 4 report's questions.**~~ Done (decisions 5.1–5.6). Next: **answer the
+   Phase 5 report's questions** ([phase-5.md](phases/phase-5.md#questions-for-you)) before
+   Phase 6 starts.
 6. **Optional:** commit the original build brief as `docs/handover/build-prompt.original.md`.
    The "Done when" for Phases 5–6 below are proposals reconstructed without it.
 7. **Before a release:** try the agent templates and the copilot with a real key. CI never calls

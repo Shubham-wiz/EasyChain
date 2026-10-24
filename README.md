@@ -10,12 +10,13 @@ with no Easy Chain runtime required.
 
 ![The Easy Chain editor running a flow with a Decision](docs/images/editor-run.png)
 
-> **Status: Phase 5 (Platform) in progress.** Phases 0 to 4 are done
-> ([all phases in one report](docs/report.md)). Every step is marked in the
-> [build tracker](#build-tracker), with known issues under [Fix later](#fix-later). Deep Agents
-> plan, keep files and hand work to Helpers that follow your Skills; agent teams are made of
-> ordinary steps; Code runs in a sandbox; a copilot drafts flows from a description. Phase 5 adds
-> sign-in and roles (done: [people.md](docs/people.md)), evaluation and publishing.
+> **Status: Phase 5 (Platform) is done** and waiting for review
+> ([report](docs/phases/phase-5.md); [all phases in one report](docs/report.md)). Every step is
+> marked in the [build tracker](#build-tracker), with known issues under [Fix later](#fix-later).
+> Easy Chain is now a multi-user server: sign-in, roles, single sign-on, workspaces and an audit
+> log; Test Sets, Test Runs and a CI gate; environments and Publish (an API, a chat page and a
+> widget); a model gateway with budgets and caching; and a Dashboard with OpenTelemetry and
+> LangSmith tracing.
 
 ## Quick start
 
@@ -292,7 +293,7 @@ updated in the same commit as the work (decision 5.6). Each phase's report has t
 - [x] ⚠️ 4.6 Describe-it copilot: sends the whole flow each time; only checked with scripted replies in CI
 - [x] ⚠️ 4.7 Templates Research assistant and Inbox triage: no web search tool; triage's customer lookup and ticket are stand-ins
 
-### Phase 5: Platform 🚧 ([plan](docs/ROADMAP.md#phase-5-platform))
+### Phase 5: Platform ✅ ([report](docs/phases/phase-5.md))
 
 **5.8 Platform groundwork** ✅
 
@@ -343,15 +344,15 @@ updated in the same commit as the work (decision 5.6). Each phase's report has t
 - [x] ⚠️ Response caching (exact, per workspace, for drafts and chosen environments), provider fallbacks and retries, rate-limit smoothing (per server process: F38)
 - [x] ✅ Cost per flow, run and user (and per environment and model): every model call recorded with its tokens and cost; Settings → Model gateway; your own prices for any model (fixes F13)
 
-**5.7 Dashboards and tracing**
+**5.7 Dashboards and tracing** ✅
 
-- [ ] ⬜ Runs, errors, latency, tokens and cost over time, per flow and environment
-- [ ] ⬜ OpenTelemetry export (a span per step and per model or tool call)
-- [ ] ⬜ LangSmith tracing (with your key)
+- [x] ⚠️ Runs, errors, latency, tokens and cost over time, per flow and environment: the Dashboard (7, 30 or 90 days, UTC; headline numbers, four charts, flows, common errors, a table of each day); added up in the server (F44) ([docs](docs/dashboard.md))
+- [x] ⚠️ OpenTelemetry export (a span per run, step, tool call and model call, GenAI attributes, one trace per run across pauses): OTLP over HTTP, sent after each part of a run (F43) ([docs](docs/tracing.md))
+- [x] ✅ LangSmith tracing (with your key): per workspace, the key in its secrets, a project and address in Settings → Tracing
 
 **End of phase**
 
-- [ ] ⬜ The four "Done when" checks (decision 5.1), the Phase 5 report, the handover update
+- [x] ✅ The four "Done when" checks (decision 5.1), the Phase 5 report ([phase-5.md](docs/phases/phase-5.md)), the handover update; waiting for the owner's review
 
 ### Phase 6: Ecosystem ⬜ ([plan](docs/ROADMAP.md#phase-6-ecosystem))
 
@@ -395,7 +396,7 @@ yet.
 | F24 | A live-run WebSocket closed by the client mid-run can leave a database connection for the garbage collector (a warning in tests) | 5.6a | backlog |
 | F25 | Wrong-password counts live in each API process's memory: with several API servers, each counts on its own, and a restart forgets them | 5.6a | backlog (count in the database) |
 | F26 | ~~The web app shows every button to every role~~ | 5.6a | ✅ Fixed in 5.6b |
-| F28 | The egress policy doesn't cover AI model endpoints (an AI Model step's custom endpoint can point anywhere) or notification addresses; through a proxy only the URL is checked | 5.6f | backlog (an option to check model endpoints too) |
+| F28 | The egress policy doesn't cover AI model endpoints (an AI Model step's custom endpoint can point anywhere), notification addresses or tracing addresses (OpenTelemetry, LangSmith); through a proxy only the URL is checked | 5.6f | backlog (an option to check model endpoints too) |
 | F27 | The audit log is protected by database triggers: someone with direct database access could drop them; nothing removes old entries | 5.6c | backlog (a hash chain, or shipping entries to a log service) |
 | F29 | Workspaces can't be deleted; a server Owner can't switch into a workspace they aren't in (they add themselves with `easychain users add … --workspace`) | 5.6d | backlog |
 | F30 | Workspaces are kept apart inside Easy Chain, but a Code step run without the sandbox runs in the server's process and could read another workspace's files | 5.6d | backlog (require the sandbox outside the default workspace when sign-in is on); docs say to set it to required |
@@ -411,6 +412,8 @@ yet.
 | F40 | `model_calls` keeps every call: nothing removes old rows | 5.5 | backlog (a retention setting, or rolling old rows up per day) |
 | F41 | Embedding calls (reading and searching Knowledge Bases) aren't recorded or budgeted; only chat models are | 5.5 | backlog |
 | F42 | The answer cache is exact: a question worded differently is a new call (no semantic cache) | 5.5 | backlog |
+| F43 | OpenTelemetry is OTLP over HTTP only (no gRPC), and a run's spans are sent when each part of it ends, so a run that hangs shows nothing until it stops; Test Runs and the copilot aren't traced | 5.7 | backlog |
+| F44 | The dashboard reads up to 100,000 runs of the period and adds them up in the server: very busy workspaces need daily totals kept in the database | 5.7 | backlog (a daily rollup table) |
 
 ## Licence
 

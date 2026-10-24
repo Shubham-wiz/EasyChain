@@ -78,6 +78,8 @@ AUDITED: dict[tuple[str, str], str] = {
     ("PUT", "/api/secrets/{name}"): "secret.set",
     ("PUT", "/api/environments/{environment}"): "environment.change",
     ("PUT", "/api/gateway"): "settings.gateway",
+    ("PUT", "/api/settings/tracing"): "settings.tracing",
+    ("POST", "/api/settings/tracing/test"): "settings.tracing_test",
     ("DELETE", "/api/gateway/cache"): "settings.gateway_cache",
     ("PUT", "/api/environments/{environment}/secrets/{name}"): "secret.set",
     ("DELETE", "/api/environments/{environment}/secrets/{name}"): "secret.delete",
@@ -166,6 +168,8 @@ LABELS: dict[str, str] = {
     "settings.sso": "changed single sign-on",
     "settings.gateway": "changed the model gateway (budgets, caching, fallbacks)",
     "settings.gateway_cache": "forgot the cached answers",
+    "settings.tracing": "changed tracing (OpenTelemetry, LangSmith)",
+    "settings.tracing_test": "sent a test span",
     "settings.notifications_test": "sent test notifications",
 }
 

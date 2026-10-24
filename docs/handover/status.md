@@ -1,10 +1,10 @@
 # Status
 
-_Last updated: 2026-10-24 (Phase 5: 5.8, 5.6, 5.1, 5.2, 5.3 and 5.4 are done: sign-in, single sign-on, people, roles, keys, a role-aware web app, the audit log, the egress allow-list, workspaces, and Test Sets edited and run in the app with every kind of check, kept Test Runs with baselines, the `easychain eval` CI gate, environments with Publish, and the model gateway; 5.7, dashboards and tracing, is next)._
+_Last updated: 2026-10-24 (Phase 5 is done and reported: it meets its "Done when". Work is paused for the owner's review of the [Phase 5 report](../phases/phase-5.md); Phase 6 starts when its questions are answered)._
 
 ## In one paragraph
 
-Phases 0 to 4 are built, tested and reported, and each met its "Done when". After Phase 3, a
+Phases 0 to 5 are built, tested and reported, and each met its "Done when". After Phase 3, a
 full code review ([review.md](review.md)) was worked through, and Easy Chain runs on **Windows
 as well as Linux** (decisions R.4, R.5). **Phase 4 (Autopilot and teams)** added:
 
@@ -16,23 +16,30 @@ as well as Linux** (decisions R.4, R.5). **Phase 4 (Autopilot and teams)** added
 - the **describe-it copilot**;
 - the **Research assistant** and **Inbox triage** templates, each passing a 10-case Test Set.
 
-All phases are summarised in [report.md](../report.md). **Phase 5 (Platform) has started**: the
-owner accepted the recommended answers to the Phase 4 report's questions (decisions 5.1–5.5).
-Every step is marked in the README's [build tracker](../../README.md#build-tracker), with known
-issues under *Fix later* (decision 5.6).
+**Phase 5 (Platform)** turned it into a multi-user server: sign-in, roles, single sign-on,
+workspaces and an audit log; Test Sets with every kind of check, kept Test Runs with baselines
+and the `easychain eval` CI gate; environments and Publish (an API endpoint, a chat page and a
+widget, with access keys and rate limits); the model gateway (budgets, caching, fallbacks,
+spending); and the Dashboard with OpenTelemetry and LangSmith tracing. Its report is
+[phase-5.md](../phases/phase-5.md); **work is paused for the owner's review** of it.
+
+All phases are summarised in [report.md](../report.md). Every step is marked in the README's
+[build tracker](../../README.md#build-tracker), with known issues under *Fix later*
+(decision 5.6).
 
 ## Pick up here
 
 1. **Set up:** clone, `pnpm run setup`, then `pnpm lint` and `pnpm test` (Windows, macOS or
    Linux). Read [AGENTS.md](../../AGENTS.md), this page, [decisions.md](decisions.md) and the
-   [Phase 4 report](../phases/phase-4.md).
+   [Phase 5 report](../phases/phase-5.md).
 2. **CI** runs on every push to `main`. If a run fails, its annotations name the failing tests;
    they are readable without admin rights:
    `curl -s https://api.github.com/repos/Shubham-wiz/EasyChain/check-runs/<job id>/annotations`
    (job ids: `…/actions/runs/<run id>/jobs`).
-3. **Phase 5** follows [ROADMAP.md](../ROADMAP.md#phase-5-platform) in this order: 5.8 (migrations,
-   Knowledge Base ingestion on the queue, optional LISTEN/NOTIFY), then 5.6, 5.1, 5.2, 5.3, 5.4,
-   5.5 and 5.7. The README's build tracker shows which steps are done.
+3. **Phase 6** starts when the owner answers the
+   [Phase 5 report's questions](../phases/phase-5.md#questions-for-you); its plan and proposed
+   order are in the report and in [ROADMAP.md](../ROADMAP.md#phase-6-ecosystem). Record the
+   answers in [decisions.md](decisions.md) first.
 4. **One review item is left on purpose** ([review.md](review.md)): before a release, run the
    agent templates' Test Sets with a real model (`--real-model`). The address filter for
    server-side fetches is done (5.6f).
@@ -47,20 +54,20 @@ issues under *Fix later* (decision 5.6).
 | 3. Agents and knowledge | Agent step + add-ons, MCP, OpenAPI import, structured output, Knowledge Base, memory, all providers | Done | [phase-3.md](../phases/phase-3.md) |
 | Review fixes | Windows support; the findings of the 2026-10-04 review | Done (two items scheduled elsewhere, see review.md) | [review.md](review.md) |
 | 4. Autopilot and teams | Deep Agents, Helpers, Skills, sandboxes, multi-agent patterns, describe-it copilot | Done | [phase-4.md](../phases/phase-4.md) |
-| 5. Platform | Test Sets and Checks, Test Runs, CI gate, dashboards, model gateway, Publish, environments, roles, SSO | **In progress** (see the README's build tracker) | plan in [ROADMAP.md](../ROADMAP.md#phase-5-platform) |
+| 5. Platform | Test Sets and Checks, Test Runs, CI gate, dashboards, tracing, model gateway, Publish, environments, roles, SSO, audit, workspaces | Done (waiting for review) | [phase-5.md](../phases/phase-5.md) |
 | 6. Ecosystem | LangGraph.js export, custom module registry, import, collaboration, prompt optimisation, Helm | Not started | |
 
 `git log --oneline` lists every commit.
 
 ## Tests
 
-| Suite | Result (2026-10-24, 5.5) |
+| Suite | Result (2026-10-24, end of Phase 5) |
 |---|---|
-| Python on Linux (`pnpm test`, and CI) | 638 pass, with SQLite, Postgres (+ pgvector in CI) and Docker (the sandbox escape tests; skipped without Docker); compiler and steps coverage 94% |
+| Python on Linux (`pnpm test`, and CI) | 646 pass, with SQLite, Postgres (+ pgvector in CI) and Docker (the sandbox escape tests; skipped without Docker); compiler and steps coverage 94% |
 | Python on Windows 11 (CI) | all pass |
-| Web unit (vitest) | 111 passed |
+| Web unit (vitest) | 114 passed |
 | Client package (vitest) | 14 passed |
-| Playwright e2e | 46 passed (Linux), three on a second server with sign-in on (sign-in, each role, single sign-on), one making and switching workspaces, one writing and running a Test Set case and comparing kept Test Runs with a baseline, one publishing a chat flow and chatting on its chat page, one where a budget stops a run and the spending page shows its cost; the screenshot spec runs only with `SCREENSHOTS=1` |
+| Playwright e2e | 47 passed (Linux), three on a second server with sign-in on (sign-in, each role, single sign-on), one making and switching workspaces, one writing and running a Test Set case and comparing kept Test Runs with a baseline, one publishing a chat flow and chatting on its chat page, one where a budget stops a run and the spending page shows its cost, one reading the Dashboard and setting up tracing; the screenshot spec runs only with `SCREENSHOTS=1` |
 | Template Test Sets | all 13 pass (`tests/test_templates.py`), with the stand-in AI and scripted turns; research-assistant 10/10, inbox-triage 10/10 |
 | Lint | ruff check + format clean; tsc clean for web and client |
 
@@ -100,8 +107,12 @@ real-model workflow is started by hand and needs API keys as repository secrets.
    (`model_calls`), budgets per workspace, drafts and environment that alert and stop, cached
    answers, fallbacks, retries, smoothing, own prices, and spending per flow, person,
    environment, model and run ([gateway.md](../gateway.md), decision 5.20).
-8. **Next: 5.7, dashboards and tracing** (runs, errors, latency, tokens and cost over time from
-   `runs` and `model_calls`; OpenTelemetry; LangSmith), then the Phase 5 report.
+8. ~~**5.7, dashboards and tracing**~~ (done): the Dashboard (runs, failures, time to finish,
+   tokens and cost per day, per flow and environment), OpenTelemetry traces (a span per run,
+   step, tool call and model call) and LangSmith with the workspace's key
+   ([dashboard.md](../dashboard.md), [tracing.md](../tracing.md), decision 5.21).
+9. ~~**The Phase 5 report**~~ (done): [phase-5.md](../phases/phase-5.md).
+10. **Next: the owner's review** of the Phase 5 report, then Phase 6.
 
 ## GitHub
 

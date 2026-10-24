@@ -1,5 +1,6 @@
 import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Dashboard } from "./components/Dashboard";
 import { Editor } from "./components/Editor";
 import { Home } from "./components/Home";
 import { Inbox } from "./components/Inbox";
@@ -16,6 +17,7 @@ interface Route {
   inbox: string | null | undefined;
   knowledge?: string | null;
   skills?: string | null;
+  dashboard?: boolean;
 }
 
 function parseHash(): Route {
@@ -23,6 +25,7 @@ function parseHash(): Route {
   if (inbox) return { flowId: null, tryIt: false, inbox: inbox[1] ?? null };
   const knowledge = /^#\/knowledge(?:\/([a-z0-9_]+))?/.exec(window.location.hash);
   if (knowledge) return { flowId: null, tryIt: false, inbox: undefined, knowledge: knowledge[1] ?? null };
+  if (/^#\/dashboard/.test(window.location.hash)) return { flowId: null, tryIt: false, inbox: undefined, dashboard: true };
   const skills = /^#\/skills(?:\/([a-z0-9-]+))?/.exec(window.location.hash);
   if (skills) return { flowId: null, tryIt: false, inbox: undefined, skills: skills[1] ?? null };
   const match = /^#\/flows\/([a-z0-9-]+)(\?try=1)?/.exec(window.location.hash);
@@ -93,6 +96,7 @@ function Page({ route }: { route: Route }) {
   if (route.inbox !== undefined) return <Inbox focus={route.inbox} onHome={() => navigate(null)} />;
   if (route.knowledge !== undefined) return <Knowledge id={route.knowledge} />;
   if (route.skills !== undefined) return <Skills name={route.skills} />;
+  if (route.dashboard) return <Dashboard />;
   return route.flowId ? (
     <Editor key={route.flowId} flowId={route.flowId} tryIt={route.tryIt} onHome={() => navigate(null)} />
   ) : (

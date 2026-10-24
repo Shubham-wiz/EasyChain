@@ -225,7 +225,11 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         length = int(self.headers.get("Content-Length") or 0)
-        body = json.loads(self.rfile.read(length) or b"{}")
+        try:
+            body = json.loads(self.rfile.read(length) or b"{}")
+        except ValueError:
+            self._send(400, b'{"error": {"message": "Send JSON."}}')
+            return
         if self.path.startswith("/effects"):
             self._effect(body)
             return

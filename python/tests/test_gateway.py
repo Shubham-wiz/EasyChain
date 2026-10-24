@@ -35,7 +35,6 @@ from easychain.runtime.model_policy import (
 from easychain.server.app import create_app
 from easychain.server.db import Database
 from easychain.server.gateway import alert_text, period_of, used_up
-from easychain.testing import fake_openai as fake_module
 
 from . import pg
 from .conftest import input_step, output_step
@@ -89,15 +88,6 @@ def policy() -> Iterator[GatewayPolicy]:
     token = use_settings(RunSettings(gateway=made))
     yield made
     reset_settings(token)
-
-
-@pytest.fixture
-def fake(fake_openai: Any) -> Any:
-    """The fake OpenAI server (shared by the session) with its logs emptied."""
-    fake_module.requests_log.clear()
-    fake_module.effects["calls"].clear()
-    fake_module.effects["applied"].clear()
-    return fake_openai
 
 
 def _chat_requests(fake: Any) -> list[dict]:

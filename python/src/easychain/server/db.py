@@ -1274,6 +1274,53 @@ class Database:
             rows = await conn.execute(query)
             return [dict(r._mapping) for r in rows]
 
+    async def dashboard_rows(
+        self,
+        workspace_id: str,
+        *,
+        since: float,
+        flow_id: str | None = None,
+        environment: str | None = None,
+        limit: int = 100_000,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """The runs started since ``since`` and their model calls, for the dashboard
+        (server/dashboard.py); ``environment`` "drafts" is runs with none."""
+        r, c = runs.c, model_calls.c
+        run_query = (
+            sa.select(r.id, r.flow_id, r.flow_name, r.status, r.created_at, r.duration_ms, r.error)
+            .where(r.workspace_id == workspace_id, r.created_at >= since)
+            .order_by(r.created_at.desc())
+            .limit(limit)
+        )
+        call_query = (
+            sa.select(c.at, c.flow_id, c.input_tokens, c.output_tokens, c.cost)
+            .where(c.workspace_id == workspace_id, c.at >= since, c.kind == "run")
+            .limit(limit * 10)
+        )
+        if flow_id:
+            run_query = run_query.where(r.flow_id == flow_id)
+            call_query = call_query.where(c.flow_id == flow_id)
+        if environment == "drafts":
+            run_query = run_query.where(r.environment.is_(None))
+            call_query = call_query.where(c.environment.is_(None))
+        elif environment:
+            run_query = run_query.where(r.environment == environment)
+            call_query = call_query.where(c.environment == environment)
+        async with self.reader.connect() as conn:
+            found_runs = [dict(row._mapping) for row in await conn.execute(run_query)]
+            found_calls = [dict(row._mapping) for row in await conn.execute(call_query)]
+        return found_runs, found_calls
+
+    async def model_calls_of(self, run_id: str, since: float = 0) -> list[dict[str, Any]]:
+        """A run's model calls since ``since``, oldest first."""
+        query = (
+            sa.select(model_calls)
+            .where(model_calls.c.run_id == run_id, model_calls.c.at >= since)
+            .order_by(model_calls.c.at)
+        )
+        async with self.reader.connect() as conn:
+            return [dict(row._mapping) for row in await conn.execute(query)]
+
     async def mark_alert(
         self, workspace_id: str, budget: str, period: str, level: int, spent: float, amount: float
     ) -> bool:

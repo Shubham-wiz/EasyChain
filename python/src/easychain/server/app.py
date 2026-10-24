@@ -73,6 +73,7 @@ from .integrations_api import add_integration_routes
 from .knowledge_api import CUT_OFF, add_knowledge_routes, use_database
 from .listen import listen
 from .network import add_network_routes
+from .observe_api import add_observe_routes
 from .publish_api import add_publish_routes
 from .secrets import SecretStore, VaultLocked, masked, unmasked
 from .spaces import Space, Spaces, in_workspace
@@ -302,6 +303,7 @@ def create_app(
     add_environment_routes(app)
     add_publish_routes(app)
     add_gateway_routes(app)
+    add_observe_routes(app)
     app.add_middleware(AuditMiddleware)
     add_knowledge_routes(app, home_path)
     origins = os.environ.get(

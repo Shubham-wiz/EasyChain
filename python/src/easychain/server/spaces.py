@@ -39,7 +39,7 @@ from .store import FlowStore
 
 ID_RE = re.compile(r"^[a-z][a-z0-9-]{1,39}$")
 # Settings kept per workspace; the others (sandbox, network, single sign-on) are the server's.
-WORKSPACE_SETTINGS = ("mcp", "notifications", "copilot", "gateway")
+WORKSPACE_SETTINGS = ("mcp", "notifications", "copilot", "gateway", "tracing")
 
 _current = context.workspace
 

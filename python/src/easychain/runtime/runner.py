@@ -225,6 +225,8 @@ class RunOptions:
     # Budgets, caching, smoothing, retries, fallbacks and metering (Settings → Model gateway,
     # runtime/model_policy.py); None: none of them.
     gateway: Any = None
+    # More LangChain callbacks for the whole run (LangSmith's tracer, Settings → Tracing).
+    callbacks: list[Any] = field(default_factory=list)
 
 
 def _now() -> float:
@@ -494,7 +496,7 @@ async def stream_run(
     tracker = UsageTracker()
     config: dict[str, Any] = {
         "configurable": {"thread_id": thread_id},
-        "callbacks": [tracker],
+        "callbacks": [tracker, *opts.callbacks],
         "recursion_limit": opts.recursion_limit
         or compiled.run_config.get("recursion_limit", DEFAULT_MAX_STEPS),
         "run_name": spec.name,

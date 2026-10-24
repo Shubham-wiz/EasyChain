@@ -2,7 +2,7 @@
 project: Easy Chain
 repo: Shubham-wiz/EasyChain
 branch: main
-version: 0.4.0
+version: 0.5.0
 updated: 2026-10-23
 platforms: [linux, windows, macos]   # decision R.4; CI tests linux and windows
 
@@ -57,7 +57,7 @@ phases:
     copilot_model: "any model the user has a key for (decision 4.3)"
   - id: 5
     name: Platform
-    state: in_progress   # owner accepted the recommended answers (decisions 5.1-5.5)
+    state: done   # report: docs/phases/phase-5.md; waiting for the owner's review
     done_when: "draft -> staging -> production only when the Test Run passes in CI; a published flow serves an API endpoint and a chat widget with per-key rate limits; roles stop a Viewer editing and an Editor publishing to production; every change and publish is in the audit log"
     order: ["5.8", "5.6", "5.1", "5.2", "5.3", "5.4", "5.5", "5.7"]
     milestones:
@@ -75,7 +75,7 @@ phases:
       "5.3 CI gate": done   # evaluate.py, easychain eval, templates/*.baseline.json, .github/actions/easychain-eval, ci.yml Flows job, tests/test_evaluate.py, docs/ci.md, decision 5.18
       "5.4 Environments and Publish": done   # environments.py, server/environments_api.py, server/publish_api.py, server/chat_page.py, migration 0008, deploy.py (easychain publish/deploy), PublishDialog, Settings -> Environments, tests/test_publish.py, e2e/publish.spec.ts, docs/publish.md, decision 5.19
       "5.5 Model gateway": done   # runtime/model_policy.py (GatewayPolicy, GatewayCallback, AnswerCache, FallbackChatModel), runtime/gateway.py, server/gateway.py (settings, RunMeter, budgets, alerts), server/gateway_api.py (/api/gateway, /api/spending), migration 0009 (model_calls, budget_alerts, answer_cache, runs.started_by), Settings -> Model gateway, tests/test_gateway.py, e2e/gateway.spec.ts, docs/gateway.md, decision 5.20
-      "5.7 Dashboards and tracing": pending
+      "5.7 Dashboards and tracing": done   # server/dashboard.py, server/tracing.py (export_run, RunIds, provider_for, send_test, langsmith_tracer), server/observe_api.py (/api/dashboard, /api/settings/tracing), worker _send_traces, RunOptions.callbacks, Dashboard page (components/Dashboard.tsx, charts.tsx), Settings -> Tracing, tests/test_observe.py, e2e/observe.spec.ts, docs/dashboard.md, docs/tracing.md, decision 5.21
     tracker: "README.md#build-tracker (decision 5.6)"
     plan: docs/ROADMAP.md#phase-5-platform
   - id: 6
@@ -85,17 +85,23 @@ phases:
 decisions: docs/handover/decisions.md
 roadmap: docs/ROADMAP.md
 docs_index: docs/README.md
-waiting_for_review: false
-open_questions: []
+waiting_for_review: true   # the Phase 5 report; Phase 6 starts when its questions are answered
+open_questions:   # docs/phases/phase-5.md#questions-for-you (recommendations in the report)
+  - "Phase 6 Done when: the four proposed criteria?"
+  - "Phase 6 order: Helm and published images first, then LangGraph.js export, registry, import, prompt optimisation, collaboration last?"
+  - "Release images: GitHub Container Registry on version tags?"
+  - "Real-model check: add OPENAI_API_KEY (and ANTHROPIC_API_KEY) as repository secrets with a spending limit?"
+  - "How long to keep model-call records: a year by default, rolled up per day after?"
 
 tests:
-  measured_at: 2026-10-24, 5.5
-  python: {passed: 638, skipped: 0, on: "Linux with SQLite, Postgres and Docker (the sandbox tests); Windows and Linux in CI"}
-  web_unit: {passed: 111}
+  measured_at: 2026-10-24, end of Phase 5
+  python: {passed: 646, skipped: 0, on: "Linux with SQLite, Postgres and Docker (the sandbox tests); Windows and Linux in CI"}
+  web_unit: {passed: 114}
   client: {passed: 14}
-  e2e: {passed: 46, skipped_unless_SCREENSHOTS: 3, on: "Linux (CI)"}
+  e2e: {passed: 47, skipped_unless_SCREENSHOTS: 3, on: "Linux (CI)"}
   template_test_sets: {support-bot: "12/12", sql-analyst: "10/10", supervisor-team: "10/10", handoff-chat: "10/10", plan-and-execute: "10/10", research-assistant: "10/10", inbox-triage: "10/10", others: all pass}
   compiler_coverage: 0.94
+  python_end_of_phase_5: {passed: 646, web_unit: 114, client: 14, e2e: 47, compiler_coverage: 0.94}
   python_end_of_phase_4: {passed: 513, compiler_coverage: 0.94}
   python_end_of_phase_3: {passed: 320}
   python_end_of_phase_2: {passed: 259, compiler_coverage: 0.94}

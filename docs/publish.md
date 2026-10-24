@@ -126,7 +126,7 @@ A **Compose bundle** has:
 Runs, secrets and people live in the volumes, so rebuilding with new flows keeps them.
 
 Both build on the Easy Chain image `easychain:<version>`. Build it from Easy Chain's source
-first: `docker build -t easychain:0.4.0 .`.
+first: `docker build -t easychain:0.5.0 .`.
 
 ## Publishing from CI: `easychain publish`
 

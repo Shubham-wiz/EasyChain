@@ -47,7 +47,7 @@ services:
 
   easychain:
     build: .
-    image: easychain:0.4.0
+    image: easychain:0.5.0
     ports:
       # Localhost by default. Sign-in is on in Docker (the log prints a code for the first
       # account); to open it to others, put it behind HTTPS and publish it there.
@@ -66,7 +66,7 @@ services:
     restart: unless-stopped
 
   worker:
-    image: easychain:0.4.0
+    image: easychain:0.5.0
     command: ["easychain", "worker", "--verbose"]
     environment:
       <<: *easychain-env

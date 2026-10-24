@@ -199,7 +199,7 @@ test("roles: a Viewer looks, a Runner runs and answers, an Editor sees settings 
   await expect(editor.getByTestId("library-ai_model")).toBeVisible();
   await expect(editor.getByTestId("view-only")).toHaveCount(0);
   await editor.getByRole("button", { name: "Settings" }).click();
-  await expect(editor.getByRole("tab")).toHaveText(["Keys and providers", "Environments", "Model gateway", "MCP servers", "Notifications", "Sandbox", "Network", "Keys for scripts"]);
+  await expect(editor.getByRole("tab")).toHaveText(["Keys and providers", "Environments", "Model gateway", "Tracing", "MCP servers", "Notifications", "Sandbox", "Network", "Keys for scripts"]);
   await expect(editor.getByRole("dialog").getByRole("note")).toContainText("Your role (Editor) can't change these; that needs Owner or above");
   await expect(editor.getByLabel("Secret name")).toBeDisabled();
   await editor.keyboard.press("Escape");

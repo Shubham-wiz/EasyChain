@@ -15,6 +15,8 @@ Start with the [project README](../README.md). This page lists every document.
 | [people.md](people.md) | People and sign-in: when it's on, the first account, roles, adding people, keys for scripts, the API |
 | [testing.md](testing.md) | Test Sets and Checks: the Tests tab, the file, every check (values, the run, budgets, the AI judge), the command line, the API |
 | [publish.md](publish.md) | Environments and Publish: dev, staging and production, promotion, access keys and rate limits, chat links and the widget, `easychain deploy` and `easychain publish`, the API |
+| [dashboard.md](dashboard.md) | The dashboard: runs, failures, time to finish, tokens and cost per day, per flow and environment, the API |
+| [tracing.md](tracing.md) | Tracing: OpenTelemetry (what each span holds, one trace per run) and LangSmith (with the workspace's key), exported code, the API |
 | [gateway.md](gateway.md) | The model gateway: what model calls cost (per flow, person, environment, model, run), budgets and alerts, caching answers, fallbacks, retries, smoothing, prices, the API |
 | [ci.md](ci.md) | Checking flows in CI: `easychain eval` and baselines, the GitHub Action, real models before a release, other CI systems |
 | [workspaces.md](workspaces.md) | Workspaces: what each keeps apart, the server's Owners, making and switching, people and keys in several, the API, Knowledge Bases and memory |
@@ -60,4 +62,5 @@ Start with the [project README](../README.md). This page lists every document.
 | [phases/phase-2.md](phases/phase-2.md) | Phase 2 report: the durable runtime |
 | [phases/phase-3.md](phases/phase-3.md) | Phase 3 report: agents and knowledge |
 | [phases/phase-4.md](phases/phase-4.md) | Phase 4 report: autopilot and teams (Deep Agents, Helpers, Skills, agent teams, the sandbox, the copilot) |
+| [phases/phase-5.md](phases/phase-5.md) | Phase 5 report: platform (sign-in, roles, workspaces, audit; Test Sets, Test Runs, the CI gate; environments and Publish; the model gateway; the Dashboard and tracing) |
 | [handover/](handover/README.md) | The project's memory: [status](handover/status.md), [decisions](handover/decisions.md), [conversation](handover/conversation.md), [lessons](handover/lessons.md), [environment](handover/environment.md), [build prompt summary](handover/build-prompt.md), [state.yaml](handover/state.yaml) |

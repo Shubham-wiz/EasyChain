@@ -32,6 +32,7 @@ from .cron import CronError, next_fire
 from .db import FINISHED
 from .gateway import policy_for
 from .hub import Hub
+from .tracing import TracingSettings, export_run, flush_langsmith, langsmith_tracer, provider_for
 
 log = logging.getLogger("easychain.worker")
 
@@ -93,6 +94,8 @@ class Worker:
         self.running: dict[int, asyncio.Task[None]] = {}
         self._stops: dict[int, asyncio.Event] = {}
         self._releasing: set[int] = set()
+        # Sending traces, after a run's part ends (tracing.py).
+        self._sending: set[asyncio.Task[Any]] = set()
 
     # ── the main loop ────────────────────────────────────────────────────────
 
@@ -433,6 +436,16 @@ class Worker:
         from .integrations_api import mcp_setting
 
         mcp = mcp_connections(await mcp_setting(self.db, hub.space.setting("mcp")))
+        tracing = await self._tracing()
+        langsmith = langsmith_tracer(
+            tracing.langsmith,
+            {
+                "easychain_run_id": run["id"],
+                "easychain_flow_id": run["flow_id"],
+                "easychain_environment": run.get("environment"),
+                "easychain_workspace": hub.space.id,
+            },
+        )
         opts = RunOptions(
             mcp=mcp,
             sandbox=sandbox_settings(await self.db.get_setting("sandbox", {})),
@@ -453,6 +466,7 @@ class Worker:
             cancel=stop,
             finish_if_done=action == "continue",
             metadata={"worker": self.name},
+            callbacks=[langsmith] if langsmith is not None else [],
             gateway=await policy_for(
                 hub,
                 kind="run",
@@ -469,9 +483,11 @@ class Worker:
         final: dict[str, Any] | None = None
         first_start = run.get("started_at") is None
         inputs = run.get("inputs") if action == "start" else None
+        seen: list[dict[str, Any]] = []
         async for ev in stream_run(spec, inputs, opts):
             if lost.is_set():
                 return
+            seen.append(ev)
             if ev["type"] == "run_finished":
                 final = ev  # written once the run's status and Inbox items are saved
                 continue
@@ -493,6 +509,36 @@ class Worker:
         # notifications are in place.
         await writer.add(final)
         await writer.flush()
+        if (tracing.otlp.enabled and tracing.otlp.endpoint) or langsmith is not None:
+            task = asyncio.create_task(self._send_traces(run, seen, tracing, langsmith))
+            self._sending.add(task)
+            task.add_done_callback(self._sending.discard)
+
+    async def _tracing(self) -> TracingSettings:
+        saved = await self.db.get_setting(self.hub.space.setting("tracing"), {}) or {}
+        try:
+            return TracingSettings.model_validate(saved)
+        except ValueError:
+            return TracingSettings()
+
+    async def _send_traces(
+        self,
+        run: dict[str, Any],
+        events: list[dict[str, Any]],
+        tracing: TracingSettings,
+        langsmith: Any,
+    ) -> None:
+        """Send this part of the run as spans (OpenTelemetry) and wait for LangSmith's."""
+        try:
+            if tracing.otlp.enabled and tracing.otlp.endpoint and events:
+                since = (events[0].get("ts") or 0) / 1000 - 1
+                calls = await self.db.model_calls_of(run["id"], since)
+                tracer = provider_for(tracing.otlp).get_tracer("easychain")
+                await asyncio.to_thread(export_run, tracer, run, events, calls)
+            if langsmith is not None:
+                await asyncio.to_thread(flush_langsmith, langsmith)
+        except Exception:
+            log.exception("Couldn't send the traces of run %s", run["id"])
 
     async def _release(self, job: dict[str, Any], run: dict[str, Any]) -> None:
         # Hand the job back as it was (a fork, a new chat message, an answer…). The next worker
