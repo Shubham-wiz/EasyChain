@@ -7,7 +7,7 @@
 //   }
 
 import { readSse } from "./sse.js";
-import type { Answer, RunEvent, RunInfo, StartOptions, Waiting } from "./types.js";
+import type { Answer, PublishedRun, RunEvent, RunInfo, StartOptions, Waiting } from "./types.js";
 
 export type * from "./types.js";
 export { readSse } from "./sse.js";
@@ -207,6 +207,23 @@ export class EasyChainClient {
 
   inbox(): Promise<{ id: string; run_id: string; flow_name: string; request: Waiting["request"] }[]> {
     return this.json("/api/inbox");
+  }
+
+  /**
+   * Run what is published to an environment, with that flow's access key (epk_…) as `apiKey`,
+   * and wait up to `wait` seconds for the answer. A run still going comes back with its
+   * run_id and status "running" or "queued".
+   */
+  runPublished(
+    flowId: string,
+    environment: "dev" | "staging" | "production",
+    inputs: Record<string, unknown> = {},
+    options: { threadId?: string; wait?: number } = {},
+  ): Promise<PublishedRun> {
+    return this.json(`/api/published/${encodeURIComponent(flowId)}/${environment}`, {
+      method: "POST",
+      body: JSON.stringify({ inputs, thread_id: options.threadId, wait: options.wait ?? 60 }),
+    });
   }
 
   answer(inboxId: string, answer: Answer): Promise<{ answered: boolean; run_id: string }> {

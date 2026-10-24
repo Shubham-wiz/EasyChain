@@ -803,6 +803,58 @@ def cmd_eval(args: argparse.Namespace) -> int:
     return 0 if evaluation.ok else 1
 
 
+def cmd_publish(args: argparse.Namespace) -> int:
+    """Publish a flow on a server, from CI: staging after a passing Test Run there."""
+    import httpx
+
+    from .deploy import DeployError, publish_flow
+
+    server = args.server or os.environ.get("EASYCHAIN_SERVER")
+    key = args.key or os.environ.get("EASYCHAIN_KEY")
+    if not server:
+        print("Say which server: --server https://… (or EASYCHAIN_SERVER)", file=sys.stderr)
+        return 2
+    headers = {"Authorization": f"Bearer {key}"} if key else {}
+    if args.workspace:
+        headers["X-EasyChain-Workspace"] = args.workspace
+    variables = dict(v.split("=", 1) for v in args.var or [])
+    with httpx.Client(base_url=server.rstrip("/"), headers=headers, timeout=60) as client:
+        try:
+            publish_flow(
+                client,
+                args.flow,
+                args.to,
+                repeat=args.repeat,
+                variables=variables,
+                timeout=args.timeout,
+            )
+        except (DeployError, httpx.HTTPError) as exc:
+            print(exc, file=sys.stderr)
+            return 1
+    return 0
+
+
+def cmd_deploy(args: argparse.Namespace) -> int:
+    """Pack flows for a self-hosted server: a Compose bundle, or a Docker image."""
+    from .deploy import DeployError, build_image, compose_bundle
+
+    home = Path(os.environ.get("EASYCHAIN_HOME") or Path.home() / ".easychain")
+    flows = Path(args.flows or os.environ.get("EASYCHAIN_WORKSPACE") or home / "flows")
+    try:
+        if args.kind == "compose":
+            count = compose_bundle(flows, Path(args.target), image=args.image, base=args.base)
+            print(
+                f"Wrote a Compose bundle with {count} flow(s) to {args.target}; see its README.md."
+            )
+        else:
+            count = build_image(flows, args.target, base=args.base)
+            print(f"Built {args.target} with {count} flow(s).")
+    except DeployError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    return 0
+
+
 def cmd_schema(args: argparse.Namespace) -> int:
     from .spec.schema import flow_json_schema_text
 
@@ -950,6 +1002,31 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", help="write the results here as JSON")
     p.add_argument("--sandbox", choices=["auto", "docker", "off"], help="where Code steps run")
     p.set_defaults(func=cmd_eval)
+
+    p = sub.add_parser(
+        "publish", help="publish a flow on a server (staging after a passing Test Run there)"
+    )
+    p.add_argument("flow", help="the flow's id on the server")
+    p.add_argument("--to", required=True, choices=["dev", "staging", "production"])
+    p.add_argument("--server", help="the server's address (or EASYCHAIN_SERVER)")
+    p.add_argument("--key", help="a key for scripts, eck_… (or EASYCHAIN_KEY)")
+    p.add_argument("--workspace", help="the workspace (a key works in its own)")
+    p.add_argument("--repeat", type=int, default=1, help="run each case this many times")
+    p.add_argument("--var", action="append", metavar="NAME=VALUE")
+    p.add_argument("--timeout", type=float, default=1800, help="seconds to wait for the Test Run")
+    p.set_defaults(func=cmd_publish)
+
+    p = sub.add_parser("deploy", help="pack flows for a self-hosted server (Compose or an image)")
+    p.add_argument("kind", choices=["compose", "image"])
+    p.add_argument("target", help="compose: a new folder for the bundle; image: the image name")
+    p.add_argument(
+        "--flows", help="the flows folder (default: EASYCHAIN_WORKSPACE or ~/.easychain/flows)"
+    )
+    p.add_argument(
+        "--image", default="easychain-flows:latest", help="the bundle's image name (compose)"
+    )
+    p.add_argument("--base", help="the Easy Chain image to build on (default: easychain:VERSION)")
+    p.set_defaults(func=cmd_deploy)
 
     p = sub.add_parser("schema", help="print the flow spec JSON Schema")
     p.add_argument("-o", "--output")

@@ -394,6 +394,15 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
   - Providers come from Settings or `EASYCHAIN_SSO`. Client secrets are kept in the vault.
   - `easychain.testing.oidc_provider` is the test identity provider used by pytest and
     Playwright.
+- **Publishing** (Phase 5.4, `server/publish_api.py`, [docs/publish.md](docs/publish.md)).
+  - Published flows are reached without a sign-in, like webhooks. An **access key**
+    (`epk_<id>_<secret>`; only the secret's SHA-256 is kept) is tied to one flow and
+    environment. A **chat link** has no secret; its page sends `frame-ancestors` with the
+    sites listed for it, and the widget only frames that page.
+  - Limits per minute are counted in `key_usage` (an upsert per key and minute), shared by
+    every API server. A chat link counts per visitor's address too.
+  - Runs started this way carry `trigger` `api` or `chat` and the key as `trigger_id`. The
+    calls aren't in the audit log (each is a run); publishing, unpublishing and keys are.
 - **The audit log** (Phase 5.6c, `server/audit.py`, [docs/audit.md](docs/audit.md)).
   - `AuditMiddleware` writes one row to `audit_log` (migration 0004) when the response to a
     change starts with a success status. The row holds who (the principal `authorize` found),
@@ -499,6 +508,7 @@ about **40 ms**. A 300-step flow opens on the canvas in under 1 s and pans at ab
 | `test_checks.py` | Every check passes and fails as it should and says why (JSON schema, numbers, choices, the order of tool calls in three ways, call counts); budgets add up every part of a case, and a cost with no price is skipped; the AI judge grades with a real model (the fake server), and is skipped without a key or with the stand-in; a flow's Test Set is read, checked, saved and run from the API (answers, variables, one case, the canvas's flow), and recorded in the audit log; the command line shows skipped checks |
 | `test_testruns.py` | Repeats give a pass rate and mark flaky cases; an unknown cost stays unknown; each case is compared with the baseline (better, worse, same, new, not run) with time and cost changes; through the API on the inline worker: a kept run against the saved version, a baseline, a regression after the flow changes, the old run keeping its cases, one baseline per flow, nothing seen from another workspace |
 | `test_evaluate.py` | The CI gate: with no baseline every case must pass; with one, only a regression fails it (a known failure doesn't), and so does a run that got too slow; the budget stops starting cases; the baseline file and the Markdown report; `easychain eval` exit codes, `--save-baseline`, `--summary` (appended) and `--json` |
+| `test_publish.py` | An environment swaps models and Knowledge Bases, and its secrets win over the workspace's (in Test Runs in it); promotion: dev as saved, staging only after a passing Test Run in staging, production only the staging version, and only Owners; access keys run what is published (their environment's secrets), are refused for another environment, after revoking and when nothing is published, and are rate limited with `Retry-After`; chat links serve the chat page (with `frame-ancestors`), chat through the fake model and keep the conversation; `easychain publish` runs the Test Run first; `easychain deploy` writes a Compose bundle and builds an image |
 | `test_egress.py` | The policy's modes and allow-list (names, endings, addresses, networks; IPv4 written as IPv6); Easy Chain's fetches and their redirects; a name that changes address between the check and the connection is refused, and connections go to the checked address; async clients; on a server with sign-in on, a Web request step, a Knowledge Base page, an OpenAPI document and an MCP server can't reach inside until allowed; who may change it; the environment wins; nothing changes on this computer |
 | `test_sso.py` | Single sign-on against the test identity provider: an existing account signs in and stays linked by the provider's id; new people get the provider's role only for allowed domains, or are told to ask an Owner; a wrong nonce, audience, issuer, signing key, an expired token, an unverified email, a refusal at the provider, the wrong client secret, a sign-in from another browser and a reused state are all refused with a message; a switched-off account can't; Owners set it up, the secret goes to the vault; the environment wins; it's in the audit log |
 | `test_scoped_env.py` | Secrets reach the work in hand through `os.environ` but aren't exported into the process (child processes don't see them); work running at the same time sees only its own layer, threads included; a layer wins over the server's environment, and the server's keys apply everywhere |

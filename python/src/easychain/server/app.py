@@ -64,12 +64,14 @@ from .auth_api import add_auth_routes
 from .cron import CronError, next_fire
 from .cron import describe as describe_cron
 from .db import Database, checkpoint_url
+from .environments_api import add_environment_routes
 from .hostguard import HostGuard, allowed_hosts
 from .hub import Busy, Hub, Invalid, NotFound
 from .integrations_api import add_integration_routes
 from .knowledge_api import CUT_OFF, add_knowledge_routes, use_database
 from .listen import listen
 from .network import add_network_routes
+from .publish_api import add_publish_routes
 from .secrets import SecretStore, VaultLocked, masked, unmasked
 from .spaces import Space, Spaces, in_workspace
 from .sso import add_sso_routes
@@ -295,6 +297,8 @@ def create_app(
     add_sso_routes(app)
     add_testset_routes(app)
     add_testrun_routes(app)
+    add_environment_routes(app)
+    add_publish_routes(app)
     app.add_middleware(AuditMiddleware)
     add_knowledge_routes(app, home_path)
     origins = os.environ.get(
@@ -1319,7 +1323,7 @@ def create_app(
     @app.exception_handler(HTTPException)
     async def http_error(request: Request, exc: HTTPException) -> JSONResponse:
         detail = exc.detail if isinstance(exc.detail, dict) else {"message": str(exc.detail)}
-        return JSONResponse(detail, status_code=exc.status_code)
+        return JSONResponse(detail, status_code=exc.status_code, headers=exc.headers)
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request: Request, exc: RequestValidationError) -> JSONResponse:

@@ -18,6 +18,7 @@ const run = (id: string, extra: Partial<TestRunSummary> = {}): TestRunSummary =>
   status: "done",
   stand_in: false,
   repeat: 3,
+  environment: null,
   by: "Olive",
   baseline: false,
   created_at: Date.now() / 1000,

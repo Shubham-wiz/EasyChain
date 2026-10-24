@@ -1,5 +1,5 @@
 import type { Proposal, TestCase } from "./copilot";
-import type { TestRunDetail, TestRunResult, TestRunSummary, TestSetInfo, WorkspaceInfo, ApiKeyInfo, AuditPage, AuthStatus, NetworkSettings, SsoProvider, SsoSettings, Me, NewApiKey, Person, Role, Catalog, CheckResult, ChunkPreview, CompileResult, DataField, FlowListItem, FlowSpec, FlowVersion, InboxItem, Issue, KnowledgeBase, KnowledgeDocument, KnowledgeHit, McpServer, McpSettings, McpTool, NotificationSettings, OpenApiInspection, RunEvent, RunSummary, SandboxSettings, SandboxStatus, SavePoint, SecretInfo, Skill, SkillSummary, Step, TemplateInfo, ThreadInfo, Trigger, TriggerKind } from "./types";
+import type { AccessKey, EnvironmentId, EnvironmentInfo, Publication, PublishState, TestRunDetail, TestRunResult, TestRunSummary, TestSetInfo, WorkspaceInfo, ApiKeyInfo, AuditPage, AuthStatus, NetworkSettings, SsoProvider, SsoSettings, Me, NewApiKey, Person, Role, Catalog, CheckResult, ChunkPreview, CompileResult, DataField, FlowListItem, FlowSpec, FlowVersion, InboxItem, Issue, KnowledgeBase, KnowledgeDocument, KnowledgeHit, McpServer, McpSettings, McpTool, NotificationSettings, OpenApiInspection, RunEvent, RunSummary, SandboxSettings, SandboxStatus, SavePoint, SecretInfo, Skill, SkillSummary, Step, TemplateInfo, ThreadInfo, Trigger, TriggerKind } from "./types";
 
 export class ApiError extends Error {
   status: number;
@@ -241,10 +241,27 @@ export const api = {
     request<TestRunResult>(`/api/flows/${encodeURIComponent(flowId)}/tests/run`, { method: "POST", ...json(body) }),
   /** Kept Test Runs of a flow, newest first (5.2). */
   testRuns: (flowId: string) => request<{ runs: TestRunSummary[] }>(`/api/flows/${encodeURIComponent(flowId)}/test-runs`).then((r) => r.runs),
-  startTestRun: (flowId: string, body: { repeat?: number; stand_in?: boolean; cases?: string[]; variables?: Record<string, string> }) =>
+  startTestRun: (flowId: string, body: { repeat?: number; stand_in?: boolean; cases?: string[]; variables?: Record<string, string>; environment?: EnvironmentId }) =>
     request<{ id: string; status: string }>(`/api/flows/${encodeURIComponent(flowId)}/test-runs`, { method: "POST", ...json(body) }),
   testRun: (id: string) => request<TestRunDetail>(`/api/test-runs/${encodeURIComponent(id)}`),
   makeBaseline: (id: string) => request<{ baseline: string }>(`/api/test-runs/${encodeURIComponent(id)}/baseline`, { method: "POST" }),
+  /** Environments and publishing (5.4). */
+  environments: () => request<{ environments: EnvironmentInfo[] }>("/api/environments").then((r) => r.environments),
+  saveEnvironment: (id: EnvironmentId, body: { models: Record<string, string>; knowledge: Record<string, string> }) =>
+    request<EnvironmentInfo>(`/api/environments/${id}`, { method: "PUT", ...json(body) }),
+  setEnvironmentSecret: (id: EnvironmentId, name: string, value: string) =>
+    request<{ saved: boolean }>(`/api/environments/${id}/secrets/${encodeURIComponent(name)}`, { method: "PUT", ...json({ value }) }),
+  deleteEnvironmentSecret: (id: EnvironmentId, name: string) =>
+    request<{ deleted: boolean }>(`/api/environments/${id}/secrets/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  publishState: (flowId: string) => request<PublishState>(`/api/flows/${encodeURIComponent(flowId)}/publish`),
+  publish: (flowId: string, body: { environment: EnvironmentId; version_id?: string; test_run_id?: string }) =>
+    request<Publication>(`/api/flows/${encodeURIComponent(flowId)}/publish`, { method: "POST", ...json(body) }),
+  unpublish: (flowId: string, environment: EnvironmentId) =>
+    request<{ unpublished: string }>(`/api/flows/${encodeURIComponent(flowId)}/publish/${environment}`, { method: "DELETE" }),
+  createAccessKey: (flowId: string, body: { environment: EnvironmentId; name: string; kind: "secret" | "chat"; per_minute: number; origins: string[] }) =>
+    request<AccessKey>(`/api/flows/${encodeURIComponent(flowId)}/keys`, { method: "POST", ...json(body) }),
+  revokeAccessKey: (flowId: string, keyId: string) =>
+    request<{ revoked: string }>(`/api/flows/${encodeURIComponent(flowId)}/keys/${encodeURIComponent(keyId)}`, { method: "DELETE" }),
   addTestCases: (flowId: string, cases: TestCase[]) =>
     request<{ added: number; total: number }>(`/api/flows/${encodeURIComponent(flowId)}/tests`, { method: "POST", ...json({ cases }) }),
   skills: () => request<{ skills: SkillSummary[] }>("/api/skills").then((r) => r.skills),

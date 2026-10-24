@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-10-24 (Phase 5: 5.8, 5.6, 5.1, 5.2 and 5.3 are done: sign-in, single sign-on, people, roles, keys, a role-aware web app, the audit log, the egress allow-list, workspaces, and Test Sets edited and run in the app with every kind of check, kept Test Runs with baselines, and the `easychain eval` CI gate; 5.4, environments and Publish, is next)._
+_Last updated: 2026-10-24 (Phase 5: 5.8, 5.6, 5.1, 5.2, 5.3 and 5.4 are done: sign-in, single sign-on, people, roles, keys, a role-aware web app, the audit log, the egress allow-list, workspaces, and Test Sets edited and run in the app with every kind of check, kept Test Runs with baselines, the `easychain eval` CI gate, and environments with Publish; 5.5, the model gateway, is next)._
 
 ## In one paragraph
 
@@ -54,13 +54,13 @@ issues under *Fix later* (decision 5.6).
 
 ## Tests
 
-| Suite | Result (2026-10-21, end of Phase 4) |
+| Suite | Result (2026-10-24, 5.4) |
 |---|---|
-| Python on Linux (`pnpm test`, and CI) | 613 pass (2026-10-24, 5.3), with SQLite, Postgres (+ pgvector in CI) and Docker (the sandbox escape tests; skipped without Docker); compiler and steps coverage 94% |
+| Python on Linux (`pnpm test`, and CI) | 621 pass, with SQLite, Postgres (+ pgvector in CI) and Docker (the sandbox escape tests; skipped without Docker); compiler and steps coverage 94% |
 | Python on Windows 11 (CI) | all pass |
 | Web unit (vitest) | 108 passed |
-| Client package (vitest) | 13 passed |
-| Playwright e2e | 44 passed (Linux), three on a second server with sign-in on (sign-in, each role, single sign-on), one making and switching workspaces, one writing and running a Test Set case and comparing kept Test Runs with a baseline; the screenshot spec runs only with `SCREENSHOTS=1` |
+| Client package (vitest) | 14 passed |
+| Playwright e2e | 45 passed (Linux), three on a second server with sign-in on (sign-in, each role, single sign-on), one making and switching workspaces, one writing and running a Test Set case and comparing kept Test Runs with a baseline, one publishing a chat flow and chatting on its chat page; the screenshot spec runs only with `SCREENSHOTS=1` |
 | Template Test Sets | all 13 pass (`tests/test_templates.py`), with the stand-in AI and scripted turns; research-assistant 10/10, inbox-triage 10/10 |
 | Lint | ruff check + format clean; tsc clean for web and client |
 
@@ -92,8 +92,12 @@ real-model workflow is started by hand and needs API keys as repository secrets.
    real-model workflow.
 5. ~~**5.3, the CI gate**~~ (done): `easychain eval` against baseline files in git, the GitHub
    Action, the Flows job in CI ([ci.md](../ci.md), decision 5.18).
-6. **Next: 5.4, environments and Publish**, then 5.5 (model gateway) and 5.7 (dashboards and
-   tracing).
+6. ~~**5.4, environments and Publish**~~ (done): dev, staging and production with their own
+   secrets and swaps, promotion through a passing Test Run in staging, access keys with rate
+   limits, chat links with a hosted page and widget, `easychain publish` and `easychain
+   deploy` ([publish.md](../publish.md), decision 5.19).
+7. **Next: 5.5, the model gateway**, then 5.7 (dashboards and tracing) and the Phase 5
+   report.
 
 ## GitHub
 

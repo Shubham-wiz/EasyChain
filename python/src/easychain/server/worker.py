@@ -21,7 +21,7 @@ import time
 import uuid
 from typing import Any
 
-from .. import egress
+from .. import egress, environments
 from ..runtime import RunOptions, stream_run
 from ..runtime.loader import load_graph
 from ..runtime.runner import compile_cached
@@ -153,8 +153,10 @@ class Worker:
         done = asyncio.Event()
         beat = asyncio.create_task(self._heartbeat(job_id, stop, lost, done))
         try:
-            # The job is its workspace's: its flows, secrets, skills and settings (spaces.py).
-            with self.hub.spaces.enter(await self._workspace_of(job)):
+            # The job is its workspace's: its flows, secrets, skills and settings (spaces.py),
+            # and its environment's, if it has one (environments.py).
+            workspace, environment = await self._workspace_of(job)
+            with self.hub.spaces.enter(workspace, environment):
                 try:
                     await self._run_job(job, stop, lost)
                 except Exception:
@@ -172,11 +174,21 @@ class Worker:
             self._releasing.discard(job_id)
             self.hub.bus.notify(job["run_id"])
 
-    async def _workspace_of(self, job: dict[str, Any]) -> str:
-        if job["action"] in ("ingest", "test"):
-            return (job.get("payload") or {}).get("workspace") or "default"
-        run = await self.db.get_run(job["run_id"])
-        return (run or {}).get("workspace_id") or "default"
+    async def _workspace_of(self, job: dict[str, Any]) -> tuple[str, Any]:
+        """The job's workspace, and its environment (None for drafts and documents)."""
+        if job["action"] == "ingest":
+            return (job.get("payload") or {}).get("workspace") or "default", None
+        if job["action"] == "test":
+            row = await self.db.get_test_run(job["run_id"]) or {}
+            workspace = (job.get("payload") or {}).get("workspace") or "default"
+        else:
+            row = await self.db.get_run(job["run_id"]) or {}
+            workspace = row.get("workspace_id") or "default"
+        name = row.get("environment")
+        if not name:
+            return workspace, None
+        key = self.hub.spaces.get(workspace).setting(f"environment:{name}")
+        return workspace, environments.from_settings(name, await self.db.get_setting(key, {}))
 
     async def _heartbeat(
         self, job_id: int, stop: asyncio.Event, lost: asyncio.Event, done: asyncio.Event

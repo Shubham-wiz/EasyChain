@@ -150,14 +150,20 @@ class Hub:
         parent_run_id: str | None = None,
         action: str = "start",
         payload: dict[str, Any] | None = None,
+        environment: str | None = None,
+        version_id: str | None = None,
     ) -> str:
+        """Queue a run of ``spec``. ``version_id``: run that saved version as it is (a
+        published one) instead of saving the flow; ``environment``: with its secrets and
+        swaps."""
         thread = thread_id or uuid.uuid4().hex
         payload = dict(payload or {})
         if thread_id and await self.db.thread_elsewhere(thread_id):
             raise NotFound("That conversation isn't in this workspace.")
         if thread_id and action == "start":
             payload.update(await self._double_text(spec, thread))
-        version_id = await self.db.save_version(flow_id, self.bundle(spec))
+        if version_id is None:
+            version_id = await self.db.save_version(flow_id, self.bundle(spec))
         options = {
             "stand_in": stand_in,
             "pause_before": list(pause_before or []),
@@ -177,6 +183,7 @@ class Hub:
             trigger_id=trigger_id,
             parent_run_id=parent_run_id,
             flow_limit=spec.settings.max_concurrent_runs,
+            environment=environment,
         )
         self.bus.job_added()
         return run_id

@@ -195,6 +195,13 @@ PERMISSIONS: dict[tuple[str, str], str] = {
     # webhooks: their own secret token (in the address) is the check
     ("POST", "/api/hooks/{trigger_id}"): PUBLIC,
     ("POST", "/api/hooks/{trigger_id}/upload"): PUBLIC,
+    # published flows: their access key (or chat link) is the check, with its rate limit
+    ("POST", "/api/published/{flow_id}/{environment}"): PUBLIC,
+    ("GET", "/api/published/{flow_id}/{environment}/runs/{run_id}"): PUBLIC,
+    ("GET", "/api/chat/{key_id}"): PUBLIC,
+    ("POST", "/api/chat/{key_id}"): PUBLIC,
+    ("GET", "/chat/{key_id}"): PUBLIC,
+    ("GET", "/widget.js"): PUBLIC,
     # people and keys, and what everyone did
     ("GET", "/api/audit"): "owner",
     ("GET", "/api/people"): "owner",
@@ -221,6 +228,8 @@ PERMISSIONS: dict[tuple[str, str], str] = {
     ("GET", "/api/flows/{flow_id}/tests"): "viewer",
     ("GET", "/api/flows/{flow_id}/test-runs"): "viewer",
     ("GET", "/api/test-runs/{run_id}"): "viewer",
+    ("GET", "/api/environments"): "editor",
+    ("GET", "/api/flows/{flow_id}/publish"): "viewer",
     ("GET", "/api/versions/{version_id}"): "viewer",
     ("POST", "/api/check"): "viewer",
     ("POST", "/api/compile"): "viewer",
@@ -259,6 +268,11 @@ PERMISSIONS: dict[tuple[str, str], str] = {
     ("POST", "/api/flows/{flow_id}/tests"): "editor",
     ("PUT", "/api/flows/{flow_id}/tests"): "editor",
     ("POST", "/api/test-runs/{run_id}/baseline"): "editor",
+    # publishing (to production, and its keys, needs an Owner: see the routes)
+    ("POST", "/api/flows/{flow_id}/publish"): "editor",
+    ("DELETE", "/api/flows/{flow_id}/publish/{environment}"): "editor",
+    ("POST", "/api/flows/{flow_id}/keys"): "editor",
+    ("DELETE", "/api/flows/{flow_id}/keys/{key_id}"): "editor",
     ("POST", "/api/triggers"): "editor",
     ("PATCH", "/api/triggers/{trigger_id}"): "editor",
     ("DELETE", "/api/triggers/{trigger_id}"): "editor",
@@ -286,6 +300,9 @@ PERMISSIONS: dict[tuple[str, str], str] = {
     ("PUT", "/api/secrets/{name}"): "owner",
     ("DELETE", "/api/secrets/{name}"): "owner",
     ("PUT", "/api/settings/mcp"): "owner",
+    ("PUT", "/api/environments/{environment}"): "owner",
+    ("PUT", "/api/environments/{environment}/secrets/{name}"): "owner",
+    ("DELETE", "/api/environments/{environment}/secrets/{name}"): "owner",
     ("PUT", "/api/settings/notifications"): "owner",
     ("POST", "/api/settings/notifications/test"): "owner",
     # what every workspace shares

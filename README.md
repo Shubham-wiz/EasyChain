@@ -329,13 +329,13 @@ updated in the same commit as the work (decision 5.6). Each phase's report has t
 - [x] ✅ `easychain eval` fails on a regression against the baseline (a baseline file in git; known failures aren't regressions; optional time and cost limits; a budget) ([docs](docs/ci.md))
 - [x] ✅ GitHub Action (`.github/actions/easychain-eval`) and a guide for other CI systems; results posted as a summary; Easy Chain's own CI gates the templates with it (the Flows job)
 
-**5.4 Environments and Publish**
+**5.4 Environments and Publish** ✅
 
-- [ ] ⬜ Environments (dev, staging, prod) with their own secrets, models and Knowledge Bases
-- [ ] ⬜ Promotion draft → staging → production only when the Test Run passes
-- [ ] ⬜ Publish: a stable API endpoint, a hosted chat page and an embeddable widget
-- [ ] ⬜ API keys and rate limits per key
-- [ ] ⬜ `easychain deploy`: a Docker image or Compose bundle (self-hosted, decision 5.3)
+- [x] ✅ Environments (dev, staging, production) with their own secrets (over the workspace's), model swaps and Knowledge Base swaps; Settings → Environments; Test Runs in an environment ([docs](docs/publish.md))
+- [x] ✅ Promotion draft → staging → production only when the Test Run passes: staging needs a passing kept Test Run of the version in Staging, production takes the Staging version and an Owner; `easychain publish` for CI
+- [x] ⚠️ Publish: a stable API endpoint, a hosted chat page and an embeddable widget (the chat page shows plain text; F36)
+- [x] ✅ Access keys and rate limits per key (per minute, counted in the database for every API server; chat links per visitor too)
+- [x] ⚠️ `easychain deploy`: a Docker image or Compose bundle (self-hosted, decision 5.3); builds on a locally built Easy Chain image (F37)
 
 **5.5 Model gateway**
 
@@ -403,6 +403,9 @@ yet.
 | F32 | In the default workspace, a long-term memory search over every namespace can return fewer than its limit (other workspaces' items are filtered out after the search) | 5.6d | backlog |
 | F33 | The real-model workflow hasn't been run yet: it needs API keys stored as repository secrets (with a spending limit) | 5.2 | the owner, before a release |
 | F34 | **Run all** in the Tests tab waits for every case in one request; a long Test Set with real models can outlast a proxy's timeout | 5.1 | backlog (stream results; kept Test Runs already run on a worker) |
+| F35 | A chat link's per-visitor limit counts the address the server sees: behind a proxy, every visitor shares the proxy's | 5.4 | backlog (trust the proxy's forwarded address when configured) |
+| F36 | The hosted chat page shows replies as plain text: no Markdown, citations or Ask a Human answers | 5.4 | backlog |
+| F37 | `easychain deploy` builds on an Easy Chain image you build yourself; there's no published image yet | 5.4 | backlog (publish images to a registry with releases) |
 
 ## Licence
 

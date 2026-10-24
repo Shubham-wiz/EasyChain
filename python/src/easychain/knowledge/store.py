@@ -515,9 +515,13 @@ class KnowledgeStore:
 
 def in_this_workspace(search: Callable[..., Any]) -> Callable[..., Any]:
     """``search_knowledge`` for a flow run by Easy Chain: it searches only the Knowledge Bases
-    of the workspace the run belongs to (exported code searches whatever it is pointed at)."""
+    of the workspace the run belongs to, swapped as the run's environment says (exported code
+    searches whatever it is pointed at)."""
 
     def search_knowledge(base: str, *args: Any, **kwargs: Any) -> Any:
+        from ..environments import knowledge_for
+
+        base = knowledge_for(base)  # a run in an environment uses its Knowledge Base swaps
         workspace = current_workspace.current()
         if KnowledgeStore().setup().get_base(base, workspace) is None:
             raise KnowledgeNotHere(

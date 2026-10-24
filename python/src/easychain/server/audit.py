@@ -58,6 +58,10 @@ AUDITED: dict[tuple[str, str], str] = {
     ("POST", "/api/flows/{flow_id}/tests/run"): "flow.test_run",
     ("POST", "/api/flows/{flow_id}/test-runs"): "flow.test_run_kept",
     ("POST", "/api/test-runs/{run_id}/baseline"): "flow.baseline",
+    ("POST", "/api/flows/{flow_id}/publish"): "flow.publish",
+    ("DELETE", "/api/flows/{flow_id}/publish/{environment}"): "flow.unpublish",
+    ("POST", "/api/flows/{flow_id}/keys"): "flow.key_create",
+    ("DELETE", "/api/flows/{flow_id}/keys/{key_id}"): "flow.key_revoke",
     ("POST", "/api/triggers"): "trigger.create",
     ("PATCH", "/api/triggers/{trigger_id}"): "trigger.change",
     ("DELETE", "/api/triggers/{trigger_id}"): "trigger.delete",
@@ -72,6 +76,9 @@ AUDITED: dict[tuple[str, str], str] = {
     ("DELETE", "/api/skills/{name}"): "skill.delete",
     ("PUT", "/api/settings/copilot"): "settings.copilot",
     ("PUT", "/api/secrets/{name}"): "secret.set",
+    ("PUT", "/api/environments/{environment}"): "environment.change",
+    ("PUT", "/api/environments/{environment}/secrets/{name}"): "secret.set",
+    ("DELETE", "/api/environments/{environment}/secrets/{name}"): "secret.delete",
     ("DELETE", "/api/secrets/{name}"): "secret.delete",
     ("PUT", "/api/settings/mcp"): "settings.mcp",
     ("PUT", "/api/settings/sandbox"): "settings.sandbox",
@@ -93,6 +100,10 @@ NOT_AUDITED: dict[tuple[str, str], str] = {
     ("POST", "/api/mcp/tools"): "lists an MCP server's tools",
     ("POST", "/api/openapi/inspect"): "reads an API description",
     ("POST", "/api/openapi/steps"): "makes steps to add; adding them is a flow save",
+    ("POST", "/api/published/{flow_id}/{environment}"): (
+        "a published flow's runs; each is in its runs, with the key that started it"
+    ),
+    ("POST", "/api/chat/{key_id}"): "a chat message; each is a run, with the chat link",
 }
 
 # How each action reads in the log ("Ann saved flow support-bot").
@@ -127,6 +138,10 @@ LABELS: dict[str, str] = {
     "flow.test_run": "ran the Test Set of flow",
     "flow.test_run_kept": "started a kept Test Run of flow",
     "flow.baseline": "chose the Test Run baseline of flow",
+    "flow.publish": "published flow",
+    "flow.unpublish": "stopped publishing flow",
+    "flow.key_create": "made an access key for flow",
+    "flow.key_revoke": "revoked an access key of flow",
     "trigger.create": "added a trigger to",
     "trigger.change": "changed trigger",
     "trigger.delete": "removed trigger",
@@ -138,6 +153,7 @@ LABELS: dict[str, str] = {
     "skill.save": "saved skill",
     "skill.delete": "deleted skill",
     "settings.copilot": "changed the copilot's settings",
+    "environment.change": "changed the model and Knowledge Base swaps of environment",
     "secret.set": "set secret",
     "secret.delete": "deleted secret",
     "settings.mcp": "changed the MCP servers",
@@ -157,6 +173,7 @@ KINDS = {
     "knowledge.": "Knowledge Bases",
     "skill.": "Skills",
     "secret.": "Secrets",
+    "environment.": "Environments",
     "settings.": "Settings",
     "person.": "People",
     "workspace.": "Workspaces",

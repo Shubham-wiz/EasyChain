@@ -70,6 +70,16 @@ describe("EasyChainClient", () => {
     expect(opened).toEqual(["ws://easy:8000/api/runs/r1/ws?after=0&workspace=sales-team"]);
   });
 
+  it("runs a published flow with its access key", async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(json({ run_id: "r1", thread_id: "t1", status: "ok", output: { reply: "Hi" } }));
+    const client = new EasyChainClient({ baseUrl: "http://easy:8000", fetch, apiKey: "epk_abc_secret" });
+    const ran = await client.runPublished("support-bot", "production", { question: "Hi" }, { wait: 30 });
+    expect(ran.output).toEqual({ reply: "Hi" });
+    expect(fetch.mock.calls[0][0]).toBe("http://easy:8000/api/published/support-bot/production");
+    expect(fetch.mock.calls[0][1].headers.Authorization).toBe("Bearer epk_abc_secret");
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ inputs: { question: "Hi" }, wait: 30 });
+  });
+
   it("answers waiting steps and reports API errors plainly", async () => {
     const fetch = vi
       .fn()

@@ -21,6 +21,7 @@ from ..testruns import compare
 from ..testsets import _substitute, read_test_set
 from .audit import note
 from .auth import principal_of
+from .environments_api import known
 from .spaces import space_of
 from .store import FlowNotFound
 from .testsets_api import _variables
@@ -34,6 +35,8 @@ class TestRunStart(BaseModel):
     stand_in: bool | None = None
     cases: list[str] | None = None
     variables: dict[str, str] = Field(default_factory=dict)
+    # Run in an environment: its secrets, model and Knowledge Base swaps (docs/publish.md).
+    environment: str | None = None
 
 
 def public(row: dict[str, Any]) -> dict[str, Any]:
@@ -46,6 +49,7 @@ def public(row: dict[str, Any]) -> dict[str, Any]:
         "status": row["status"],
         "stand_in": bool(row["stand_in"]),
         "repeat": row["repeat"],
+        "environment": row.get("environment"),
         "by": row.get("created_by"),
         "baseline": bool(row["baseline"]),
         "created_at": row["created_at"],
@@ -115,6 +119,7 @@ def add_testrun_routes(app: FastAPI) -> None:
             repeat=body.repeat,
             judge_model=data.get("judge_model"),
             created_by=by,
+            environment=known(body.environment) if body.environment else None,
         )
         hub().bus.job_added()
         note(request, flow_id, test_run=run_id, repeat=body.repeat)

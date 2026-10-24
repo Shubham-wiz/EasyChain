@@ -11,6 +11,7 @@ import { NetworkSection } from "./Network";
 import { NotificationsSection } from "./Notifications";
 import { AuditSection } from "./Audit";
 import { ApiKeysSection, PeopleSection } from "./People";
+import { EnvironmentsSection } from "./Environments";
 import { SsoSection } from "./Sso";
 import { WorkspacesSection } from "./Workspaces";
 import { SandboxSection } from "./Sandbox";
@@ -267,7 +268,7 @@ export function SettingsDialog() {
   // What each role sees: Editors the settings (read only), Owners people too, the server's
   // Owners workspaces and single sign-on, and everyone signed in their own keys for scripts.
   const tabs: SettingsTab[] = [
-    ...(editor ? (["keys", "mcp", "notifications", "sandbox", "network"] as const) : []),
+    ...(editor ? (["keys", "environments", "mcp", "notifications", "sandbox", "network"] as const) : []),
     ...(signIn && owner ? (["people"] as const) : []),
     ...(serverOwner ? (["workspaces"] as const) : []),
     ...(signIn && serverOwner ? (["sso"] as const) : []),
@@ -288,6 +289,7 @@ export function SettingsDialog() {
           {editor && (
             <>
               <TabsTrigger value="keys">Keys and providers</TabsTrigger>
+              <TabsTrigger value="environments">Environments</TabsTrigger>
               <TabsTrigger value="mcp">MCP servers</TabsTrigger>
               <TabsTrigger value="notifications">Notifications</TabsTrigger>
               <TabsTrigger value="sandbox">Sandbox</TabsTrigger>
@@ -306,6 +308,9 @@ export function SettingsDialog() {
               <KeysSection />
             </OwnerOnly>
           )}
+        </TabsContent>
+        <TabsContent value="environments" className="pt-4">
+          {shown("environments") && <EnvironmentsSection />}
         </TabsContent>
         <TabsContent value="mcp" className="pt-4">
           {shown("mcp") && (

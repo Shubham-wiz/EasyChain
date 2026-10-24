@@ -1,13 +1,14 @@
 import { ChevronDown, ChevronRight, History, Loader2, Play, Star } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../lib/api";
-import type { TestRunDetail, TestRunSummary } from "../../lib/types";
+import type { EnvironmentId, TestRunDetail, TestRunSummary } from "../../lib/types";
 import { timeAgo } from "../../lib/utils";
 import { useCan } from "../../state/auth";
 import { Badge, Button, Select } from "../ui";
 
 const CHANGE_TONE = { better: "ok", worse: "danger", same: "neutral", new: "accent", gone: "warn" } as const;
 const CHANGE_LABEL = { better: "Better", worse: "Worse", same: "Same", new: "New", gone: "Not run" } as const;
+const ENV_LABEL: Record<EnvironmentId, string> = { dev: "Development", staging: "Staging", production: "Production" };
 
 function percent(rate: number | undefined) {
   return rate == null ? "–" : `${Math.round(rate * 100)}%`;
@@ -93,6 +94,7 @@ export function TestRuns({ flowId, disabled, variables }: { flowId: string; disa
   const canEdit = useCan("editor");
   const [runs, setRuns] = useState<TestRunSummary[]>([]);
   const [repeat, setRepeat] = useState(1);
+  const [environment, setEnvironment] = useState<EnvironmentId | "">("");
   const [open, setOpen] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
@@ -115,9 +117,20 @@ export function TestRuns({ flowId, disabled, variables }: { flowId: string; disa
       <h3 className="flex items-center gap-1.5 text-sm font-semibold">
         <History size={14} /> Kept Test Runs
       </h3>
-      <p className="text-xs text-muted">Run the saved flow and keep the results, to compare later versions with a baseline. Repeat cases to see which ones are flaky with real models.</p>
+      <p className="text-xs text-muted">
+        Run the saved flow and keep the results, to compare later versions with a baseline. Repeat cases to see which ones are flaky with real models. Run in an environment
+        to use its secrets and swaps; a run in Staging where every case passes lets the version be published there.
+      </p>
       {canRun && (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Select aria-label="Run in" className="h-8 w-40 text-xs" value={environment} onChange={(e) => setEnvironment(e.target.value as EnvironmentId | "")}>
+            <option value="">As drawn</option>
+            {(Object.keys(ENV_LABEL) as EnvironmentId[]).map((env) => (
+              <option key={env} value={env}>
+                In {ENV_LABEL[env]}
+              </option>
+            ))}
+          </Select>
           <Select aria-label="Repeat each case" className="h-8 w-36 text-xs" value={repeat} onChange={(e) => setRepeat(Number(e.target.value))}>
             {[1, 3, 5, 10].map((n) => (
               <option key={n} value={n}>
@@ -133,7 +146,7 @@ export function TestRuns({ flowId, disabled, variables }: { flowId: string; disa
               setStarting(true);
               setError(null);
               try {
-                const made = await api.startTestRun(flowId, { repeat, variables });
+                const made = await api.startTestRun(flowId, { repeat, variables, ...(environment ? { environment } : {}) });
                 setOpen(made.id);
                 load();
               } catch (e) {
@@ -163,6 +176,7 @@ export function TestRuns({ flowId, disabled, variables }: { flowId: string; disa
                 {r.by ? ` by ${r.by}` : ""}
                 {r.repeat > 1 ? ` · ×${r.repeat}` : ""}
                 {r.stand_in ? " · stand-in" : ""}
+                {r.environment ? ` · ${ENV_LABEL[r.environment]}` : ""}
               </span>
               {r.baseline && <Badge tone="accent">Baseline</Badge>}
               {r.status === "done" && r.summary ? (

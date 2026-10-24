@@ -32,7 +32,7 @@ TABLES_040 = {
 # Columns later migrations add to those tables.
 ADDED_SINCE_040 = {
     (table, "workspace_id") for table in ("flow_versions", "runs", "inbox", "triggers")
-}
+} | {("runs", "environment")}
 
 
 def _differences(url: str) -> list:

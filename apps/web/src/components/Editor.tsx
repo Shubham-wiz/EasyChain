@@ -13,6 +13,7 @@ import { Canvas } from "./canvas/Canvas";
 import { ExportDialog } from "./dialogs/ExportDialog";
 import { ImportApiDialog } from "./dialogs/ImportApiDialog";
 import { SettingsDialog } from "./dialogs/SettingsDialog";
+import { PublishDialog } from "./dialogs/PublishDialog";
 import { TriggersDialog } from "./dialogs/TriggersDialog";
 import { Inspector } from "./inspector/Inspector";
 import { CopilotPanel } from "./CopilotPanel";
@@ -273,6 +274,7 @@ export function Editor({ flowId, tryIt, onHome }: { flowId: string; tryIt: boole
         <ExportDialog />
         <SettingsDialog />
         <TriggersDialog />
+        <PublishDialog />
         <ImportApiDialog />
       </div>
     </ReactFlowProvider>

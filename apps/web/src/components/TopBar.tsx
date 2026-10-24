@@ -1,5 +1,5 @@
 import * as Popover from "@radix-ui/react-popover";
-import { AlertTriangle, CheckCircle2, CircleAlert, Cloud, CloudOff, Code2, FileJson, Inbox, KeyRound, LayoutGrid, Loader2, Moon, Play, Redo2, Sun, Undo2, Zap } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CircleAlert, Cloud, CloudOff, Code2, FileJson, Inbox, KeyRound, LayoutGrid, Loader2, Moon, Play, Redo2, Rocket, Sun, Undo2, Zap } from "lucide-react";
 import { useStore } from "zustand";
 import { autoLayout } from "../lib/spec";
 import { cn, modKey } from "../lib/utils";
@@ -159,6 +159,9 @@ export function TopBar({ onHome }: { onHome: () => void }) {
         </Tooltip>
         <Button variant="outline" size="sm" onClick={() => setExportOpen(true)} data-testid="export-button">
           <Code2 size={14} /> Export
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => useUi.getState().setPublishOpen(true)} data-testid="publish-button">
+          <Rocket size={14} /> Publish
         </Button>
         {canRun && (
           <Tooltip content={`Run (${mod}+Enter)`}>

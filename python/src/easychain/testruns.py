@@ -50,6 +50,8 @@ def case_summary(name: str, runs: list[dict[str, Any]]) -> dict[str, Any]:
         "seconds": round(_mean([(r.get("metrics") or {}).get("seconds") or 0 for r in runs]), 3),
         "tokens": round(_mean([(r.get("metrics") or {}).get("tokens") or 0 for r in runs]), 1),
         "cost": round(_mean(known), 6) if known and len(known) == len(costs) else None,
+        # what the last run of it gave
+        "output": runs[-1].get("output") if runs else None,
     }
 
 

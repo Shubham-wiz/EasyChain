@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 export type Mode = "beginner" | "pro";
-export type SettingsTab = "keys" | "mcp" | "notifications" | "sandbox" | "people" | "api-keys" | "audit" | "network" | "sso" | "workspaces";
+export type SettingsTab = "keys" | "mcp" | "notifications" | "sandbox" | "people" | "api-keys" | "audit" | "network" | "sso" | "workspaces" | "environments";
 type Theme = "light" | "dark";
 export type RightTab = "inspect" | "run" | "tests" | "copilot";
 
@@ -65,6 +65,7 @@ interface UiState {
   standIn: boolean;
   focusSetting: { step: string; key: string; at: number } | null;
   triggersOpen: boolean;
+  publishOpen: boolean;
   /** Breakpoints for test runs of the open flow (kept per flow in this browser). */
   breakpoints: Breakpoints;
   /** The flow whose breakpoints and stand-in setting are loaded. */
@@ -84,6 +85,7 @@ interface UiState {
   setFlowStandIn: (flowId: string, on: boolean) => void;
   focus: (step: string, key: string) => void;
   setTriggersOpen: (open: boolean) => void;
+  setPublishOpen: (open: boolean) => void;
   /** Load the open flow's breakpoints and stand-in setting. */
   loadFlowPrefs: (flowId: string) => void;
   toggleBreakpoint: (step: string, where: "before" | "after") => void;
@@ -104,6 +106,7 @@ export const useUi = create<UiState>()((set, get) => ({
   standIn: storedStandIn(null),
   focusSetting: null,
   triggersOpen: false,
+  publishOpen: false,
   breakpoints: { before: [], after: [] },
   prefsFor: null,
   setMode: (mode) => {
@@ -140,6 +143,7 @@ export const useUi = create<UiState>()((set, get) => ({
   },
   focus: (step, key) => set({ selected: [step], rightTab: "inspect", focusSetting: { step, key, at: Date.now() } }),
   setTriggersOpen: (triggersOpen) => set({ triggersOpen }),
+  setPublishOpen: (publishOpen) => set({ publishOpen }),
   loadFlowPrefs: (flowId) => set({ breakpoints: storedBreakpoints(flowId), standIn: storedStandIn(flowId), prefsFor: flowId }),
   toggleBreakpoint: (step, where) => {
     const current = get().breakpoints;

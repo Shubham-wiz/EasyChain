@@ -105,3 +105,14 @@ export interface StartOptions {
   pauseBefore?: string[];
   pauseAfter?: string[];
 }
+
+/** What a published flow's run gave (POST /api/published/{flow}/{environment}). */
+export interface PublishedRun {
+  run_id: string;
+  thread_id: string;
+  status: "ok" | "error" | "paused" | "running" | "queued" | "cancelled";
+  output?: Record<string, unknown>;
+  error?: string;
+  /** Set when the flow waits for someone in the Inbox. */
+  waiting?: string;
+}

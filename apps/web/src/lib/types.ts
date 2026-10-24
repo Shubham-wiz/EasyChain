@@ -781,6 +781,7 @@ export interface TestRunSummary {
   status: "queued" | "running" | "done" | "error";
   stand_in: boolean;
   repeat: number;
+  environment: EnvironmentId | null;
   by: string | null;
   baseline: boolean;
   created_at: number;
@@ -804,4 +805,49 @@ export interface TestRunDetail extends TestRunSummary {
   cases: TestRunCase[];
   baseline_id: string | null;
   comparison: { cases: CaseChange[]; better: number; worse: number; same: number; new: number; gone: number; regressions: string[] } | null;
+}
+
+export type EnvironmentId = "dev" | "staging" | "production";
+
+/** A workspace's environment (server/environments_api.py): swaps, and its secrets' names. */
+export interface EnvironmentInfo {
+  id: EnvironmentId;
+  label: string;
+  models: Record<string, string>;
+  knowledge: Record<string, string>;
+  secrets: string[];
+}
+
+/** A flow version published to an environment (server/publish_api.py). */
+export interface Publication {
+  id: string;
+  flow_id: string;
+  environment: EnvironmentId;
+  version_id: string;
+  test_run_id: string | null;
+  published_by: string | null;
+  published_at: number;
+  retired_at: number | null;
+}
+
+/** A key that runs a published flow ("secret", shown once) or a chat link ("chat"). */
+export interface AccessKey {
+  id: string;
+  flow_id: string;
+  environment: EnvironmentId;
+  name: string;
+  kind: "secret" | "chat";
+  per_minute: number;
+  origins: string[];
+  created_by: string | null;
+  created_at: number;
+  last_used_at: number | null;
+  chat_path?: string;
+  key?: string;
+}
+
+export interface PublishState {
+  environments: { id: EnvironmentId; label: string; published: Publication | null }[];
+  history: Publication[];
+  keys: AccessKey[];
 }

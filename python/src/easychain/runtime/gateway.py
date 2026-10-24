@@ -16,6 +16,7 @@ from typing import Any
 from langchain.chat_models import init_chat_model as _init_chat_model
 from langchain.embeddings import init_embeddings as _init_embeddings
 
+from ..environments import model_for
 from ..knowledge.embeddings import KeywordEmbeddings
 from ..providers import EMBEDDING_MODELS, PROVIDERS, split_model
 from .sandbox import SandboxSettings, settings_from_env
@@ -90,7 +91,8 @@ def _check_provider(provider_id: str | None, kwargs: dict[str, Any]) -> None:
 
 def gateway_init_chat_model(model: str | None = None, **kwargs: Any) -> Any:
     settings = current_settings()
-    model = model or ""
+    # A run in an environment uses its model swaps (environments.py).
+    model = model_for(model or "")
     if settings.stand_in:
         return StandInChatModel(model_name=model or "stand-in", script=settings.script)
     provider_id, _ = split_model(model)

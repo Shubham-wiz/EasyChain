@@ -65,6 +65,8 @@ runs = sa.Table(
     sa.Column("workspace_id", sa.String(40), index=True, server_default="default"),
     sa.Column("flow_id", sa.String(100), index=True, nullable=True),
     sa.Column("flow_name", sa.String(200)),
+    # dev, staging or production, for a published flow's runs (Phase 5.4, migration 0008)
+    sa.Column("environment", sa.String(20), index=True, nullable=True),
     sa.Column("version_id", sa.String(40)),
     sa.Column("thread_id", sa.String(100), index=True),
     # queued, running, paused, ok, error, cancelled
@@ -293,6 +295,56 @@ test_runs = sa.Table(
     sa.Column("created_at", sa.Float),
     sa.Column("started_at", sa.Float, nullable=True),
     sa.Column("finished_at", sa.Float, nullable=True),
+    # run with an environment's secrets and swaps (Phase 5.4, migration 0008)
+    sa.Column("environment", sa.String(20), nullable=True),
+)
+
+# ── publishing (Phase 5.4, migration 0008) ──────────────────────────────────
+
+# Which flow version is published to which environment; the one in force has no retired_at.
+publications = sa.Table(
+    "publications",
+    metadata,
+    sa.Column("id", sa.String(40), primary_key=True),
+    sa.Column("workspace_id", sa.String(40), index=True),
+    sa.Column("flow_id", sa.String(100), index=True),
+    sa.Column("environment", sa.String(20)),
+    sa.Column("version_id", sa.String(40)),
+    sa.Column("test_run_id", sa.String(40), nullable=True),
+    sa.Column("published_by", sa.String(200), nullable=True),
+    sa.Column("published_at", sa.Float),
+    sa.Column("retired_at", sa.Float, nullable=True),
+)
+
+# Keys that let other apps run a published flow (epk_<id>_<secret>; only the secret's SHA-256
+# is kept), and chat links for the hosted chat page and the widget (no secret).
+access_keys = sa.Table(
+    "access_keys",
+    metadata,
+    sa.Column("id", sa.String(16), primary_key=True),
+    sa.Column("workspace_id", sa.String(40)),
+    sa.Column("flow_id", sa.String(100), index=True),
+    sa.Column("environment", sa.String(20)),
+    sa.Column("name", sa.String(200)),
+    # secret or chat
+    sa.Column("kind", sa.String(10)),
+    sa.Column("secret_hash", sa.String(64), nullable=True),
+    sa.Column("per_minute", sa.Integer),
+    # sites that may embed the chat page (chat links)
+    sa.Column("origins", sa.JSON),
+    sa.Column("created_by", sa.String(200), nullable=True),
+    sa.Column("created_at", sa.Float),
+    sa.Column("last_used_at", sa.Float, nullable=True),
+    sa.Column("revoked_at", sa.Float, nullable=True),
+)
+
+# Requests per key (or key and address) and minute, shared by every API process.
+key_usage = sa.Table(
+    "key_usage",
+    metadata,
+    sa.Column("key_id", sa.String(80), primary_key=True),
+    sa.Column("minute", sa.Integer, primary_key=True),
+    sa.Column("count", sa.Integer),
 )
 
 # ── the audit log (Phase 5.6c, migration 0004) ──────────────────────────────
@@ -502,6 +554,7 @@ class Database:
         parent_run_id: str | None = None,
         flow_limit: int | None = None,
         run_id: str | None = None,
+        environment: str | None = None,
     ) -> str:
         run_id = run_id or new_id()
         now = time.time()
@@ -512,6 +565,7 @@ class Database:
                     workspace_id=context.current(),
                     flow_id=flow_id,
                     flow_name=flow_name,
+                    environment=environment,
                     version_id=version_id,
                     thread_id=thread_id,
                     status="queued",
@@ -854,6 +908,7 @@ class Database:
         repeat: int,
         judge_model: str | None = None,
         created_by: str | None = None,
+        environment: str | None = None,
     ) -> str:
         """Keep a Test Run and queue it for a worker (a ``test`` job)."""
         run_id = new_id()
@@ -875,6 +930,7 @@ class Database:
                     baseline=False,
                     created_by=created_by,
                     created_at=now,
+                    environment=environment,
                 )
             )
             await self._enqueue(
@@ -934,6 +990,151 @@ class Database:
         )
         async with self.reader.connect() as conn:
             return _row((await conn.execute(query.limit(1))).first())
+
+    # ── publishing (Phase 5.4, migration 0008) ───────────────────────────────
+
+    async def publish(
+        self,
+        flow_id: str,
+        environment: str,
+        version_id: str,
+        *,
+        test_run_id: str | None = None,
+        published_by: str | None = None,
+    ) -> dict[str, Any]:
+        """Pin a version to an environment; what was published there before is retired."""
+        now = time.time()
+        workspace = context.current()
+        pub_id = new_id()
+        async with self._tx() as conn:
+            await conn.execute(
+                publications.update()
+                .where(
+                    publications.c.workspace_id == workspace,
+                    publications.c.flow_id == flow_id,
+                    publications.c.environment == environment,
+                    publications.c.retired_at.is_(None),
+                )
+                .values(retired_at=now)
+            )
+            await conn.execute(
+                publications.insert().values(
+                    id=pub_id,
+                    workspace_id=workspace,
+                    flow_id=flow_id,
+                    environment=environment,
+                    version_id=version_id,
+                    test_run_id=test_run_id,
+                    published_by=published_by,
+                    published_at=now,
+                )
+            )
+        return await self.publication(flow_id, environment) or {}
+
+    async def publication(
+        self, flow_id: str, environment: str, workspace: str | None = None
+    ) -> dict[str, Any] | None:
+        """What is published in an environment now (None: nothing)."""
+        query = sa.select(publications).where(
+            publications.c.workspace_id == (workspace or context.current()),
+            publications.c.flow_id == flow_id,
+            publications.c.environment == environment,
+            publications.c.retired_at.is_(None),
+        )
+        async with self.reader.connect() as conn:
+            return _row((await conn.execute(query.limit(1))).first())
+
+    async def publications_of(self, flow_id: str, limit: int = 50) -> list[dict[str, Any]]:
+        """Every time the flow was published, newest first."""
+        query = (
+            sa.select(publications)
+            .where(
+                publications.c.workspace_id == context.current(),
+                publications.c.flow_id == flow_id,
+            )
+            .order_by(publications.c.published_at.desc())
+            .limit(limit)
+        )
+        async with self.reader.connect() as conn:
+            return [dict(r._mapping) for r in await conn.execute(query)]
+
+    async def unpublish(self, flow_id: str, environment: str) -> bool:
+        async with self._tx() as conn:
+            done = await conn.execute(
+                publications.update()
+                .where(
+                    publications.c.workspace_id == context.current(),
+                    publications.c.flow_id == flow_id,
+                    publications.c.environment == environment,
+                    publications.c.retired_at.is_(None),
+                )
+                .values(retired_at=time.time())
+            )
+        return bool(done.rowcount)
+
+    async def create_access_key(self, **values: Any) -> None:
+        async with self._tx() as conn:
+            await conn.execute(
+                access_keys.insert().values(
+                    workspace_id=context.current(), created_at=time.time(), **values
+                )
+            )
+
+    async def access_key(self, key_id: str) -> dict[str, Any] | None:
+        async with self.reader.connect() as conn:
+            row = (
+                await conn.execute(sa.select(access_keys).where(access_keys.c.id == key_id))
+            ).first()
+        return _row(row)
+
+    async def access_keys_of(self, flow_id: str) -> list[dict[str, Any]]:
+        cols = [c for c in access_keys.c if c.name != "secret_hash"]
+        query = (
+            sa.select(*cols)
+            .where(
+                access_keys.c.workspace_id == context.current(),
+                access_keys.c.flow_id == flow_id,
+                access_keys.c.revoked_at.is_(None),
+            )
+            .order_by(access_keys.c.created_at)
+        )
+        async with self.reader.connect() as conn:
+            return [dict(r._mapping) for r in await conn.execute(query)]
+
+    async def revoke_access_key(self, key_id: str) -> bool:
+        async with self._tx() as conn:
+            done = await conn.execute(
+                access_keys.update()
+                .where(
+                    access_keys.c.id == key_id,
+                    access_keys.c.workspace_id == context.current(),
+                    access_keys.c.revoked_at.is_(None),
+                )
+                .values(revoked_at=time.time())
+            )
+        return bool(done.rowcount)
+
+    async def touch_access_key(self, key_id: str) -> None:
+        async with self._tx() as conn:
+            await conn.execute(
+                access_keys.update()
+                .where(access_keys.c.id == key_id)
+                .values(last_used_at=time.time())
+            )
+
+    async def count_use(self, key: str, now: float | None = None) -> int:
+        """Count one request against ``key`` in this minute; the count so far (any process)."""
+        minute = int((now or time.time()) // 60)
+        sql = sa.text(
+            "INSERT INTO key_usage (key_id, minute, count) VALUES (:key, :minute, 1) "
+            "ON CONFLICT (key_id, minute) DO UPDATE SET count = key_usage.count + 1 "
+            "RETURNING count"
+        )
+        async with self._tx() as conn:
+            count = (await conn.execute(sql, {"key": key[:80], "minute": minute})).scalar()
+            # Old minutes are of no use any more.
+            await conn.execute(key_usage.delete().where(key_usage.c.minute < minute - 5))
+        return int(count or 0)
 
     async def get_upload(self, upload_id: str) -> dict[str, Any] | None:
         async with self.reader.connect() as conn:
